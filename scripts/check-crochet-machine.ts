@@ -1,0 +1,320 @@
+/**
+ * Edge-case checks for the crochet state machine and YouTube parser.
+ * Run with: npx tsx scripts/check-crochet-machine.ts
+ */
+import { parseYouTubeUrl } from '../utils/youtube';
+import {
+  activeProject,
+  applyAddPattern,
+  applyAssignStashToSlot,
+  applyCreateProject,
+  applyDecrementRow,
+  applyDecrementStitch,
+  applyFinishProject,
+  applyIncrementRow,
+  applyIncrementStitch,
+  applyPauseTimer,
+  applyReconcileTimers,
+  applyRemoveStashItem,
+  applyResetTimer,
+  applySetActiveProject,
+  applySetStitchesPerRow,
+  applySetTotalRows,
+  applyStartTimer,
+  applyToggleTimer,
+  applyUndoLastTap,
+  applyUpdateSlot,
+  applyUpdateStashItem,
+  elapsedSeconds,
+  emptyAmsSlots,
+  formatElapsed,
+  projectProgress,
+  repairPersisted,
+  type CrochetData,
+  type CrochetProject,
+} from '../store/machine';
+import { createSeedData } from '../store/seed';
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+function equal<T>(actual: T, expected: T, message: string) {
+  if (actual !== expected) {
+    throw new Error(`${message}\n  actual:   ${String(actual)}\n  expected: ${String(expected)}`);
+  }
+}
+
+const FAWN = 'o_ge08T0-lA';
+
+function expectVideo(input: string, kind: string) {
+  const parsed = parseYouTubeUrl(input);
+  assert(parsed, `expected a video for ${input}`);
+  equal(parsed.videoId, FAWN, `video id for ${input}`);
+  equal(parsed.kind, kind, `kind for ${input}`);
+  equal(parsed.canonicalUrl, `https://www.youtube.com/watch?v=${FAWN}`, `canonical for ${input}`);
+  equal(parsed.thumbnailUrl, `https://i.ytimg.com/vi/${FAWN}/maxresdefault.jpg`, `thumb for ${input}`);
+  equal(parsed.thumbnails.hq, `https://i.ytimg.com/vi/${FAWN}/hqdefault.jpg`, `hq thumb for ${input}`);
+}
+
+expectVideo('https://www.youtube.com/watch?v=o_ge08T0-lA', 'watch');
+expectVideo('https://www.youtube.com/watch?v=o_ge08T0-lA&list=PLabc&index=2&t=43s', 'watch');
+expectVideo('https://m.youtube.com/watch?app=desktop&v=o_ge08T0-lA', 'watch');
+expectVideo('https://music.youtube.com/watch?v=o_ge08T0-lA', 'watch');
+expectVideo('https://www.youtube-nocookie.com/embed/o_ge08T0-lA?start=10', 'embed');
+expectVideo('https://www.youtube.com/shorts/o_ge08T0-lA?feature=share', 'short');
+expectVideo('https://www.youtube.com/live/o_ge08T0-lA/', 'live');
+expectVideo('https://www.youtube.com/v/o_ge08T0-lA', 'watch');
+expectVideo('https://youtu.be/o_ge08T0-lA?t=43', 'share');
+expectVideo('youtu.be/o_ge08T0-lA', 'share');
+expectVideo('https://youtu.be/o_ge08T0-lA&feature=share', 'share');
+expectVideo(`  \u200Bhttps://youtu.be/${FAWN}.  `, 'share');
+expectVideo(FAWN, 'id');
+expectVideo(
+  'https://www.youtube.com/attribution_link?a=abc&u=%2Fwatch%3Fv%3Do_ge08T0-lA%26feature%3Dshare',
+  'watch',
+);
+expectVideo('https://www.youtube.com/playlist?list=PLxxxxxxxx123&v=o_ge08T0-lA', 'watch');
+
+assert(parseYouTubeUrl('https://www.youtube.com/playlist?list=PLxxxxxxxx123') == null, 'playlist without v');
+assert(parseYouTubeUrl('https://example.com/watch?v=o_ge08T0-lA') == null, 'foreign host');
+assert(parseYouTubeUrl('https://youtu.be/short') == null, 'short id');
+assert(parseYouTubeUrl('https://www.youtube.com/watch?v=') == null, 'empty v');
+assert(parseYouTubeUrl('javascript:alert(1)') == null, 'bad protocol');
+assert(parseYouTubeUrl('') == null, 'empty');
+assert(parseYouTubeUrl('not a url') == null, 'garbage');
+
+const seed = createSeedData();
+equal(seed.patterns.length, 6, 'six patterns');
+equal(seed.projects.length, 1, 'one project');
+equal(seed.projects[0]?.name, 'Bambi Amigurumi Plush', 'project name');
+equal(seed.projects[0]?.currentRow, 28, 'bambi row');
+equal(seed.projects[0]?.totalRows, 40, 'bambi total');
+equal(seed.projects[0]?.currentStitch, 17, 'bambi stitch');
+equal(seed.projects[0]?.timerStartedAt, null, 'bambi timer paused');
+equal(formatElapsed(seed.projects[0]?.accumulatedSeconds ?? 0), '04:18:00', 'banked time');
+equal(seed.projects[0]?.slots.length, 4, 'four AMS slots');
+equal(seed.projects[0]?.slots.map((slot) => slot.id).join(','), 'A1,A2,A3,A4', 'slot ids');
+equal(seed.yarnStash.length, 6, 'stash size');
+assert(seed.patterns.every((pattern) => pattern.videoId.length === 11), 'parsed ids');
+assert(seed.patterns.every((pattern) => pattern.thumbnailUrl.includes('maxresdefault')), 'thumbs');
+equal(seed.projects[0]?.slots[0]?.stashItemId, 'yarn-soft-fudge', 'A1 linked');
+equal(seed.projects[0]?.slots[0]?.colorName, 'Soft Fudge', 'A1 name');
+const progress = projectProgress(seed.projects[0]!);
+assert(progress > 0.68 && progress < 0.69, `progress ${progress}`);
+
+function dataFrom(slice: ReturnType<typeof createSeedData>, history: CrochetData['tapHistory'] = {}): CrochetData {
+  return { ...slice, tapHistory: history };
+}
+
+let data = dataFrom(seed);
+const t0 = 1_700_000_000_000;
+const started = applyStartTimer(data, t0);
+assert(started, 'start');
+equal(activeProject(started)?.timerStartedAt, t0, 'anchor');
+assert(applyStartTimer(started, t0 + 5_000) == null, 'second start is a no-op');
+const banked = seed.projects[0]!.accumulatedSeconds;
+equal(elapsedSeconds(activeProject(started)!, t0 + 2 * 60 * 60 * 1000), banked + 7200, 'two quiet hours');
+equal(elapsedSeconds(activeProject(started)!, t0 - 10_000), banked, 'clock backwards does not subtract');
+
+const rebased = applyReconcileTimers(started, t0 - 10_000);
+assert(rebased, 'rebase');
+equal(activeProject(rebased)?.timerStartedAt, t0 - 10_000, 'anchor slid to now');
+equal(elapsedSeconds(activeProject(rebased)!, t0 - 10_000), banked, 'rebase kept the bank');
+
+const paused = applyPauseTimer(started, t0 + 1500);
+assert(paused, 'pause');
+equal(activeProject(paused)?.timerStartedAt, null, 'paused');
+equal(activeProject(paused)?.accumulatedSeconds, banked + 1.5, 'fractional bank');
+assert(applyPauseTimer(paused, t0 + 2000) == null, 'pause while paused');
+const resumed = applyStartTimer(paused, t0 + 9_000);
+assert(resumed, 'resume');
+const repaused = applyPauseTimer(resumed, t0 + 9_000);
+assert(repaused, 'immediate pause');
+equal(activeProject(repaused)?.accumulatedSeconds, banked + 1.5, 'no double count');
+
+const reset = applyResetTimer(repaused, t0);
+assert(reset, 'reset');
+equal(activeProject(reset)?.accumulatedSeconds, 0, 'cleared');
+equal(activeProject(reset)?.timerStartedAt, null, 'reset stops');
+assert(applyResetTimer(reset, t0) == null, 'reset twice');
+
+const finished = applyFinishProject(applyStartTimer(reset, t0)!, t0 + 1000);
+assert(finished, 'finish');
+equal(activeProject(finished)?.status, 'finished', 'finished status');
+equal(activeProject(finished)?.timerStartedAt, null, 'finish banks the timer');
+assert(applyStartTimer(finished, t0 + 2000) == null, 'finished project does not start');
+assert(applyToggleTimer(finished, t0 + 2000) == null, 'toggle on finished paused project');
+
+function projectFixture(overrides: Partial<CrochetProject> = {}): CrochetData {
+  const project: CrochetProject = {
+    id: 'p',
+    name: 'Swatch',
+    patternId: null,
+    status: 'in-progress',
+    currentStitch: 0,
+    stitchesPerRow: 3,
+    currentRow: 1,
+    totalRows: 2,
+    timerStartedAt: null,
+    accumulatedSeconds: 0,
+    slots: emptyAmsSlots(),
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+  return { patterns: [], projects: [project], activeProjectId: 'p', yarnStash: [], tapHistory: {} };
+}
+
+function tap(times: number, source = projectFixture(), autoAdvance?: boolean) {
+  let current = source;
+  for (let index = 0; index < times; index += 1) {
+    const next = applyIncrementStitch(current, index + 1, autoAdvance);
+    assert(next, `tap ${index + 1} should count`);
+    current = next;
+  }
+  return current;
+}
+
+let counter = tap(3);
+equal(activeProject(counter)?.currentRow, 2, 'third tap rolls the row');
+equal(activeProject(counter)?.currentStitch, 0, 'rolled to stitch 0');
+counter = tap(3, counter);
+equal(activeProject(counter)?.currentRow, 2, 'last row stays put');
+equal(activeProject(counter)?.currentStitch, 3, 'last row shows full');
+assert(applyIncrementStitch(counter, 99) == null, 'past the end is a no-op');
+equal(projectProgress(activeProject(counter)!), 1, 'complete progress');
+
+for (let index = 0; index < 6; index += 1) {
+  const next = applyDecrementStitch(counter, 100 + index);
+  assert(next, `decrement ${index + 1}`);
+  counter = next;
+}
+equal(activeProject(counter)?.currentRow, 1, 'six decrements restore the row');
+equal(activeProject(counter)?.currentStitch, 0, 'six decrements restore the stitch');
+assert(applyDecrementStitch(counter, 200) == null, 'origin decrement');
+assert(applyDecrementRow(counter, 200) == null, 'origin row');
+
+const held = tap(2, projectFixture(), false);
+equal(activeProject(held)?.currentStitch, 2, 'manual count');
+const heldFull = applyIncrementStitch(held, 3, false);
+assert(heldFull, 'fills without rolling');
+equal(activeProject(heldFull)?.currentRow, 1, 'auto-advance off stays on the row');
+equal(activeProject(heldFull)?.currentStitch, 3, 'stops on the full row');
+assert(applyIncrementStitch(heldFull, 4, false) == null, 'does not pass the row');
+
+let undoable = projectFixture();
+undoable = applyIncrementStitch(undoable, 1)!;
+undoable = applyIncrementStitch(undoable, 2)!;
+equal(undoable.tapHistory.p?.length, 2, 'two taps remembered');
+undoable = applyUndoLastTap(undoable, 3)!;
+undoable = applyUndoLastTap(undoable, 4)!;
+equal(activeProject(undoable)?.currentStitch, 0, 'double tap undone');
+assert(applyUndoLastTap(undoable, 5) == null, 'empty undo');
+
+let capped = projectFixture({ stitchesPerRow: 100, totalRows: 1 });
+for (let index = 0; index < 31; index += 1) capped = applyIncrementStitch(capped, index + 1)!;
+equal(capped.tapHistory.p?.length, 30, 'history cap');
+for (let index = 0; index < 30; index += 1) capped = applyUndoLastTap(capped, 100 + index)!;
+equal(activeProject(capped)?.currentStitch, 1, 'oldest tap falls off the stack');
+assert(applyUndoLastTap(capped, 200) == null, 'cap leaves nothing else to undo');
+
+let rows = projectFixture({ currentStitch: 2, currentRow: 1, totalRows: 3, stitchesPerRow: 3 });
+rows = applyIncrementRow(rows, 1)!;
+equal(activeProject(rows)?.currentRow, 2, 'manual next row');
+equal(activeProject(rows)?.currentStitch, 0, 'manual next row resets the stitch');
+rows = applyUndoLastTap(rows, 2)!;
+equal(activeProject(rows)?.currentRow, 1, 'undo restores the row');
+equal(activeProject(rows)?.currentStitch, 2, 'undo restores the stitch');
+rows = applyIncrementRow(applyIncrementRow(rows, 3)!, 4)!;
+assert(applyIncrementRow(rows, 5) == null, 'cannot row past the goal');
+const goal = projectFixture({ currentRow: 2, currentStitch: 0, totalRows: 5, stitchesPerRow: 3 });
+const shrunk = applySetTotalRows(goal, 1, 6);
+equal(activeProject(shrunk!)?.totalRows, 2, 'goal cannot hide the current row');
+equal(activeProject(shrunk!)?.currentRow, 2, 'shrinking the goal keeps the row you are on');
+assert(applySetStitchesPerRow(rows, Number.NaN, 7) == null, 'reject NaN');
+const narrowed = applySetStitchesPerRow(projectFixture({ currentStitch: 3, stitchesPerRow: 5 }), 2, 8);
+equal(activeProject(narrowed!)?.currentStitch, 2, 'stitch clamps to the new row length');
+equal(narrowed?.tapHistory.p?.length, 0, 'geometry change clears undo');
+
+const created = applyCreateProject(applyStartTimer(dataFrom(seed), t0)!, { name: '   ' }, 'project-blank', t0);
+assert(created == null, 'blank name');
+const nextMake = applyCreateProject(applyStartTimer(dataFrom(seed), t0)!, { name: 'Moss Swatch', patternId: 'missing' }, 'project-swatch', t0 + 4000);
+assert(nextMake, 'create');
+equal(nextMake.activeProjectId, 'project-swatch', 'new project is active');
+const bambi = nextMake.projects.find((project) => project.id === 'project-bambi');
+equal(bambi?.timerStartedAt, null, 'leaving a project banks its timer');
+equal(bambi?.accumulatedSeconds, banked + 4, 'banked the open four seconds');
+assert(applySetActiveProject(nextMake, 'nope', t0) == null, 'unknown project');
+
+let yarn = dataFrom(seed);
+const fudge = applyUpdateStashItem(yarn, 'yarn-soft-fudge', { remainingPercent: 150 }, 5);
+assert(fudge, 'update stash');
+equal(fudge.yarnStash.find((item) => item.id === 'yarn-soft-fudge')?.remainingPercent, 100, 'percent ceiling');
+equal(activeProject(fudge)?.slots[0]?.remainingPercent, 100, 'linked slot follows the skein');
+assert(applyUpdateStashItem(fudge, 'missing', { brand: 'Nope' }, 6) == null, 'missing skein');
+assert(applyUpdateSlot(fudge, 'A1', { hexColor: 'not-a-color' }, 7) == null, 'bad hex is ignored');
+const recolored = applyUpdateSlot(fudge, 'A1', { hexColor: '#abc' }, 8);
+assert(recolored, 'short hex');
+equal(recolored.yarnStash.find((item) => item.id === 'yarn-soft-fudge')?.hexColor, '#AABBCC', 'hex normalized onto the skein');
+const second = applyCreateProject(recolored, { name: 'Second Bambi' }, 'project-two', 9)!;
+const assigned = applyAssignStashToSlot(
+  { ...second, activeProjectId: 'project-bambi' },
+  'A2',
+  'yarn-soft-fudge',
+  10,
+);
+assert(assigned, 'second slot shares the skein');
+const shared = applyUpdateStashItem(assigned, 'yarn-soft-fudge', { remainingPercent: 40 }, 11)!;
+const shares = shared.projects.flatMap((project) => project.slots).filter((slot) => slot.stashItemId === 'yarn-soft-fudge');
+assert(shares.length >= 2, 'two slots linked');
+assert(shares.every((slot) => slot.remainingPercent === 40), 'shared skein stays in sync');
+const removed = applyRemoveStashItem(shared, 'yarn-soft-fudge', 12)!;
+assert(!removed.yarnStash.some((item) => item.id === 'yarn-soft-fudge'), 'skein deleted');
+const orphan = removed.projects.flatMap((project) => project.slots).find((slot) => slot.colorName === 'Soft Fudge');
+assert(orphan, 'snapshot kept');
+equal(orphan?.stashItemId, null, 'deleted skein unlinks');
+assert(applyAssignStashToSlot(removed, 'A1', 'yarn-soft-fudge', 13) == null, 'cannot load a missing skein');
+
+const repaired = repairPersisted(
+  {
+    patterns: seed.patterns,
+    yarnStash: seed.yarnStash,
+    activeProjectId: 'missing-project',
+    projects: [
+      {
+        ...seed.projects[0],
+        currentRow: 50,
+        totalRows: 10,
+        currentStitch: 99999,
+        accumulatedSeconds: -12,
+        timerStartedAt: 9_000_000_000_000_000,
+        slots: [{ stashItemId: 'yarn-deleted', brand: 'Leftover', colorName: 'Blue', hexColor: '#00f' }],
+      },
+      { id: 'project-bambi', name: 'duplicate dropped' },
+    ],
+  },
+  t0,
+);
+assert(repaired, 'repair');
+equal(repaired.projects.length, 1, 'duplicate id dropped');
+equal(repaired.activeProjectId, 'project-bambi', 'stale active id falls back');
+equal(repaired.projects[0]?.currentRow, 50, 'row kept');
+equal(repaired.projects[0]?.totalRows, 50, 'goal lifted to the current row');
+equal(repaired.projects[0]?.currentStitch, 36, 'stitch clamped');
+equal(repaired.projects[0]?.accumulatedSeconds, 0, 'negative time dropped');
+equal(repaired.projects[0]?.timerStartedAt, t0, 'future anchor rebased');
+equal(repaired.projects[0]?.slots.length, 4, 'slots repaired to four');
+equal(repaired.projects[0]?.slots[0]?.stashItemId, null, 'dangling skein unlinked');
+equal(repaired.projects[0]?.slots[0]?.colorName, 'Blue', 'dangling snapshot kept');
+equal(repaired.projects[0]?.slots[1]?.id, 'A2', 'missing slots are empty');
+assert(repairPersisted({ nope: true }) == null, 'foreign blob is rejected');
+assert(repairPersisted(null) == null, 'null blob is rejected');
+
+const duplicate = applyAddPattern(dataFrom(seed), 'pattern-copy', {
+  title: 'Another fawn',
+  youtubeUrl: 'https://youtu.be/o_ge08T0-lA',
+});
+assert(duplicate == null, 'duplicate video is rejected');
+
+console.log('crochet machine checks passed');
