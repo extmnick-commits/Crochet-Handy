@@ -1,17 +1,19 @@
 {
   "expo": {
-    "name": "crochet-handy",
+    "name": "Crochet Handy",
     "slug": "crochet-handy",
+    "scheme": "crochethandy",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#121212",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#121212",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -19,7 +21,19 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "backgroundColor": "#121212",
+      "themeColor": "#121212"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-system-ui"
+    ],
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
