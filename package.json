@@ -21,9 +21,13 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@types/node": "^22.15.29",
     "@types/react": "~19.2.2",
+    "dotenv": "^16.5.0",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
+    "openai": "^4.104.0",
+    "ts-node": "^10.9.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -31,7 +35,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "update-patterns": "ts-node --project tsconfig.scripts.json scripts/update-patterns.ts"
   },
-  "private": true
+  "private": true,
+  "ts-node": {
+    "project": "tsconfig.scripts.json"
+  }
 }
