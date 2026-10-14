@@ -70,11 +70,16 @@ type SeedPattern = {
 const ROOT = path.resolve(__dirname, '..');
 const SEED_FILE = path.join(ROOT, 'store', 'seed.ts');
 
-const YOUTUBE_SEARCH_QUERY = '"crochet tutorial"|pattern';
+/** Long-form project tutorials only; API params also block Shorts and non-embeddable videos. */
+const YOUTUBE_SEARCH_QUERY =
+  '"crochet tutorial" ("full project" | "step by step" | "pattern") -shorts -short';
+const YOUTUBE_SEARCH_MAX_RESULTS = 10;
+/** YouTube category 26 = Howto & Style */
+const YOUTUBE_VIDEO_CATEGORY_HOWTO = '26';
 const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
 const YOUTUBE_VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-3.8-flash';
 
 const SEED_PATTERNS_START = '// <seed-patterns-start>';
 const SEED_PATTERNS_END = '// <seed-patterns-end>';
@@ -116,6 +121,16 @@ type AiPatternPayload = {
   stitchesPerRow?: number;
   tags?: string[];
 };
+
+type AiBatchPatternPayload = AiPatternPayload & {
+  videoIndex?: number;
+};
+
+type AiBatchPatternsResponse = {
+  patterns?: AiBatchPatternPayload[];
+};
+
+const GEMINI_DESCRIPTION_CHARS_PER_VIDEO = 6_000;
 
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -178,6 +193,38 @@ function youtubeWatchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${videoId}`;
 }
 
+/** Fallback defense when Shorts slip through search filters. */
+function isShortFormTitle(title: string): boolean {
+  const lower = title.toLowerCase();
+  return lower.includes('#shorts') || lower.includes('#short');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRateLimitError(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'status' in error) {
+    return (error as { status?: number }).status === 429;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('429');
+}
+
+function logTimestamp(message: string): void {
+  console.log(`[${new Date().toISOString()}] ${message}`);
+}
+
+function formatVideosForBatchPrompt(videos: YouTubeVideoItem[]): string {
+  return videos
+    .map((video, index) => {
+      const title = (video.snippet?.title ?? '').trim();
+      const description = (video.snippet?.description ?? '').slice(0, GEMINI_DESCRIPTION_CHARS_PER_VIDEO);
+      return `Video ${index}:\nTitle: ${title}\nDescription:\n${description}`;
+    })
+    .join('\n\n---\n\n');
+}
+
 async function fetchJson<T>(url: string, params: Record<string, string>): Promise<T> {
   const query = new URLSearchParams(params);
   const response = await fetch(`${url}?${query.toString()}`);
@@ -193,13 +240,18 @@ export async function fetchTrendingCrochetVideos(apiKey: string, limit = 5): Pro
     part: 'snippet',
     type: 'video',
     q: YOUTUBE_SEARCH_QUERY,
+    videoCategoryId: YOUTUBE_VIDEO_CATEGORY_HOWTO,
+    videoDuration: 'medium',
+    videoEmbeddable: 'true',
+    videoSyndicated: 'true',
     order: 'viewCount',
     publishedAfter: publishedAfterIso(7),
-    maxResults: '25',
+    maxResults: String(YOUTUBE_SEARCH_MAX_RESULTS),
     key: apiKey,
   });
 
   const ids = (search.items ?? [])
+    .filter((item) => !isShortFormTitle(item.snippet?.title ?? ''))
     .map((item) => item.id?.videoId)
     .filter((id): id is string => Boolean(id));
 
@@ -214,6 +266,7 @@ export async function fetchTrendingCrochetVideos(apiKey: string, limit = 5): Pro
   });
 
   return (details.items ?? [])
+    .filter((item) => !isShortFormTitle(item.snippet?.title ?? ''))
     .slice()
     .sort((a, b) => Number(b.statistics?.viewCount ?? 0) - Number(a.statistics?.viewCount ?? 0))
     .slice(0, limit);
@@ -226,47 +279,71 @@ function buildGeminiClient(apiKey: string): OpenAI {
   });
 }
 
-export async function extractPatternMetadata(
+export async function extractBatchPatterns(
   client: OpenAI,
-  title: string,
-  description: string,
-): Promise<AiPatternPayload> {
-  const completion = await client.chat.completions.create({
+  videos: YouTubeVideoItem[],
+): Promise<AiBatchPatternPayload[]> {
+  const request = {
     model: GEMINI_MODEL,
-    response_format: { type: 'json_object' },
+    response_format: { type: 'json_object' as const },
     messages: [
       {
-        role: 'system',
+        role: 'system' as const,
         content: [
-          'You extract structured crochet pattern metadata from YouTube video text.',
-          'Return JSON only with keys:',
-          'difficulty (Beginner|Easy|Intermediate|Advanced),',
-          'estimatedTimeMinutes (number),',
-          'description (1-3 sentences),',
-          'materials (array of { name, weight, yardage }),',
-          'tools (array of { type, size }),',
-          'keyStitches (array of stitch names),',
-          'yarnWeight (one of: lace, fingering, sport, dk, worsted, aran, bulky, super-bulky, jumbo),',
-          'hookSize (e.g. "5.0 mm"),',
-          'totalRows (positive integer guess for project rows),',
-          'stitchesPerRow (positive integer guess),',
-          'tags (up to 6 short lowercase tags).',
-          'Infer reasonable values when the video omits them.',
+          `Analyze these ${videos.length} crochet YouTube videos and extract project details for each.`,
+          'Return JSON only matching this shape:',
+          '{"patterns":[{"videoIndex":number,"difficulty":"Beginner"|"Easy"|"Intermediate"|"Advanced",',
+          '"estimatedTimeMinutes":number,"description":string,',
+          '"materials":[{"name":string,"weight":string,"yardage":string}],',
+          '"tools":[{"type":string,"size":string}],"keyStitches":[string],',
+          '"yarnWeight":"lace"|"fingering"|"sport"|"dk"|"worsted"|"aran"|"bulky"|"super-bulky"|"jumbo",',
+          '"hookSize":string,"totalRows":number,"stitchesPerRow":number,"tags":[string]}]}',
+          'Include exactly one patterns entry per video, with videoIndex 0 through',
+          `${videos.length - 1} matching the Video N blocks in the user message.`,
+          'Infer reasonable values when a video omits them.',
         ].join(' '),
       },
       {
-        role: 'user',
-        content: `Title:\n${title}\n\nDescription:\n${description.slice(0, 12_000)}`,
+        role: 'user' as const,
+        content: formatVideosForBatchPrompt(videos),
       },
     ],
-  });
+  };
 
-  const raw = completion.choices[0]?.message?.content;
-  if (!raw) {
-    throw new Error('Gemini returned an empty response');
+  const maxAttempts = 5;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const completion = await client.chat.completions.create(request);
+      const raw = completion.choices[0]?.message?.content;
+      if (!raw) {
+        throw new Error('Gemini returned an empty response');
+      }
+      const parsed = JSON.parse(raw) as AiBatchPatternsResponse;
+      return parsed.patterns ?? [];
+    } catch (error) {
+      if (attempt < maxAttempts - 1 && isRateLimitError(error)) {
+        await sleep(20_000 * (attempt + 1));
+        continue;
+      }
+      throw error;
+    }
   }
 
-  return JSON.parse(raw) as AiPatternPayload;
+  throw new Error('Gemini rate limit retries exhausted');
+}
+
+export function mapBatchPatternsToSeed(
+  videos: YouTubeVideoItem[],
+  batch: AiBatchPatternPayload[],
+): SeedPattern[] {
+  const byIndex = new Map<number, AiPatternPayload>();
+  for (const item of batch) {
+    if (typeof item.videoIndex === 'number' && item.videoIndex >= 0 && item.videoIndex < videos.length) {
+      byIndex.set(item.videoIndex, item);
+    }
+  }
+
+  return videos.map((video, index) => mergePattern(video, byIndex.get(index) ?? {}));
 }
 
 export function mergePattern(
@@ -281,16 +358,16 @@ export function mergePattern(
 
   const materials = (ai.materials ?? [])
     .map((item) => ({
-      name: (item.name ?? '').trim(),
-      weight: (item.weight ?? '').trim(),
-      yardage: (item.yardage ?? '').trim(),
+      name: String(item.name ?? '').trim(),
+      weight: String(item.weight ?? '').trim(),
+      yardage: String(item.yardage ?? '').trim(),
     }))
     .filter((item) => item.name.length > 0);
 
   const tools = (ai.tools ?? [])
     .map((item) => ({
-      type: (item.type ?? '').trim(),
-      size: (item.size ?? '').trim(),
+      type: String(item.type ?? '').trim(),
+      size: String(item.size ?? '').trim(),
     }))
     .filter((item) => item.type.length > 0);
 
@@ -411,14 +488,14 @@ export async function main(): Promise<void> {
   }
 
   const client = buildGeminiClient(geminiKey);
-  const patterns: SeedPattern[] = [];
 
-  for (const video of videos) {
-    const title = video.snippet?.title ?? '';
-    const description = video.snippet?.description ?? '';
-    const ai = await extractPatternMetadata(client, title, description);
-    patterns.push(mergePattern(video, ai));
-  }
+  logTimestamp(`Gemini batch extraction starting (${videos.length} videos)…`);
+  const geminiStartedAt = Date.now();
+  const batch = await extractBatchPatterns(client, videos);
+  const geminiElapsedSeconds = ((Date.now() - geminiStartedAt) / 1000).toFixed(1);
+  logTimestamp(`Gemini batch extraction finished in ${geminiElapsedSeconds}s (${batch.length} pattern objects)`);
+
+  const patterns = mapBatchPatternsToSeed(videos, batch);
 
   const seedSource = fs.readFileSync(SEED_FILE, 'utf8');
   const nextSource = replaceSeedPatternsBlock(seedSource, formatSeedPatternsExport(patterns));
