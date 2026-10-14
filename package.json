@@ -46,7 +46,8 @@
     "update-patterns": "ts-node --project tsconfig.scripts.json scripts/update-patterns.ts",
     "export-pattern-catalog": "npx tsx scripts/export-pattern-catalog.ts",
     "prune-non-english-patterns": "npx tsx scripts/prune-non-english-patterns.ts",
-    "prune-non-english-thumbnails": "npx tsx scripts/prune-non-english-thumbnails.ts"
+    "prune-non-english-thumbnails": "npx tsx scripts/prune-non-english-thumbnails.ts",
+    "clean-catalog": "npm run prune-non-english-patterns && npm run prune-non-english-thumbnails"
   },
   "private": true,
   "ts-node": {

@@ -1,43 +1,69 @@
-name: Pattern scraper
+# Pattern catalog automation (GitHub → Actions → run workflow).
+#
+# Modes:
+#   scrape-only        — YouTube + Gemini extraction + thumbnail vision on new candidates
+#   scrape-and-prune   — scrape, then text + thumbnail catalog cleanup (recommended)
+#   prune-all-only     — re-run English text + thumbnail vision rules on existing seed
+#   prune-text-only    — text/channel rules only (no Gemini vision)
+#   prune-thumbnails-only — Gemini thumbnail vision only
+#
+# Secrets: GitHub Environment ".env" → YOUTUBE_API_KEY, GEMINI_API_KEY, optional GEMINI_MODEL
+
+name: Pattern catalog
 
 on:
   schedule:
-    # Weekly default refresh: 10 trending patterns (inputs are unset on cron).
+    # Weekly: scrape new patterns, then prune catalog (cron has no workflow inputs).
     - cron: '0 0 * * 0'
   workflow_dispatch:
     inputs:
-      topic:
-        description: 'Pattern Niche / Topic'
+      action:
+        description: 'What to run'
         required: true
-        default: 'trending'
+        default: scrape-and-prune
         type: choice
         options:
-          - 'trending'
-          - 'seasonal'
-          - 'halloween'
-          - 'christmas'
-          - 'thanksgiving'
-          - 'valentines'
-          - 'easter'
-          - 'stpatricks'
-          - 'amigurumi'
-          - 'wearables'
-          - 'blankets'
+          - scrape-only
+          - scrape-and-prune
+          - prune-all-only
+          - prune-text-only
+          - prune-thumbnails-only
+      topic:
+        description: 'Scrape topic (scrape modes only)'
+        required: true
+        default: trending
+        type: choice
+        options:
+          - trending
+          - seasonal
+          - halloween
+          - christmas
+          - thanksgiving
+          - valentines
+          - easter
+          - stpatricks
+          - amigurumi
+          - wearables
+          - blankets
       count:
-        description: 'Number of new patterns to add'
+        description: 'New patterns to add (scrape modes only)'
         required: true
         default: '10'
         type: string
+      skip_thumbnail_check:
+        description: 'Skip Gemini thumbnail vision during scrape (faster, less strict)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
-  update-patterns:
+  catalog:
     runs-on: ubuntu-latest
-    # Secrets live in Settings → Environments → ".env" (not repository secrets).
     environment: .env
-    timeout-minutes: 5
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -51,30 +77,63 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify required secrets
+      - name: Resolve workflow action
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_ACTION: ${{ inputs.action }}
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            echo "action=scrape-and-prune" >> "$GITHUB_OUTPUT"
+          else
+            echo "action=$INPUT_ACTION" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify YouTube API secret (scrape)
+        if: contains(fromJSON('["scrape-only","scrape-and-prune"]'), steps.plan.outputs.action)
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           if [ -z "$YOUTUBE_API_KEY" ]; then
-            echo "::error::Repository secret YOUTUBE_API_KEY is missing or empty"
+            echo "::error::Environment secret YOUTUBE_API_KEY is missing or empty"
             exit 1
           fi
+
+      - name: Verify Gemini API secret (scrape / thumbnail prune)
+        if: contains(fromJSON('["scrape-only","scrape-and-prune","prune-all-only","prune-thumbnails-only"]'), steps.plan.outputs.action)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
           if [ -z "$GEMINI_API_KEY" ]; then
-            echo "::error::Repository secret GEMINI_API_KEY is missing or empty"
+            echo "::error::Environment secret GEMINI_API_KEY is missing or empty"
             exit 1
           fi
 
       - name: Scrape and enrich patterns
+        if: contains(fromJSON('["scrape-only","scrape-and-prune"]'), steps.plan.outputs.action)
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           SEARCH_TOPIC: ${{ inputs.topic || 'trending' }}
           SCRAPE_COUNT: ${{ inputs.count || '10' }}
+          SCRAPE_SKIP_THUMBNAIL_CHECK: ${{ inputs.skip_thumbnail_check && '1' || '' }}
         run: npm run update-patterns
 
-      - name: Commit and push seed updates
+      - name: Prune non-English text rules
+        if: contains(fromJSON('["scrape-and-prune","prune-all-only","prune-text-only"]'), steps.plan.outputs.action)
+        run: npm run prune-non-english-patterns
+
+      - name: Prune thumbnail feed rules (Gemini vision)
+        if: contains(fromJSON('["scrape-and-prune","prune-all-only","prune-thumbnails-only"]'), steps.plan.outputs.action)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+        run: npm run prune-non-english-thumbnails
+
+      - name: Commit and push catalog updates
+        env:
+          ACTION: ${{ steps.plan.outputs.action }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -83,5 +142,13 @@ jobs:
             echo "No changes to store/seed.ts or catalog/pattern-catalog.json"
             exit 0
           fi
-          git commit -m "chore: weekly crochet pattern seed update"
+          case "$ACTION" in
+            scrape-only) MSG="chore: pattern catalog scrape" ;;
+            scrape-and-prune) MSG="chore: pattern catalog scrape and prune" ;;
+            prune-all-only) MSG="chore: pattern catalog prune (text + thumbnails)" ;;
+            prune-text-only) MSG="chore: pattern catalog prune (text)" ;;
+            prune-thumbnails-only) MSG="chore: pattern catalog prune (thumbnails)" ;;
+            *) MSG="chore: pattern catalog update" ;;
+          esac
+          git commit -m "$MSG"
           git push
