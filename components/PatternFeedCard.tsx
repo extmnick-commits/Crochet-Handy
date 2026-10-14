@@ -1,0 +1,169 @@
+/**
+ * Masonry feed card shared by Patterns and Me library grids.
+ */
+import * as Haptics from 'expo-haptics';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { HeartIcon } from '@/components/PatternDetailSheet';
+import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { selectIsPatternLiked, useCrochetStore, type CrochetPattern } from '@/store/useCrochetStore';
+import {
+  creatorColor,
+  creatorInitials,
+  formatLikeCount,
+  formatSpecBadge,
+} from '@/utils/patternDisplay';
+import { youtubeThumbnailUrl } from '@/utils/youtube';
+
+type PatternFeedCardProps = {
+  pattern: CrochetPattern;
+  imageHeight: number;
+  onPress: () => void;
+  /** When true, the like chip always shows the liked styling (Likes tab). */
+  forceLikedVisual?: boolean;
+};
+
+export function PatternFeedCard({ pattern, imageHeight, onPress, forceLikedVisual }: PatternFeedCardProps) {
+  const liked = useCrochetStore((state) => selectIsPatternLiked(state, pattern.id));
+  const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
+  const showLiked = forceLikedVisual || liked;
+
+  return (
+    <View style={styles.card} testID={`pattern-card-${pattern.id}`}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${pattern.title}, ${formatSpecBadge(pattern)}, by ${pattern.creator}`}
+        onPress={onPress}
+        style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+      >
+        <View style={[styles.cardImageWrap, { height: imageHeight }]}>
+          <Image
+            accessible={false}
+            source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
+            style={styles.cardImage}
+          />
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{formatSpecBadge(pattern)}</Text>
+          </View>
+        </View>
+        <Text numberOfLines={2} style={styles.cardTitle}>
+          {pattern.title}
+        </Text>
+      </Pressable>
+      <View style={styles.cardFooter}>
+        <View style={[styles.avatar, { backgroundColor: creatorColor(pattern.creator) }]}>
+          <Text style={styles.avatarText}>{creatorInitials(pattern.creator)}</Text>
+        </View>
+        <Text numberOfLines={1} style={styles.creator}>
+          {pattern.creator}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={showLiked ? 'Unlike pattern' : 'Like pattern'}
+          accessibilityState={{ selected: showLiked }}
+          hitSlop={Layout.hitSlop}
+          onPress={() => {
+            tick();
+            toggleLikePattern(pattern.id);
+          }}
+          style={({ pressed }) => [styles.likes, pressed && styles.pressed, webCursor]}
+        >
+          <HeartIcon color={showLiked ? Colors.accentPrimary : Colors.textSecondary} filled={showLiked} />
+          <Text style={[styles.likeCount, showLiked && styles.likeCountOn]}>
+            {formatLikeCount(pattern.id, showLiked)}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function tick() {
+  if (Platform.OS === 'web') return;
+  void Haptics.selectionAsync();
+}
+
+const webCursor = Platform.OS === 'web' ? ({ cursor: 'pointer' } as const) : null;
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.cardSurface,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  cardImageWrap: {
+    backgroundColor: Colors.elevatedControl,
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  badge: {
+    position: 'absolute',
+    top: Spacing.sm,
+    left: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentPrimary,
+  },
+  badgeText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: FontWeight.bold,
+    color: Colors.onAccent,
+  },
+  cardTitle: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+    minHeight: 36,
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.sm,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm + 2,
+  },
+  avatar: {
+    width: 18,
+    height: 18,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: Colors.textPrimary,
+    fontSize: 8,
+    lineHeight: 10,
+    fontWeight: FontWeight.bold,
+  },
+  creator: {
+    ...Typography.caption,
+    flex: 1,
+    color: Colors.textSecondary,
+  },
+  likes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  likeCount: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  likeCountOn: {
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.semibold,
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+});

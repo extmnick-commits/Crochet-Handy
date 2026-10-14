@@ -8,7 +8,6 @@
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Image,
   Modal,
   Platform,
   Pressable,
@@ -24,23 +23,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { AddPatternModal } from '@/components/AddPatternModal';
-import { HeartIcon, PatternDetailSheet } from '@/components/PatternDetailSheet';
+import { PatternFeedCard } from '@/components/PatternFeedCard';
+import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { useCrochetStore, YARN_WEIGHTS, type CrochetPattern, type YarnWeight } from '@/store/useCrochetStore';
 import {
-  selectIsPatternLiked,
-  useCrochetStore,
-  YARN_WEIGHTS,
-  type CrochetPattern,
-  type YarnWeight,
-} from '@/store/useCrochetStore';
-import {
-  creatorColor,
-  creatorInitials,
   formatHookSize,
-  formatLikeCount,
-  formatSpecBadge,
-  MASONRY_IMAGE_RATIOS,
   matchesPatternCategory,
+  packMasonryColumns,
+  MASONRY_TEXT_BLOCK,
   matchesPatternQuery,
   patternFeedCategories,
   sortPatternsForCategory,
@@ -48,9 +39,6 @@ import {
   type PatternCategoryId,
 } from '@/utils/patternDisplay';
 import { holidayEmptyState, isHolidayTopicId } from '@/utils/holidayTopics';
-import { youtubeThumbnailUrl } from '@/utils/youtube';
-
-const TEXT_BLOCK = 86;
 
 export default function PatternsScreen() {
   const insets = useSafeAreaInsets();
@@ -89,7 +77,8 @@ export default function PatternsScreen() {
 
   const innerWidth = Math.max(0, contentWidth - insets.left - insets.right);
   const columnWidth = Math.floor((innerWidth - Layout.screenGutter * 2 - Layout.cardGap) / 2);
-  const columns = columnWidth > 0 ? packColumns(visiblePatterns, columnWidth) : [[], []];
+  const columns =
+    columnWidth > 0 ? packMasonryColumns(visiblePatterns, columnWidth, MASONRY_TEXT_BLOCK, Spacing.md) : [[], []];
 
   const onSelectCategory = (next: PatternCategoryId) => {
     if (next !== category) tick();
@@ -223,7 +212,7 @@ export default function PatternsScreen() {
             {columns.map((column, columnIndex) => (
               <View key={columnIndex} style={[styles.column, { width: columnWidth }]}>
                 {column.map(({ pattern, imageHeight }) => (
-                  <PatternCard
+                  <PatternFeedCard
                     key={pattern.id}
                     pattern={pattern}
                     imageHeight={imageHeight}
@@ -265,66 +254,6 @@ export default function PatternsScreen() {
       />
 
       <PatternDetailSheet patternId={selectedId} onClose={() => setSelectedId(null)} />
-    </View>
-  );
-}
-
-function PatternCard({
-  pattern,
-  imageHeight,
-  onPress,
-}: {
-  pattern: CrochetPattern;
-  imageHeight: number;
-  onPress: () => void;
-}) {
-  const liked = useCrochetStore((state) => selectIsPatternLiked(state, pattern.id));
-  const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
-
-  return (
-    <View style={styles.card} testID={`pattern-card-${pattern.id}`}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${pattern.title}, ${formatSpecBadge(pattern)}, by ${pattern.creator}`}
-        onPress={onPress}
-        style={({ pressed }) => [pressed && styles.pressed, webCursor]}
-      >
-        <View style={[styles.cardImageWrap, { height: imageHeight }]}>
-          <Image
-            accessible={false}
-            source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-            style={styles.cardImage}
-          />
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{formatSpecBadge(pattern)}</Text>
-          </View>
-        </View>
-        <Text numberOfLines={2} style={styles.cardTitle}>
-          {pattern.title}
-        </Text>
-      </Pressable>
-      <View style={styles.cardFooter}>
-        <View style={[styles.avatar, { backgroundColor: creatorColor(pattern.creator) }]}>
-          <Text style={styles.avatarText}>{creatorInitials(pattern.creator)}</Text>
-        </View>
-        <Text numberOfLines={1} style={styles.creator}>
-          {pattern.creator}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={liked ? 'Unlike pattern' : 'Like pattern'}
-          accessibilityState={{ selected: liked }}
-          hitSlop={Layout.hitSlop}
-          onPress={() => {
-            tick();
-            toggleLikePattern(pattern.id);
-          }}
-          style={({ pressed }) => [styles.likes, pressed && styles.pressed, webCursor]}
-        >
-          <HeartIcon color={liked ? Colors.accentPrimary : Colors.textSecondary} filled={liked} />
-          <Text style={[styles.likeCount, liked && styles.likeCountOn]}>{formatLikeCount(pattern.id, liked)}</Text>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -490,21 +419,6 @@ function RefreshIcon({ color }: { color: string }) {
       <Path d="M20 4v6h-6" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
-}
-
-function packColumns(patterns: CrochetPattern[], columnWidth: number) {
-  const columns: { pattern: CrochetPattern; imageHeight: number }[][] = [[], []];
-  const heights = [0, 0];
-
-  patterns.forEach((pattern, index) => {
-    const ratio = MASONRY_IMAGE_RATIOS[index % MASONRY_IMAGE_RATIOS.length] ?? 1;
-    const imageHeight = Math.round(columnWidth * ratio);
-    const column = heights[0] <= heights[1] ? 0 : 1;
-    columns[column]?.push({ pattern, imageHeight });
-    heights[column] += imageHeight + TEXT_BLOCK + Spacing.md;
-  });
-
-  return columns;
 }
 
 function matchesFacets(pattern: CrochetPattern, yarnFilters: YarnWeight[], hookFilters: string[]): boolean {

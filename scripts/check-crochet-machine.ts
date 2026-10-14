@@ -10,7 +10,8 @@ import {
   applyAddPattern,
   applyAddProgressPhoto,
   applyAddProjectYarnColor,
-  applyCreateIdeaFolder,
+  applyCreateCollectionFolder,
+  applyToggleCollectPattern,
   applyCreateProject,
   applyHydrateCloudSlice,
   applySetAccount,
@@ -245,7 +246,8 @@ function projectFixture(overrides: Partial<CrochetProject> = {}): CrochetData {
     progressPhotos: [],
     account: null,
     likedPatternIds: [],
-    ideaFolders: [],
+    collectedPatternIds: [],
+    collectionFolders: [],
     tapHistory: {},
   };
 }
@@ -520,7 +522,8 @@ const legacyStash = repairPersisted(
 equal(legacyStash?.yarnStash[0]?.skeinCount, 1, 'missing skein count repairs to 1');
 equal(legacyStash?.progressPhotos.length, 0, 'missing photo log repairs empty');
 equal(legacyStash?.likedPatternIds.length, 0, 'legacy stash repairs empty likes');
-equal(legacyStash?.ideaFolders.length, 0, 'legacy stash repairs empty folders');
+equal(legacyStash?.collectionFolders.length, 0, 'legacy stash repairs empty folders');
+equal(legacyStash?.collectedPatternIds.length, 0, 'legacy stash repairs empty collection');
 equal(legacyStash?.account, null, 'legacy stash repairs null account');
 
 const account = {
@@ -545,19 +548,25 @@ const unliked = applyToggleLikePattern(liked!, patternId);
 assert(unliked && !unliked.likedPatternIds.includes(patternId), 'unlike pattern');
 assert(applyToggleLikePattern(dataFrom(seed), 'missing-pattern') == null, 'like unknown pattern is no-op');
 
-const foldered = applyCreateIdeaFolder(dataFrom(seed), 'folder-1', { name: 'Weekend makes', description: 'Soft toys' }, t0);
-assert(foldered?.ideaFolders[0]?.name === 'Weekend makes', 'create folder');
+const collected = applyToggleCollectPattern(dataFrom(seed), patternId);
+assert(collected?.collectedPatternIds.includes(patternId), 'collect pattern');
+const uncollected = applyToggleCollectPattern(collected!, patternId);
+assert(uncollected && !uncollected.collectedPatternIds.includes(patternId), 'uncollect pattern');
+
+const foldered = applyCreateCollectionFolder(dataFrom(seed), 'folder-1', { name: 'Weekend makes', description: 'Soft toys' }, t0);
+assert(foldered?.collectionFolders[0]?.name === 'Weekend makes', 'create folder');
 const inFolder = applyTogglePatternInFolder(foldered!, 'folder-1', patternId, t0 + 2);
-assert(inFolder?.ideaFolders[0]?.patternIds.includes(patternId), 'toggle pattern into folder');
+assert(inFolder?.collectionFolders[0]?.patternIds.includes(patternId), 'toggle pattern into folder');
+assert(inFolder?.collectedPatternIds.includes(patternId), 'folder add also collects');
 const outFolder = applyTogglePatternInFolder(inFolder!, 'folder-1', patternId, t0 + 3);
-assert(outFolder && outFolder.ideaFolders[0]?.patternIds.length === 0, 'toggle pattern out of folder');
+assert(outFolder && outFolder.collectionFolders[0]?.patternIds.length === 0, 'toggle pattern out of folder');
 
 const cloudSlice = applyHydrateCloudSlice(
   dataFrom(seed),
   {
     ...seed,
     likedPatternIds: [patternId, 'missing-like'],
-    ideaFolders: [
+    collectionFolders: [
       {
         id: 'folder-cloud',
         name: 'Cloud folder',
@@ -573,7 +582,7 @@ const cloudSlice = applyHydrateCloudSlice(
   t0,
 );
 assert(cloudSlice?.likedPatternIds.includes(patternId), 'hydrate keeps valid likes');
-equal(cloudSlice?.ideaFolders.length, 1, 'hydrate repairs folders');
+equal(cloudSlice?.collectionFolders.length, 1, 'hydrate repairs folders');
 assert(!cloudSlice?.likedPatternIds.includes('missing-like'), 'hydrate drops unknown likes');
 
 const removedPattern = applyRemovePattern(
@@ -585,8 +594,9 @@ const removedPattern = applyRemovePattern(
   t0 + 5,
 );
 assert(removedPattern && !removedPattern.likedPatternIds.includes(patternId), 'remove pattern clears likes');
+assert(removedPattern && !removedPattern.collectedPatternIds.includes(patternId), 'remove pattern clears collection');
 assert(
-  removedPattern.ideaFolders.every((folder: { patternIds: string[] }) => !folder.patternIds.includes(patternId)),
+  removedPattern.collectionFolders.every((folder: { patternIds: string[] }) => !folder.patternIds.includes(patternId)),
   'remove pattern clears folders',
 );
 

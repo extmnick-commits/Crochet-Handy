@@ -44,6 +44,29 @@ const AVATAR_COLORS = ['#2F6B4F', '#6B4A2F', '#2F4A6B', '#6B2F4A', '#4A6B2F', '#
 /** Image height / column width. Varied on purpose so the two columns read as masonry. */
 export const MASONRY_IMAGE_RATIOS = [1.12, 1.38, 0.92, 1.22, 1.48, 0.98] as const;
 
+/** Title + footer block height used when balancing masonry columns. */
+export const MASONRY_TEXT_BLOCK = 86;
+
+export function packMasonryColumns(
+  patterns: CrochetPattern[],
+  columnWidth: number,
+  textBlock = MASONRY_TEXT_BLOCK,
+  columnGap = 12,
+): { pattern: CrochetPattern; imageHeight: number }[][] {
+  const columns: { pattern: CrochetPattern; imageHeight: number }[][] = [[], []];
+  const heights = [0, 0];
+
+  patterns.forEach((pattern, index) => {
+    const ratio = MASONRY_IMAGE_RATIOS[index % MASONRY_IMAGE_RATIOS.length] ?? 1;
+    const imageHeight = Math.round(columnWidth * ratio);
+    const column = heights[0] <= heights[1] ? 0 : 1;
+    columns[column]?.push({ pattern, imageHeight });
+    heights[column] += imageHeight + textBlock + columnGap;
+  });
+
+  return columns;
+}
+
 const WEARABLE_WORDS = [
   'wearable',
   'cardigan',

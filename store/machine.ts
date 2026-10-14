@@ -177,7 +177,9 @@ export type CrochetData = {
   progressPhotos: ProgressPhoto[];
   account: UserAccount | null;
   likedPatternIds: string[];
-  ideaFolders: IdeaFolder[];
+  /** Patterns saved to the user's general library (Collections → Patterns). */
+  collectedPatternIds: string[];
+  collectionFolders: IdeaFolder[];
   tapHistory: Record<string, CounterSnapshot[]>;
 };
 
@@ -189,7 +191,8 @@ export type CrochetPersistedSlice = {
   progressPhotos: ProgressPhoto[];
   account: UserAccount | null;
   likedPatternIds: string[];
-  ideaFolders: IdeaFolder[];
+  collectedPatternIds: string[];
+  collectionFolders: IdeaFolder[];
 };
 
 export type NewPatternInput = {
@@ -677,12 +680,13 @@ function sameBookmarks(current: VideoBookmark[], next: VideoBookmark[]): boolean
 export function applyRemovePattern(data: CrochetData, patternId: string, now: number): CrochetData | null {
   if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
   const likedPatternIds = data.likedPatternIds.filter((id) => id !== patternId);
-  const ideaFolders = data.ideaFolders.map((folder) => ({
+  const collectedPatternIds = data.collectedPatternIds.filter((id) => id !== patternId);
+  const collectionFolders = data.collectionFolders.map((folder) => ({
     ...folder,
     patternIds: folder.patternIds.filter((id) => id !== patternId),
     updatedAt: folder.patternIds.includes(patternId) ? now : folder.updatedAt,
   }));
-  const foldersChanged = ideaFolders.some((folder, index) => folder !== data.ideaFolders[index]);
+  const foldersChanged = collectionFolders.some((folder, index) => folder !== data.collectionFolders[index]);
   return {
     ...data,
     patterns: data.patterns.filter((pattern) => pattern.id !== patternId),
@@ -690,7 +694,8 @@ export function applyRemovePattern(data: CrochetData, patternId: string, now: nu
       project.patternId === patternId ? { ...project, patternId: null, updatedAt: now } : project,
     ),
     likedPatternIds,
-    ideaFolders: foldersChanged ? ideaFolders : data.ideaFolders,
+    collectedPatternIds,
+    collectionFolders: foldersChanged ? collectionFolders : data.collectionFolders,
   };
 }
 
@@ -751,14 +756,23 @@ export function applyToggleLikePattern(data: CrochetData, patternId: string): Cr
   return { ...data, likedPatternIds };
 }
 
-export function applyCreateIdeaFolder(
+export function applyToggleCollectPattern(data: CrochetData, patternId: string): CrochetData | null {
+  if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
+  const collected = data.collectedPatternIds.includes(patternId);
+  const collectedPatternIds = collected
+    ? data.collectedPatternIds.filter((id) => id !== patternId)
+    : [...data.collectedPatternIds, patternId];
+  return { ...data, collectedPatternIds };
+}
+
+export function applyCreateCollectionFolder(
   data: CrochetData,
   id: string,
   input: { name: string; description?: string },
   now: number,
 ): CrochetData | null {
-  if (!isSafeId(id) || data.ideaFolders.length >= MAX_IDEA_FOLDERS) return null;
-  if (data.ideaFolders.some((folder) => folder.id === id)) return null;
+  if (!isSafeId(id) || data.collectionFolders.length >= MAX_IDEA_FOLDERS) return null;
+  if (data.collectionFolders.some((folder) => folder.id === id)) return null;
   const name = sanitizeText(input.name, MAX_FOLDER_NAME_CHARS);
   if (!name) return null;
   const description = sanitizeFolderDescription(input.description ?? '');
@@ -770,23 +784,35 @@ export function applyCreateIdeaFolder(
     createdAt: now,
     updatedAt: now,
   };
-  return { ...data, ideaFolders: [...data.ideaFolders, folder] };
+  return { ...data, collectionFolders: [...data.collectionFolders, folder] };
 }
 
-export function applyUpdateIdeaFolder(
+/** @deprecated Use `applyCreateCollectionFolder`. */
+export const applyCreateIdeaFolder = applyCreateCollectionFolder;
+
+export function applyRenameCollectionFolder(
+  data: CrochetData,
+  folderId: string,
+  name: string,
+  now: number,
+): CrochetData | null {
+  return applyUpdateCollectionFolder(data, folderId, { name }, now);
+}
+
+export function applyUpdateCollectionFolder(
   data: CrochetData,
   folderId: string,
   patch: { name?: string; description?: string },
   now: number,
 ): CrochetData | null {
-  const index = data.ideaFolders.findIndex((folder) => folder.id === folderId);
+  const index = data.collectionFolders.findIndex((folder) => folder.id === folderId);
   if (index < 0) return null;
-  const current = data.ideaFolders[index];
+  const current = data.collectionFolders[index];
   let next = current;
   if (patch.name !== undefined) {
-    const name = sanitizeText(patch.name, MAX_FOLDER_NAME_CHARS);
-    if (!name || name === next.name) return null;
-    next = { ...next, name };
+    const nextName = sanitizeText(patch.name, MAX_FOLDER_NAME_CHARS);
+    if (!nextName || nextName === next.name) return null;
+    next = { ...next, name: nextName };
   }
   if (patch.description !== undefined) {
     const description = sanitizeFolderDescription(patch.description);
@@ -794,15 +820,21 @@ export function applyUpdateIdeaFolder(
     next = { ...next, description };
   }
   if (next === current) return null;
-  const ideaFolders = [...data.ideaFolders];
-  ideaFolders[index] = { ...next, updatedAt: now };
-  return { ...data, ideaFolders };
+  const collectionFolders = [...data.collectionFolders];
+  collectionFolders[index] = { ...next, updatedAt: now };
+  return { ...data, collectionFolders };
 }
 
-export function applyDeleteIdeaFolder(data: CrochetData, folderId: string): CrochetData | null {
-  if (!data.ideaFolders.some((folder) => folder.id === folderId)) return null;
-  return { ...data, ideaFolders: data.ideaFolders.filter((folder) => folder.id !== folderId) };
+/** @deprecated Use `applyUpdateCollectionFolder`. */
+export const applyUpdateIdeaFolder = applyUpdateCollectionFolder;
+
+export function applyDeleteCollectionFolder(data: CrochetData, folderId: string): CrochetData | null {
+  if (!data.collectionFolders.some((folder) => folder.id === folderId)) return null;
+  return { ...data, collectionFolders: data.collectionFolders.filter((folder) => folder.id !== folderId) };
 }
+
+/** @deprecated Use `applyDeleteCollectionFolder`. */
+export const applyDeleteIdeaFolder = applyDeleteCollectionFolder;
 
 export function applyTogglePatternInFolder(
   data: CrochetData,
@@ -811,14 +843,18 @@ export function applyTogglePatternInFolder(
   now: number,
 ): CrochetData | null {
   if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
-  const index = data.ideaFolders.findIndex((folder) => folder.id === folderId);
+  const index = data.collectionFolders.findIndex((folder) => folder.id === folderId);
   if (index < 0) return null;
-  const folder = data.ideaFolders[index];
+  const folder = data.collectionFolders[index];
   const has = folder.patternIds.includes(patternId);
   const patternIds = has ? folder.patternIds.filter((id) => id !== patternId) : [...folder.patternIds, patternId];
-  const ideaFolders = [...data.ideaFolders];
-  ideaFolders[index] = { ...folder, patternIds, updatedAt: now };
-  return { ...data, ideaFolders };
+  const collectionFolders = [...data.collectionFolders];
+  collectionFolders[index] = { ...folder, patternIds, updatedAt: now };
+  let collectedPatternIds = data.collectedPatternIds;
+  if (!has && !collectedPatternIds.includes(patternId)) {
+    collectedPatternIds = [...collectedPatternIds, patternId];
+  }
+  return { ...data, collectionFolders, collectedPatternIds };
 }
 
 export function applyHydrateCloudSlice(
@@ -832,7 +868,8 @@ export function applyHydrateCloudSlice(
   const patterns = mergeCatalogPatternsFromSeed(repaired.patterns, seedCatalog);
   const patternIds = new Set(patterns.map((pattern) => pattern.id));
   const likedPatternIds = repaired.likedPatternIds.filter((id) => patternIds.has(id));
-  const ideaFolders = repaired.ideaFolders.map((folder) => ({
+  const collectedPatternIds = repaired.collectedPatternIds.filter((id) => patternIds.has(id));
+  const collectionFolders = repaired.collectionFolders.map((folder) => ({
     ...folder,
     patternIds: folder.patternIds.filter((id) => patternIds.has(id)),
   }));
@@ -845,7 +882,8 @@ export function applyHydrateCloudSlice(
     progressPhotos: repaired.progressPhotos,
     account: repaired.account ?? data.account,
     likedPatternIds,
-    ideaFolders,
+    collectedPatternIds,
+    collectionFolders,
     tapHistory: data.tapHistory,
   };
   const reconciled = applyReconcileTimers(merged, now);
@@ -1112,7 +1150,15 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
 
   const account = repairAccount(input.account);
   const likedPatternIds = repairLikedPatternIds(input.likedPatternIds, patterns);
-  const ideaFolders = repairIdeaFolders(input.ideaFolders, patterns);
+  const collectionFolders = repairIdeaFolders(
+    'collectionFolders' in input ? input.collectionFolders : input.ideaFolders,
+    patterns,
+  );
+  let collectedPatternIds = repairCollectedPatternIds(input.collectedPatternIds, patterns);
+  if (collectedPatternIds.length === 0 && collectionFolders.length > 0) {
+    const fromFolders = collectionFolders.flatMap((folder) => folder.patternIds);
+    collectedPatternIds = repairCollectedPatternIds(fromFolders, patterns);
+  }
 
   return {
     patterns,
@@ -1122,7 +1168,8 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
     progressPhotos,
     account,
     likedPatternIds,
-    ideaFolders,
+    collectedPatternIds,
+    collectionFolders,
   };
 }
 
@@ -1543,6 +1590,14 @@ function repairAccount(input: unknown): UserAccount | null {
 }
 
 function repairLikedPatternIds(input: unknown, patterns: CrochetPattern[]): string[] {
+  return repairPatternIdList(input, patterns);
+}
+
+function repairCollectedPatternIds(input: unknown, patterns: CrochetPattern[]): string[] {
+  return repairPatternIdList(input, patterns);
+}
+
+function repairPatternIdList(input: unknown, patterns: CrochetPattern[]): string[] {
   const patternIds = new Set(patterns.map((pattern) => pattern.id));
   if (!Array.isArray(input)) return [];
   const seen = new Set<string>();

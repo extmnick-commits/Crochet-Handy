@@ -7,10 +7,11 @@
  */
 import * as Haptics from 'expo-haptics';
 import { useMemo, useState } from 'react';
-import { Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 
+import { SaveToFolderSheet } from '@/components/SaveToFolderSheet';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
@@ -18,7 +19,6 @@ import {
   useCrochetStore,
   type CrochetPattern,
   type CrochetProject,
-  type IdeaFolder,
   type YarnStashItem,
 } from '@/store/useCrochetStore';
 import {
@@ -26,6 +26,7 @@ import {
   creatorInitials,
   difficultyLabel,
   formatHookSize,
+  formatLikeCount,
   formatSpecBadge,
   yarnSizeLabel,
 } from '@/utils/patternDisplay';
@@ -51,16 +52,13 @@ export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetPro
   const yarnStash = useCrochetStore((state) => state.yarnStash);
   const createProject = useCrochetStore((state) => state.createProject);
   const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
-  const ideaFolders = useCrochetStore((state) => state.ideaFolders);
-  const togglePatternInFolder = useCrochetStore((state) => state.togglePatternInFolder);
-  const createIdeaFolder = useCrochetStore((state) => state.createIdeaFolder);
+  const collectionFolders = useCrochetStore((state) => state.collectionFolders);
   const liked = useCrochetStore((state) => (patternId ? selectIsPatternLiked(state, patternId) : false));
   const savedFolders = useMemo(
-    () => (patternId ? ideaFolders.filter((folder) => folder.patternIds.includes(patternId)) : []),
-    [ideaFolders, patternId],
+    () => (patternId ? collectionFolders.filter((folder) => folder.patternIds.includes(patternId)) : []),
+    [collectionFolders, patternId],
   );
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
 
   const swatches = useMemo(
     () => (pattern ? collectSwatches(pattern, projects, yarnStash) : []),
@@ -144,7 +142,9 @@ export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetPro
               ]}
             >
               <HeartIcon color={liked ? Colors.accentPrimary : Colors.textSecondary} filled={liked} size={16} />
-              <Text style={[styles.actionPillText, liked && styles.actionPillTextOn]}>{liked ? 'Liked' : 'Like'}</Text>
+              <Text style={[styles.actionPillText, liked && styles.actionPillTextOn]}>
+                {formatLikeCount(pattern.id, liked)}
+              </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -155,8 +155,9 @@ export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetPro
               }}
               style={({ pressed }) => [styles.actionPill, pressed && styles.pressed, webCursor]}
             >
-              <Text style={styles.actionPillText}>
-                {savedFolders.length > 0 ? `Saved in ${savedFolders.length} folders` : 'Save to Folder'}
+              <FolderIcon color={savedFolders.length > 0 ? Colors.accentPrimary : Colors.textSecondary} />
+              <Text style={[styles.actionPillText, savedFolders.length > 0 && styles.actionPillTextOn]}>
+                {savedFolders.length > 0 ? `${savedFolders.length} folders` : 'Collect'}
               </Text>
             </Pressable>
           </View>
@@ -224,121 +225,25 @@ export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetPro
           </Pressable>
         </View>
       )}
-      {pattern && (
-        <FolderPickerModal
-          visible={folderPickerOpen}
-          patternId={pattern.id}
-          folders={ideaFolders}
-          savedFolderIds={savedFolders.map((folder) => folder.id)}
-          newFolderName={newFolderName}
-          onNewFolderNameChange={setNewFolderName}
-          onToggleFolder={(folderId) => togglePatternInFolder(folderId, pattern.id)}
-          onCreateFolder={() => {
-            const name = newFolderName.trim();
-            if (!name) return;
-            const id = createIdeaFolder({ name });
-            if (id) {
-              togglePatternInFolder(id, pattern.id);
-              setNewFolderName('');
-            }
-          }}
-          onClose={() => setFolderPickerOpen(false)}
-        />
-      )}
+      <SaveToFolderSheet
+        visible={folderPickerOpen}
+        patternId={pattern?.id ?? null}
+        onClose={() => setFolderPickerOpen(false)}
+      />
     </BottomSheet>
   );
 }
 
-function FolderPickerModal({
-  visible,
-  patternId,
-  folders,
-  savedFolderIds,
-  newFolderName,
-  onNewFolderNameChange,
-  onToggleFolder,
-  onCreateFolder,
-  onClose,
-}: {
-  visible: boolean;
-  patternId: string;
-  folders: IdeaFolder[];
-  savedFolderIds: string[];
-  newFolderName: string;
-  onNewFolderNameChange: (value: string) => void;
-  onToggleFolder: (folderId: string) => void;
-  onCreateFolder: () => void;
-  onClose: () => void;
-}) {
+function FolderIcon({ color }: { color: string }) {
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.folderScrim}>
-        <Pressable accessibilityLabel="Close folder picker" style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.folderSheet}>
-          <Text role="heading" aria-level={2} style={styles.folderTitle}>
-            Save to folder
-          </Text>
-          <Text style={styles.folderSubtitle} testID={`folder-picker-${patternId}`}>
-            Toggle folders for this pattern or create a new one.
-          </Text>
-          <View style={styles.newFolderRow}>
-            <TextInput
-              value={newFolderName}
-              onChangeText={onNewFolderNameChange}
-              placeholder="New folder name"
-              placeholderTextColor={Colors.textTertiary}
-              selectionColor={Colors.accentPrimary}
-              style={styles.newFolderInput}
-            />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Create folder"
-              onPress={onCreateFolder}
-              style={({ pressed }) => [styles.newFolderButton, pressed && styles.pressed, webCursor]}
-            >
-              <Text style={styles.newFolderButtonText}>Add</Text>
-            </Pressable>
-          </View>
-          <ScrollView style={styles.folderList} keyboardShouldPersistTaps="handled">
-            {folders.length === 0 ? (
-              <Text style={styles.folderEmpty}>No idea folders yet. Name one above to get started.</Text>
-            ) : (
-              folders.map((folder) => {
-                const selected = savedFolderIds.includes(folder.id);
-                return (
-                  <Pressable
-                    key={folder.id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => {
-                      tick();
-                      onToggleFolder(folder.id);
-                    }}
-                    style={({ pressed }) => [
-                      styles.folderRow,
-                      selected && styles.folderRowOn,
-                      pressed && styles.pressed,
-                      webCursor,
-                    ]}
-                  >
-                    <Text style={styles.folderRowTitle}>{folder.name}</Text>
-                    <Text style={styles.folderRowMeta}>{folder.patternIds.length} patterns</Text>
-                  </Pressable>
-                );
-              })
-            )}
-          </ScrollView>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Done"
-            onPress={onClose}
-            style={({ pressed }) => [styles.folderDone, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.folderDoneText}>Done</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 8.5 A2 2 0 0 1 6 6.5 H10 L12 9 H18 A2 2 0 0 1 20 11 V18.5 A2 2 0 0 1 18 20.5 H6 A2 2 0 0 1 4 18.5 V8.5 Z"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 

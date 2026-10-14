@@ -1665,6 +1665,7 @@ export function createSeedData(): CrochetPersistedSlice {
     progressPhotos: [],
     account: null,
     likedPatternIds: [],
-    ideaFolders: [],
+    collectedPatternIds: [],
+    collectionFolders: [],
   };
 }

@@ -1,52 +1,87 @@
 /**
- * Me — profile stats, saved patterns, and story reels.
+ * Me — profile, Collections | Likes library, stash, and progress stories.
  */
 import * as Haptics from 'expo-haptics';
 import { signOut } from 'firebase/auth';
 import { useEffect, useMemo, useState } from 'react';
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Path } from 'react-native-svg';
 
+import { AddYarnModal } from '@/components/AddYarnModal';
 import { AuthAccountModal } from '@/components/AuthAccountModal';
+import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
   elapsedSeconds,
+  MAX_SKEINS,
   stitchesDone,
   useCrochetStore,
+  type CrochetPattern,
   type IdeaFolder,
   type UserAccount,
-  type CrochetPattern,
+  type YarnStashItem,
 } from '@/store/useCrochetStore';
 import { auth, isFirebaseConfigured } from '@/utils/firebase';
-import { creatorInitials, yarnWeightMeta } from '@/utils/patternDisplay';
+import {
+  creatorInitials,
+  matchesPatternQuery,
+  MASONRY_TEXT_BLOCK,
+  packMasonryColumns,
+  yarnWeightMeta,
+} from '@/utils/patternDisplay';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
 
-type LibraryTab = 'stories' | 'folders';
+type LibraryPill = 'collections' | 'likes';
+type CollectionSubTab = 'patterns' | 'folders' | 'yarn' | 'stories';
 
 export default function MeScreen() {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const projects = useCrochetStore((state) => state.projects);
   const patterns = useCrochetStore((state) => state.patterns);
   const progressPhotos = useCrochetStore((state) => state.progressPhotos);
   const account = useCrochetStore((state) => state.account);
+  const yarnStash = useCrochetStore((state) => state.yarnStash);
   const likedPatternIds = useCrochetStore((state) => state.likedPatternIds);
-  const ideaFolders = useCrochetStore((state) => state.ideaFolders);
-  const createIdeaFolder = useCrochetStore((state) => state.createIdeaFolder);
-  const deleteIdeaFolder = useCrochetStore((state) => state.deleteIdeaFolder);
+  const collectedPatternIds = useCrochetStore((state) => state.collectedPatternIds);
+  const collectionFolders = useCrochetStore((state) => state.collectionFolders);
+  const createCollectionFolder = useCrochetStore((state) => state.createCollectionFolder);
+  const renameCollectionFolder = useCrochetStore((state) => state.renameCollectionFolder);
+  const deleteCollectionFolder = useCrochetStore((state) => state.deleteCollectionFolder);
   const togglePatternInFolder = useCrochetStore((state) => state.togglePatternInFolder);
   const setAccount = useCrochetStore((state) => state.setAccount);
-  const [tab, setTab] = useState<LibraryTab>('stories');
+
+  const [libraryPill, setLibraryPill] = useState<LibraryPill>('collections');
+  const [collectionSubTab, setCollectionSubTab] = useState<CollectionSubTab>('patterns');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'sign-in' | 'create' | 'edit'>('sign-in');
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderDescription, setNewFolderDescription] = useState('');
   const [openFolderId, setOpenFolderId] = useState<string | null>(null);
+  const [renameFolderOpen, setRenameFolderOpen] = useState(false);
+  const [renameFolderName, setRenameFolderName] = useState('');
+  const [addPatternsOpen, setAddPatternsOpen] = useState(false);
   const [patternId, setPatternId] = useState<string | null>(null);
   const [storyProjectId, setStoryProjectId] = useState<string | null>(null);
+  const [yarnModalOpen, setYarnModalOpen] = useState(false);
+
   const running = projects.some((project) => project.timerStartedAt != null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -82,10 +117,64 @@ export default function MeScreen() {
     });
   }, [progressPhotos, projects]);
 
+  const collectedPatterns = useMemo(
+    () =>
+      collectedPatternIds
+        .map((id) => patterns.find((pattern) => pattern.id === id))
+        .filter((item): item is CrochetPattern => item != null),
+    [collectedPatternIds, patterns],
+  );
+
   const likedPatterns = useMemo(
-    () => likedPatternIds.map((id) => patterns.find((pattern) => pattern.id === id)).filter((item) => item != null),
+    () =>
+      likedPatternIds
+        .map((id) => patterns.find((pattern) => pattern.id === id))
+        .filter((item): item is CrochetPattern => item != null),
     [likedPatternIds, patterns],
   );
+
+  const openFolder = openFolderId ? collectionFolders.find((folder) => folder.id === openFolderId) ?? null : null;
+
+  const filterPatterns = (list: CrochetPattern[]) => {
+    const q = searchQuery.trim();
+    if (!q) return list;
+    return list.filter((pattern) => matchesPatternQuery(pattern, q));
+  };
+
+  const filterFolders = (list: IdeaFolder[]) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      (folder) =>
+        folder.name.toLowerCase().includes(q) ||
+        folder.description.toLowerCase().includes(q) ||
+        folder.patternIds.some((id) => {
+          const pattern = patterns.find((item) => item.id === id);
+          return pattern ? matchesPatternQuery(pattern, searchQuery) : false;
+        }),
+    );
+  };
+
+  const masonryPatterns = useMemo(() => {
+    const q = searchQuery.trim();
+    const applyQuery = (list: CrochetPattern[]) =>
+      q ? list.filter((pattern) => matchesPatternQuery(pattern, q)) : list;
+
+    if (libraryPill === 'likes') return applyQuery(likedPatterns);
+    if (openFolder) {
+      const inFolder = openFolder.patternIds
+        .map((id) => patterns.find((pattern) => pattern.id === id))
+        .filter((item): item is CrochetPattern => item != null);
+      return applyQuery(inFolder);
+    }
+    if (collectionSubTab === 'patterns') return applyQuery(collectedPatterns);
+    return [];
+  }, [libraryPill, likedPatterns, collectedPatterns, collectionSubTab, openFolder, patterns, searchQuery]);
+
+  const innerWidth = Math.max(0, windowWidth - insets.left - insets.right);
+  const columnWidth = Math.floor((innerWidth - Layout.screenGutter * 2 - Layout.cardGap) / 2);
+  const columns =
+    columnWidth > 0 ? packMasonryColumns(masonryPatterns, columnWidth, MASONRY_TEXT_BLOCK, Spacing.md) : [[], []];
 
   const onSignOut = async () => {
     tick();
@@ -100,29 +189,20 @@ export default function MeScreen() {
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
+    <View style={[styles.screen, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.header}>
-          <Text role="heading" aria-level={1} style={styles.title}>
-            Me
-          </Text>
-          <Text style={styles.subtitle}>Profile & library</Text>
-        </View>
-
-        <View style={styles.stats}>
-          <Stat testID="stat-hours" value={formatHours(totalSeconds)} label="Total hours crocheted" />
-          <Stat testID="stat-completed" value={String(completed)} label="Completed projects" />
-          <Stat testID="stat-stitches" value={stitches.toLocaleString()} label="Total stitches" />
-        </View>
-
-        <AccountProfileCard
+        <ProfileAccountBar
           account={account}
           firebaseReady={isFirebaseConfigured()}
+          hours={formatHours(totalSeconds)}
+          completed={completed}
+          stitches={stitches}
           onSignIn={() => {
             setAuthMode('sign-in');
             setAuthOpen(true);
@@ -134,66 +214,219 @@ export default function MeScreen() {
           onSignOut={() => void onSignOut()}
         />
 
-        <View accessibilityRole="tablist" style={styles.segment}>
-          <Segment
-            testID="patterns-stories-tab"
-            label="Saved Patterns & Stories"
-            selected={tab === 'stories'}
-            onPress={() => {
-              tick();
-              setTab('stories');
-            }}
-          />
-          <Segment
-            testID="folders-likes-tab"
-            label="Folders & Likes"
-            selected={tab === 'folders'}
-            onPress={() => {
-              tick();
-              setTab('folders');
-            }}
-          />
-        </View>
+        <LibraryHeaderBar
+          libraryPill={libraryPill}
+          onPillChange={(pill) => {
+            tick();
+            setLibraryPill(pill);
+            setOpenFolderId(null);
+          }}
+          searchOpen={searchOpen}
+          onToggleSearch={() => {
+            tick();
+            setSearchOpen((open) => !open);
+          }}
+        />
 
-        {tab === 'stories' ? (
-          <View style={styles.section}>
-            <Text role="heading" aria-level={2} style={styles.sectionTitle}>
-              Saved patterns
-            </Text>
-            {patterns.length === 0 ? (
-              <Text style={styles.empty}>Patterns you save from the feed show up here.</Text>
-            ) : (
-              patterns.map((pattern) => (
+        {searchOpen ? (
+          <View style={styles.searchPill}>
+            <SearchIcon color={Colors.textSecondary} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={libraryPill === 'likes' ? 'Search liked patterns' : 'Search library'}
+              placeholderTextColor={Colors.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              selectionColor={Colors.accentPrimary}
+              style={styles.searchInput}
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearchQuery('')}>
+                <Text style={styles.clearGlyph}>×</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {libraryPill === 'collections' && !openFolder ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryScroll}
+            contentContainerStyle={styles.categoryContent}
+          >
+            {(
+              [
+                ['patterns', 'Patterns'],
+                ['folders', 'Folders'],
+                ['yarn', 'Yarn Stash'],
+                ['stories', 'Stories'],
+              ] as const
+            ).map(([id, label]) => {
+              const selected = collectionSubTab === id;
+              return (
                 <Pressable
-                  key={pattern.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={pattern.title}
+                  key={id}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
                   onPress={() => {
                     tick();
-                    setPatternId(pattern.id);
+                    setCollectionSubTab(id);
                   }}
-                  style={({ pressed }) => [styles.patternRow, pressed && styles.pressed, webCursor]}
+                  style={({ pressed }) => [styles.categoryTab, pressed && styles.pressed, webCursor]}
                 >
-                  <Image
-                    accessible={false}
-                    source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-                    style={styles.patternThumb}
-                  />
-                  <View style={styles.patternCopy}>
-                    <Text numberOfLines={2} style={styles.patternTitle}>
-                      {pattern.title}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.patternMeta}>
-                      {pattern.creator} · {yarnWeightMeta(pattern.yarnWeight).label} {yarnWeightMeta(pattern.yarnWeight).number}
-                    </Text>
-                  </View>
+                  <Text style={[styles.categoryLabel, selected && styles.categoryLabelActive]}>{label}</Text>
+                  <View style={[styles.categoryIndicator, selected && styles.categoryIndicatorActive]} />
                 </Pressable>
-              ))
-            )}
+              );
+            })}
+          </ScrollView>
+        ) : null}
 
-            <Text role="heading" aria-level={2} style={styles.sectionTitle}>
-              Stories
+        {libraryPill === 'collections' && openFolder ? (
+          <View style={styles.folderDrillHeader}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back to folders"
+              onPress={() => {
+                tick();
+                setOpenFolderId(null);
+              }}
+              style={({ pressed }) => [styles.backLink, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.backLinkText}>‹ Back to Folders</Text>
+            </Pressable>
+            <Text role="heading" aria-level={2} style={styles.folderDrillTitle}>
+              {openFolder.name}
             </Text>
+            <View style={styles.folderDrillActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add patterns to folder"
+                onPress={() => {
+                  tick();
+                  setAddPatternsOpen(true);
+                }}
+                style={({ pressed }) => [styles.secondaryPill, pressed && styles.pressed, webCursor]}
+              >
+                <Text style={styles.secondaryPillText}>+ Add Patterns</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Rename folder"
+                onPress={() => {
+                  tick();
+                  setRenameFolderName(openFolder.name);
+                  setRenameFolderOpen(true);
+                }}
+                style={({ pressed }) => [styles.ghostPill, pressed && styles.pressed, webCursor]}
+              >
+                <Text style={styles.ghostPillText}>Rename</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Delete folder"
+                onPress={() => {
+                  tick();
+                  deleteCollectionFolder(openFolder.id);
+                  setOpenFolderId(null);
+                }}
+                style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+              >
+                <Text style={styles.dangerText}>Delete</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {libraryPill === 'likes' || collectionSubTab === 'patterns' || openFolder ? (
+          <PatternMasonrySection
+            patterns={masonryPatterns}
+            columns={columns}
+            columnWidth={columnWidth}
+            emptyTitle={
+              libraryPill === 'likes'
+                ? 'No liked patterns yet'
+                : openFolder
+                  ? 'No patterns in this folder'
+                  : 'No saved patterns yet'
+            }
+            emptyBody={
+              libraryPill === 'likes'
+                ? 'Tap the heart on any pattern in the feed to save it here.'
+                : openFolder
+                  ? 'Use + Add Patterns to fill this folder from your collection.'
+                  : 'Collect patterns from the feed or save them into folders.'
+            }
+            forceLikedVisual={libraryPill === 'likes'}
+            onOpenPattern={(id) => {
+              tick();
+              setPatternId(id);
+            }}
+          />
+        ) : null}
+
+        {libraryPill === 'collections' && collectionSubTab === 'folders' && !openFolder ? (
+          <View style={styles.section}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="New folder"
+              onPress={() => {
+                tick();
+                setFolderModalOpen(true);
+              }}
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.primaryButtonText}>+ New Folder</Text>
+            </Pressable>
+            {filterFolders(collectionFolders).length === 0 ? (
+              <Text style={styles.empty}>
+                {collectionFolders.length === 0
+                  ? 'Create folders for gifts, seasonal makes, or works in progress.'
+                  : 'No folders match your search.'}
+              </Text>
+            ) : (
+              <View style={styles.folderGrid}>
+                {filterFolders(collectionFolders).map((folder) => (
+                  <FolderTile
+                    key={folder.id}
+                    folder={folder}
+                    patterns={patterns}
+                    onPress={() => {
+                      tick();
+                      setOpenFolderId(folder.id);
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+        ) : null}
+
+        {libraryPill === 'collections' && collectionSubTab === 'yarn' ? (
+          <View style={styles.section}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add yarn to stash"
+              onPress={() => {
+                tick();
+                setYarnModalOpen(true);
+              }}
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.primaryButtonText}>+ Add Yarn to Stash</Text>
+            </Pressable>
+            {yarnStash.length === 0 ? (
+              <Text style={styles.empty}>Track brand, color, and skein counts for yarn on your shelf.</Text>
+            ) : (
+              yarnStash.map((item) => <YarnCard key={item.id} item={item} />)
+            )}
+          </View>
+        ) : null}
+
+        {libraryPill === 'collections' && collectionSubTab === 'stories' ? (
+          <View style={styles.section}>
             {stories.length === 0 ? (
               <Text style={styles.empty}>Snap a progress photo on the Active tab and the reel will land here.</Text>
             ) : (
@@ -214,11 +447,11 @@ export default function MeScreen() {
                   ) : (
                     <View style={[styles.storyCover, styles.storyCoverEmpty]} />
                   )}
-                  <View style={styles.patternCopy}>
-                    <Text numberOfLines={1} style={styles.patternTitle}>
+                  <View style={styles.storyCopy}>
+                    <Text numberOfLines={1} style={styles.storyTitle}>
                       {story.name}
                     </Text>
-                    <Text style={styles.patternMeta}>
+                    <Text style={styles.storyMeta}>
                       {story.count} {story.count === 1 ? 'still' : 'stills'} · Row {story.latestRow}/{story.totalRows}
                     </Text>
                   </View>
@@ -227,87 +460,7 @@ export default function MeScreen() {
               ))
             )}
           </View>
-        ) : (
-          <View style={styles.section}>
-            <Text role="heading" aria-level={2} style={styles.sectionTitle}>
-              Idea folders
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="New idea folder"
-              onPress={() => {
-                tick();
-                setFolderModalOpen(true);
-              }}
-              style={({ pressed }) => [styles.addButton, pressed && styles.pressed, webCursor]}
-            >
-              <Text style={styles.addButtonText}>+ New Idea Folder</Text>
-            </Pressable>
-            {ideaFolders.length === 0 ? (
-              <Text style={styles.empty}>Save patterns from the feed into folders to plan your next makes.</Text>
-            ) : (
-              ideaFolders.map((folder) => (
-                <FolderCard
-                  key={folder.id}
-                  folder={folder}
-                  patterns={patterns}
-                  expanded={openFolderId === folder.id}
-                  onToggle={() => {
-                    tick();
-                    setOpenFolderId((current) => (current === folder.id ? null : folder.id));
-                  }}
-                  onOpenPattern={(id) => {
-                    tick();
-                    setPatternId(id);
-                  }}
-                  onRemovePattern={(patternIdToRemove) => {
-                    tick();
-                    togglePatternInFolder(folder.id, patternIdToRemove);
-                  }}
-                  onDelete={() => {
-                    tick();
-                    deleteIdeaFolder(folder.id);
-                    if (openFolderId === folder.id) setOpenFolderId(null);
-                  }}
-                />
-              ))
-            )}
-
-            <Text role="heading" aria-level={2} style={styles.sectionTitle}>
-              Liked patterns
-            </Text>
-            {likedPatterns.length === 0 ? (
-              <Text style={styles.empty}>Tap the heart on any tutorial in Patterns to collect it here.</Text>
-            ) : (
-              likedPatterns.map((pattern) => (
-                <Pressable
-                  key={pattern.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={pattern.title}
-                  onPress={() => {
-                    tick();
-                    setPatternId(pattern.id);
-                  }}
-                  style={({ pressed }) => [styles.patternRow, pressed && styles.pressed, webCursor]}
-                >
-                  <Image
-                    accessible={false}
-                    source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-                    style={styles.patternThumb}
-                  />
-                  <View style={styles.patternCopy}>
-                    <Text numberOfLines={2} style={styles.patternTitle}>
-                      {pattern.title}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.patternMeta}>
-                      {pattern.creator}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))
-            )}
-          </View>
-        )}
+        ) : null}
       </ScrollView>
 
       <BottomSheet
@@ -316,9 +469,9 @@ export default function MeScreen() {
         header={
           <View style={styles.sheetHeader}>
             <Text role="heading" aria-level={2} style={styles.sheetTitle}>
-              New idea folder
+              New folder
             </Text>
-            <Text style={styles.sheetSubtitle}>Group patterns you want to try next.</Text>
+            <Text style={styles.sheetSubtitle}>Group patterns for your next makes.</Text>
           </View>
         }
         footer={
@@ -328,14 +481,15 @@ export default function MeScreen() {
             onPress={() => {
               const name = newFolderName.trim();
               if (!name) return;
-              createIdeaFolder({ name, description: newFolderDescription.trim() });
+              createCollectionFolder({ name, description: newFolderDescription.trim() });
               setNewFolderName('');
               setNewFolderDescription('');
               setFolderModalOpen(false);
+              setCollectionSubTab('folders');
             }}
-            style={({ pressed }) => [styles.addButton, pressed && styles.pressed, webCursor]}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
           >
-            <Text style={styles.addButtonText}>Create folder</Text>
+            <Text style={styles.primaryButtonText}>Create folder</Text>
           </Pressable>
         }
       >
@@ -344,7 +498,7 @@ export default function MeScreen() {
           <TextInput
             value={newFolderName}
             onChangeText={setNewFolderName}
-            placeholder="Weekend amigurumi"
+            placeholder="Amigurumi gifts"
             placeholderTextColor={Colors.textTertiary}
             selectionColor={Colors.accentPrimary}
             style={styles.sheetInput}
@@ -362,6 +516,85 @@ export default function MeScreen() {
         </View>
       </BottomSheet>
 
+      <BottomSheet
+        visible={renameFolderOpen && openFolder != null}
+        onClose={() => setRenameFolderOpen(false)}
+        header={
+          <Text role="heading" aria-level={2} style={styles.sheetTitle}>
+            Rename folder
+          </Text>
+        }
+        footer={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Save folder name"
+            onPress={() => {
+              if (!openFolder) return;
+              const name = renameFolderName.trim();
+              if (!name) return;
+              renameCollectionFolder(openFolder.id, name);
+              setRenameFolderOpen(false);
+            }}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.primaryButtonText}>Save</Text>
+          </Pressable>
+        }
+      >
+        <TextInput
+          value={renameFolderName}
+          onChangeText={setRenameFolderName}
+          placeholder="Folder name"
+          placeholderTextColor={Colors.textTertiary}
+          selectionColor={Colors.accentPrimary}
+          style={styles.sheetInput}
+        />
+      </BottomSheet>
+
+      <BottomSheet
+        visible={addPatternsOpen && openFolder != null}
+        onClose={() => setAddPatternsOpen(false)}
+        header={
+          <Text role="heading" aria-level={2} style={styles.sheetTitle}>
+            Add patterns
+          </Text>
+        }
+      >
+        {openFolder ? (
+          <ScrollView style={styles.addPatternList} nestedScrollEnabled>
+            {collectedPatterns.length === 0 ? (
+              <Text style={styles.empty}>Collect patterns first from the Patterns tab or detail sheet.</Text>
+            ) : (
+              collectedPatterns.map((pattern) => {
+                const inFolder = openFolder.patternIds.includes(pattern.id);
+                return (
+                  <Pressable
+                    key={pattern.id}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: inFolder }}
+                    onPress={() => {
+                      tick();
+                      togglePatternInFolder(openFolder.id, pattern.id);
+                    }}
+                    style={({ pressed }) => [styles.addPatternRow, inFolder && styles.addPatternRowOn, pressed && styles.pressed, webCursor]}
+                  >
+                    <Image
+                      accessible={false}
+                      source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
+                      style={styles.addPatternThumb}
+                    />
+                    <Text numberOfLines={2} style={styles.addPatternTitle}>
+                      {pattern.title}
+                    </Text>
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        ) : null}
+      </BottomSheet>
+
+      <AddYarnModal visible={yarnModalOpen} onClose={() => setYarnModalOpen(false)} />
       <AuthAccountModal visible={authOpen} initialMode={authMode} onClose={() => setAuthOpen(false)} />
       <PatternDetailSheet patternId={patternId} onClose={() => setPatternId(null)} />
       <PhotoProgressModal
@@ -374,223 +607,264 @@ export default function MeScreen() {
   );
 }
 
-function AccountProfileCard({
+function ProfileAccountBar({
   account,
   firebaseReady,
+  hours,
+  completed,
+  stitches,
   onSignIn,
   onEdit,
   onSignOut,
 }: {
   account: UserAccount | null;
   firebaseReady: boolean;
+  hours: string;
+  completed: number;
+  stitches: number;
   onSignIn: () => void;
   onEdit: () => void;
   onSignOut: () => void;
 }) {
-  if (!account) {
-    return (
-      <View style={styles.profileCard}>
-        <Text style={styles.profileTitle}>Back up your crochet progress</Text>
-        <Text style={styles.profileBody}>
-          Sign in to sync projects, liked tutorials, and idea folders across devices.
-        </Text>
-        {!firebaseReady ? (
-          <Text style={styles.profileNote}>
-            Firebase keys are not configured yet — you can still create a local profile below.
-          </Text>
-        ) : null}
+  return (
+    <View style={styles.profileBar}>
+      {account ? (
+        <View style={styles.profileRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Edit profile"
+            onPress={onEdit}
+            style={({ pressed }) => [styles.profileIdentity, pressed && styles.pressed, webCursor]}
+          >
+            <View style={[styles.profileAvatar, { backgroundColor: account.avatarColor }]}>
+              <Text style={styles.profileAvatarText}>{creatorInitials(account.displayName)}</Text>
+            </View>
+            <View style={styles.profileCopy}>
+              <Text numberOfLines={1} style={styles.profileName}>{account.displayName}</Text>
+              <Text numberOfLines={1} style={styles.profileHandle}>@{account.username}</Text>
+            </View>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={onSignOut} hitSlop={Layout.hitSlop}>
+            <Text style={styles.signOutLink}>Sign out</Text>
+          </Pressable>
+        </View>
+      ) : (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Sign in or create account"
           onPress={onSignIn}
-          style={({ pressed }) => [styles.addButton, pressed && styles.pressed, webCursor]}
+          style={({ pressed }) => [styles.signInCta, pressed && styles.pressed, webCursor]}
         >
-          <Text style={styles.addButtonText}>Sign In / Create Account</Text>
+          <Text style={styles.signInCtaText}>Sign In / Create Account</Text>
+          {!firebaseReady ? (
+            <Text style={styles.profileNote}>Firebase not configured — local profile only.</Text>
+          ) : null}
         </Pressable>
-      </View>
-    );
-  }
-
-  const cloudLabel = firebaseReady && !account.uid.startsWith('local-') ? 'Cloud sync on' : 'Local profile';
-
-  return (
-    <View style={styles.profileCard}>
-      <View style={styles.profileHeader}>
-        <View style={[styles.profileAvatar, { backgroundColor: account.avatarColor }]}>
-          <Text style={styles.profileAvatarText}>{creatorInitials(account.displayName)}</Text>
-        </View>
-        <View style={styles.profileCopy}>
-          <Text style={styles.profileName}>{account.displayName}</Text>
-          <Text style={styles.profileHandle}>@{account.username}</Text>
-          <Text style={styles.profileEmail}>{account.email}</Text>
-        </View>
-      </View>
-      {account.bio ? <Text style={styles.profileBio}>{account.bio}</Text> : null}
-      <View style={styles.syncBadge}>
-        <Text style={styles.syncBadgeText}>{cloudLabel}</Text>
-      </View>
-      <View style={styles.profileActions}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Edit profile"
-          onPress={onEdit}
-          style={({ pressed }) => [styles.profileButton, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.profileButtonText}>Edit Profile</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Sign out"
-          onPress={onSignOut}
-          style={({ pressed }) => [styles.profileButtonGhost, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.profileButtonGhostText}>Sign Out</Text>
-        </Pressable>
+      )}
+      <View style={styles.statPills}>
+        <MiniStat label="Hours" value={hours} />
+        <MiniStat label="Completed" value={String(completed)} />
+        <MiniStat label="Stitches" value={stitches.toLocaleString()} />
       </View>
     </View>
   );
 }
 
-function FolderCard({
-  folder,
-  patterns,
-  expanded,
-  onToggle,
-  onOpenPattern,
-  onRemovePattern,
-  onDelete,
-}: {
-  folder: IdeaFolder;
-  patterns: CrochetPattern[];
-  expanded: boolean;
-  onToggle: () => void;
-  onOpenPattern: (patternId: string) => void;
-  onRemovePattern: (patternId: string) => void;
-  onDelete: () => void;
-}) {
-  const preview = folder.patternIds
-    .slice(0, 3)
-    .map((id) => patterns.find((pattern) => pattern.id === id))
-    .filter((item): item is CrochetPattern => item != null);
-
-  const saved = folder.patternIds
-    .map((id) => patterns.find((pattern) => pattern.id === id))
-    .filter((item): item is CrochetPattern => item != null);
-
+function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.folderCard}>
+    <View style={styles.miniStat}>
+      <Text style={styles.miniStatValue}>{value}</Text>
+      <Text style={styles.miniStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function LibraryHeaderBar({
+  libraryPill,
+  onPillChange,
+  searchOpen,
+  onToggleSearch,
+}: {
+  libraryPill: LibraryPill;
+  onPillChange: (pill: LibraryPill) => void;
+  searchOpen: boolean;
+  onToggleSearch: () => void;
+}) {
+  return (
+    <View style={styles.libraryHeader}>
+      <View style={styles.libraryHeaderSide} />
+      <View accessibilityRole="tablist" style={styles.topPill}>
+        <TopPillTab label="Collections" selected={libraryPill === 'collections'} onPress={() => onPillChange('collections')} />
+        <TopPillTab label="Likes" selected={libraryPill === 'likes'} onPress={() => onPillChange('likes')} />
+      </View>
       <Pressable
         accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        onPress={onToggle}
-        style={({ pressed }) => [styles.folderCardHeader, pressed && styles.pressed, webCursor]}
+        accessibilityLabel={searchOpen ? 'Close search' : 'Search library'}
+        accessibilityState={{ expanded: searchOpen }}
+        onPress={onToggleSearch}
+        style={({ pressed }) => [styles.searchButton, pressed && styles.pressed, webCursor]}
       >
-        <View style={styles.folderCardCopy}>
-          <Text style={styles.folderCardTitle}>{folder.name}</Text>
-          {folder.description ? (
-            <Text numberOfLines={2} style={styles.folderCardDescription}>
-              {folder.description}
-            </Text>
-          ) : null}
-          <Text style={styles.folderCardMeta}>
-            {folder.patternIds.length} {folder.patternIds.length === 1 ? 'pattern' : 'patterns'}
-          </Text>
-        </View>
-        <View style={styles.folderPreviewStrip}>
-          {preview.length === 0 ? (
-            <View style={styles.folderPreviewEmpty} />
-          ) : (
-            preview.map((pattern) => (
-              <Image
-                key={pattern.id}
-                accessible={false}
-                source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-                style={styles.folderPreviewThumb}
-              />
-            ))
-          )}
-        </View>
+        <SearchIcon color={searchOpen ? Colors.accentPrimary : Colors.textPrimary} />
       </Pressable>
-      {expanded ? (
-        <View style={styles.folderExpanded}>
-          {saved.length === 0 ? (
-            <Text style={styles.empty}>No patterns in this folder yet.</Text>
-          ) : (
-            saved.map((pattern) => (
-              <View key={pattern.id} style={styles.folderPatternRow}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={pattern.title}
-                  onPress={() => onOpenPattern(pattern.id)}
-                  style={({ pressed }) => [styles.patternRow, pressed && styles.pressed, webCursor, { flex: 1 }]}
-                >
-                  <Image
-                    accessible={false}
-                    source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-                    style={styles.patternThumb}
-                  />
-                  <View style={styles.patternCopy}>
-                    <Text numberOfLines={2} style={styles.patternTitle}>
-                      {pattern.title}
-                    </Text>
-                  </View>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Remove from folder"
-                  onPress={() => onRemovePattern(pattern.id)}
-                  hitSlop={Layout.hitSlop}
-                  style={({ pressed }) => [pressed && styles.pressed, webCursor]}
-                >
-                  <Text style={styles.remove}>Remove</Text>
-                </Pressable>
-              </View>
-            ))
-          )}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Delete folder"
-            onPress={onDelete}
-            style={({ pressed }) => [pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.remove}>Delete folder</Text>
-          </Pressable>
-        </View>
-      ) : null}
     </View>
   );
 }
 
-function Stat({ testID, value, label }: { testID: string; value: string; label: string }) {
-  return (
-    <View style={styles.stat} testID={testID}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function Segment({
-  testID,
-  label,
-  selected,
-  onPress,
-}: {
-  testID: string;
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
+function TopPillTab({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="tab"
       accessibilityState={{ selected }}
-      testID={testID}
       onPress={onPress}
-      style={({ pressed }) => [styles.segmentItem, selected && styles.segmentItemOn, pressed && styles.pressed, webCursor]}
+      style={({ pressed }) => [styles.topPillTab, selected && styles.topPillTabOn, pressed && styles.pressed, webCursor]}
     >
-      <Text style={[styles.segmentText, selected && styles.segmentTextOn]}>{label}</Text>
+      <Text style={[styles.topPillText, selected && styles.topPillTextOn]}>{label}</Text>
     </Pressable>
+  );
+}
+
+function PatternMasonrySection({
+  patterns: patternList,
+  columns,
+  columnWidth,
+  emptyTitle,
+  emptyBody,
+  forceLikedVisual,
+  onOpenPattern,
+}: {
+  patterns: CrochetPattern[];
+  columns: { pattern: CrochetPattern; imageHeight: number }[][] ;
+  columnWidth: number;
+  emptyTitle: string;
+  emptyBody: string;
+  forceLikedVisual?: boolean;
+  onOpenPattern: (id: string) => void;
+}) {
+  if (patternList.length === 0) {
+    return (
+      <View style={styles.emptyBlock}>
+        <Text style={styles.emptyTitle}>{emptyTitle}</Text>
+        <Text style={styles.empty}>{emptyBody}</Text>
+      </View>
+    );
+  }
+  if (columnWidth <= 0) return null;
+  return (
+    <View style={styles.masonry}>
+      {columns.map((column, columnIndex) => (
+        <View key={columnIndex} style={[styles.column, { width: columnWidth }]}>
+          {column.map(({ pattern, imageHeight }) => (
+            <PatternFeedCard
+              key={pattern.id}
+              pattern={pattern}
+              imageHeight={imageHeight}
+              forceLikedVisual={forceLikedVisual}
+              onPress={() => onOpenPattern(pattern.id)}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function FolderTile({
+  folder,
+  patterns,
+  onPress,
+}: {
+  folder: IdeaFolder;
+  patterns: CrochetPattern[];
+  onPress: () => void;
+}) {
+  const thumbs = folder.patternIds
+    .slice(0, 4)
+    .map((id) => patterns.find((pattern) => pattern.id === id))
+    .filter((item): item is CrochetPattern => item != null);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${folder.name}, ${folder.patternIds.length} patterns`}
+      onPress={onPress}
+      style={({ pressed }) => [styles.folderTile, pressed && styles.pressed, webCursor]}
+    >
+      <View style={styles.folderCollage}>
+        {thumbs.length === 0 ? (
+          <View style={styles.folderCollageEmpty} />
+        ) : (
+          thumbs.map((pattern, index) => (
+            <Image
+              key={pattern.id}
+              accessible={false}
+              source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
+              style={[styles.folderCollageCell, index % 2 === 1 && styles.folderCollageCellRight]}
+            />
+          ))
+        )}
+      </View>
+      <Text numberOfLines={2} style={styles.folderTileTitle}>{folder.name}</Text>
+      <Text style={styles.folderTileMeta}>
+        {folder.patternIds.length} {folder.patternIds.length === 1 ? 'pattern' : 'patterns'}
+      </Text>
+    </Pressable>
+  );
+}
+
+function YarnCard({ item }: { item: YarnStashItem }) {
+  const updateStashItem = useCrochetStore((state) => state.updateStashItem);
+  const removeStashItem = useCrochetStore((state) => state.removeStashItem);
+  const meta = yarnWeightMeta(item.yarnWeight);
+
+  return (
+    <View style={styles.yarnCard}>
+      <View style={[styles.yarnSwatch, { backgroundColor: item.hexColor }]} />
+      <View style={styles.yarnCopy}>
+        <Text style={styles.yarnTitle}>{item.colorName}</Text>
+        <Text style={styles.yarnMeta}>
+          {item.brand} · {meta.label} {meta.number} · {item.hookSize}
+        </Text>
+      </View>
+      <View style={styles.stepper}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Fewer skeins"
+          disabled={item.skeinCount <= 1}
+          onPress={() => updateStashItem(item.id, { skeinCount: item.skeinCount - 1 })}
+          style={({ pressed }) => [styles.step, item.skeinCount <= 1 && styles.stepDisabled, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.stepText}>−</Text>
+        </Pressable>
+        <Text style={styles.stepValue}>{item.skeinCount}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="More skeins"
+          disabled={item.skeinCount >= MAX_SKEINS}
+          onPress={() => updateStashItem(item.id, { skeinCount: item.skeinCount + 1 })}
+          style={({ pressed }) => [styles.step, item.skeinCount >= MAX_SKEINS && styles.stepDisabled, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.stepText}>+</Text>
+        </Pressable>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Remove yarn from stash"
+        onPress={() => removeStashItem(item.id)}
+        hitSlop={Layout.hitSlop}
+        style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+      >
+        <Text style={styles.dangerText}>Remove</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function SearchIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Circle cx={11} cy={11} r={6.5} stroke={color} strokeWidth={1.8} />
+      <Path d="M16 16 L20.5 20.5" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
   );
 }
 
@@ -601,10 +875,9 @@ function formatHours(totalSeconds: number): string {
   return Math.round(hours).toLocaleString();
 }
 
-function tick(kind: 'selection' | 'impact' = 'selection') {
+function tick() {
   if (Platform.OS === 'web') return;
-  if (kind === 'impact') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  else void Haptics.selectionAsync();
+  void Haptics.selectionAsync();
 }
 
 const webCursor = Platform.OS === 'web' ? ({ cursor: 'pointer' } as const) : null;
@@ -621,107 +894,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: Layout.screenGutter,
     paddingTop: Spacing.sm,
     paddingBottom: Spacing.xxxl,
-    gap: Spacing.lg,
+    gap: Spacing.md,
   },
-  header: {
-    gap: Spacing.xxs,
+  profileBar: {
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.cardSurface,
   },
-  title: {
-    ...Typography.title,
-    color: Colors.textPrimary,
-  },
-  subtitle: {
-    ...Typography.callout,
-    color: Colors.textSecondary,
-  },
-  stats: {
+  profileRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: Spacing.sm,
   },
-  stat: {
-    flex: 1,
-    minHeight: 84,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.cardSurface,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.md,
-    justifyContent: 'center',
-    gap: 4,
-  },
-  statValue: {
-    fontFamily: FontFamily.medium,
-    fontSize: 26,
-    lineHeight: 30,
-    fontWeight: FontWeight.bold,
-    letterSpacing: -0.6,
-    color: Colors.textPrimary,
-  },
-  statLabel: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  segment: {
+  profileIdentity: {
     flexDirection: 'row',
-    gap: 4,
-    padding: 4,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.cardSurface,
-  },
-  segmentItem: {
+    alignItems: 'center',
+    gap: Spacing.md,
     flex: 1,
-    minHeight: 52,
-    borderRadius: Radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.xs,
-    paddingVertical: Spacing.sm,
-  },
-  segmentItemOn: {
-    backgroundColor: Colors.accentMuted,
-  },
-  segmentText: {
-    fontFamily: FontFamily.medium,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  segmentTextOn: {
-    color: Colors.accentPrimary,
-  },
-  profileCard: {
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.cardSurface,
-    padding: Spacing.lg,
-    gap: Spacing.md,
-  },
-  profileTitle: {
-    ...Typography.headline,
-    color: Colors.textPrimary,
-  },
-  profileBody: {
-    ...Typography.callout,
-    color: Colors.textSecondary,
-  },
-  profileNote: {
-    ...Typography.caption,
-    color: Colors.textTertiary,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    alignItems: 'center',
   },
   profileAvatar: {
-    width: 64,
-    height: 64,
+    width: 48,
+    height: 48,
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   profileAvatarText: {
-    ...Typography.headline,
+    ...Typography.label,
     color: Colors.textPrimary,
     fontWeight: FontWeight.bold,
   },
@@ -739,112 +940,384 @@ const styles = StyleSheet.create({
     color: Colors.accentPrimary,
     fontWeight: FontWeight.semibold,
   },
-  profileEmail: {
+  signOutLink: {
     ...Typography.caption,
     color: Colors.textSecondary,
+    alignSelf: 'flex-end',
   },
-  profileBio: {
-    ...Typography.callout,
-    color: Colors.textPrimary,
+  signInCta: {
+    gap: 4,
   },
-  syncBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xxs,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.accentMuted,
-  },
-  syncBadgeText: {
-    ...Typography.caption,
+  signInCtaText: {
+    ...Typography.label,
     color: Colors.accentPrimary,
-    fontWeight: FontWeight.semibold,
+    fontWeight: FontWeight.bold,
   },
-  profileActions: {
+  profileNote: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
+  },
+  statPills: {
     flexDirection: 'row',
     gap: Spacing.sm,
   },
-  profileButton: {
+  miniStat: {
     flex: 1,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.elevatedControl,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    alignItems: 'center',
+    gap: 2,
+  },
+  miniStatValue: {
+    fontFamily: FontFamily.medium,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: FontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  miniStatLabel: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    fontSize: 10,
+  },
+  libraryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     minHeight: 44,
+  },
+  libraryHeaderSide: {
+    width: 40,
+  },
+  topPill: {
+    flexDirection: 'row',
+    padding: 3,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.cardSurface,
+    gap: 2,
+  },
+  topPillTab: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
+    minWidth: 96,
+    alignItems: 'center',
+  },
+  topPillTabOn: {
+    backgroundColor: Colors.elevatedControl,
+  },
+  topPillText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.semibold,
+  },
+  topPillTextOn: {
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.bold,
+  },
+  searchButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    minHeight: 40,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.elevatedControl,
+    paddingHorizontal: Spacing.md,
+  },
+  searchInput: {
+    flex: 1,
+    ...Typography.body,
+    color: Colors.textPrimary,
+    paddingVertical: 0,
+  },
+  clearGlyph: {
+    color: Colors.textSecondary,
+    fontSize: 22,
+    lineHeight: 24,
+  },
+  categoryScroll: {
+    flexGrow: 0,
+  },
+  categoryContent: {
+    gap: Spacing.xl,
+    alignItems: 'center',
+    paddingBottom: Spacing.xs,
+  },
+  categoryTab: {
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: Spacing.xxs,
+  },
+  categoryLabel: {
+    ...Typography.label,
+    color: Colors.textPrimary,
+  },
+  categoryLabelActive: {
+    color: Colors.accentPrimary,
+  },
+  categoryIndicator: {
+    width: 18,
+    height: 3,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.transparent,
+  },
+  categoryIndicatorActive: {
+    backgroundColor: Colors.accentPrimary,
+    ...Platform.select({
+      web: { boxShadow: '0 0 8px rgba(0, 230, 118, 0.9)' },
+      default: {
+        shadowColor: Colors.accentPrimary,
+        shadowOpacity: 0.95,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 0 },
+        elevation: 6,
+      },
+    }),
+  },
+  folderDrillHeader: {
+    gap: Spacing.sm,
+  },
+  backLink: {
+    alignSelf: 'flex-start',
+  },
+  backLinkText: {
+    ...Typography.label,
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.semibold,
+  },
+  folderDrillTitle: {
+    ...Typography.headline,
+    color: Colors.textPrimary,
+  },
+  folderDrillActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  secondaryPill: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentPrimary,
+  },
+  secondaryPillText: {
+    ...Typography.caption,
+    color: Colors.onAccent,
+    fontWeight: FontWeight.bold,
+  },
+  ghostPill: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.elevatedControl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  ghostPillText: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.semibold,
+  },
+  dangerText: {
+    ...Typography.caption,
+    color: Colors.danger,
+    fontWeight: FontWeight.semibold,
+  },
+  masonry: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Layout.cardGap,
+  },
+  column: {
+    gap: Layout.cardGap,
+  },
+  section: {
+    gap: Spacing.md,
+  },
+  folderGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Layout.cardGap,
+  },
+  folderTile: {
+    width: '48%',
+    flexGrow: 1,
+    maxWidth: '48%',
+    backgroundColor: Colors.cardSurface,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  folderCollage: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    aspectRatio: 1,
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
+    backgroundColor: Colors.elevatedControl,
+  },
+  folderCollageEmpty: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  folderCollageCell: {
+    width: '50%',
+    height: '50%',
+  },
+  folderCollageCellRight: {},
+  folderTileTitle: {
+    ...Typography.label,
+    color: Colors.textPrimary,
+    minHeight: 36,
+  },
+  folderTileMeta: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  primaryButton: {
+    minHeight: 48,
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.accentPrimary,
   },
-  profileButtonText: {
-    ...Typography.caption,
+  primaryButtonText: {
+    ...Typography.label,
     color: Colors.onAccent,
     fontWeight: FontWeight.bold,
   },
-  profileButtonGhost: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: Radius.pill,
+  emptyBlock: {
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.elevatedControl,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
   },
-  profileButtonGhostText: {
-    ...Typography.caption,
+  emptyTitle: {
+    ...Typography.subhead,
     color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
+    textAlign: 'center',
   },
-  folderCard: {
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.cardSurface,
-    overflow: 'hidden',
+  empty: {
+    ...Typography.callout,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
-  folderCardHeader: {
+  storyCard: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.md,
     padding: Spacing.md,
-    alignItems: 'center',
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.cardSurface,
   },
-  folderCardCopy: {
+  storyCover: {
+    width: 56,
+    height: 56,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.elevatedControl,
+  },
+  storyCoverEmpty: {
+    opacity: 0.5,
+  },
+  storyCopy: {
     flex: 1,
     gap: 4,
   },
-  folderCardTitle: {
+  storyTitle: {
     ...Typography.label,
     color: Colors.textPrimary,
   },
-  folderCardDescription: {
+  storyMeta: {
     ...Typography.caption,
     color: Colors.textSecondary,
   },
-  folderCardMeta: {
+  watchLabel: {
     ...Typography.caption,
-    color: Colors.textTertiary,
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.bold,
   },
-  folderPreviewStrip: {
+  yarnCard: {
     flexDirection: 'row',
-    gap: 4,
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.cardSurface,
+    flexWrap: 'wrap',
   },
-  folderPreviewThumb: {
-    width: 40,
-    height: 40,
+  yarnSwatch: {
+    width: 36,
+    height: 36,
     borderRadius: Radius.sm,
-    backgroundColor: Colors.elevatedControl,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  folderPreviewEmpty: {
-    width: 40,
-    height: 40,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.elevatedControl,
+  yarnCopy: {
+    flex: 1,
+    minWidth: 120,
+    gap: 2,
   },
-  folderExpanded: {
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.md,
-    gap: Spacing.sm,
-    borderTopWidth: Layout.hairline,
-    borderTopColor: Colors.border,
+  yarnTitle: {
+    ...Typography.label,
+    color: Colors.textPrimary,
   },
-  folderPatternRow: {
+  yarnMeta: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  stepper: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    backgroundColor: Colors.elevatedControl,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.xs,
+  },
+  step: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepDisabled: {
+    opacity: 0.35,
+  },
+  stepText: {
+    ...Typography.headline,
+    color: Colors.textPrimary,
+    lineHeight: 28,
+  },
+  stepValue: {
+    ...Typography.label,
+    color: Colors.textPrimary,
+    minWidth: 24,
+    textAlign: 'center',
+  },
+  sheetHeader: {
+    gap: 4,
+    paddingHorizontal: Layout.screenGutter,
+  },
+  sheetTitle: {
+    ...Typography.headline,
+    color: Colors.textPrimary,
+  },
+  sheetSubtitle: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  sheetBody: {
+    gap: Spacing.md,
+    paddingHorizontal: Layout.screenGutter,
   },
   sheetLabel: {
     ...Typography.caption,
@@ -865,144 +1338,35 @@ const styles = StyleSheet.create({
     minHeight: 88,
     textAlignVertical: 'top',
   },
-  section: {
-    gap: Spacing.md,
+  addPatternList: {
+    maxHeight: 360,
+    paddingHorizontal: Layout.screenGutter,
   },
-  sectionTitle: {
-    ...Typography.headline,
-    color: Colors.textPrimary,
-  },
-  addButton: {
-    minHeight: 48,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.accentPrimary,
-  },
-  addButtonText: {
-    ...Typography.label,
-    color: Colors.onAccent,
-  },
-  empty: {
-    ...Typography.callout,
-    color: Colors.textSecondary,
-  },
-  remove: {
-    ...Typography.caption,
-    color: Colors.danger,
-    fontWeight: FontWeight.semibold,
-  },
-  loadPill: {
-    minHeight: 32,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.accentPrimary,
-    backgroundColor: Colors.accentMuted,
-  },
-  loadPillText: {
-    ...Typography.caption,
-    color: Colors.accentPrimary,
-    fontWeight: FontWeight.semibold,
-  },
-  sheetHeader: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.xxs,
-  },
-  sheetTitle: {
-    ...Typography.headline,
-    color: Colors.textPrimary,
-  },
-  sheetSubtitle: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  sheetBody: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.lg,
-    gap: Spacing.sm,
-  },
-  slotRow: {
+  addPatternRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     padding: Spacing.sm,
     borderRadius: Radius.md,
+    backgroundColor: Colors.elevatedControl,
+    marginBottom: Spacing.sm,
     borderWidth: 1,
     borderColor: Colors.transparent,
-    backgroundColor: Colors.elevatedControl,
   },
-  slotRowSelected: {
+  addPatternRowOn: {
     backgroundColor: Colors.accentMuted,
     borderColor: Colors.accentPrimary,
   },
-  slotSwatch: {
+  addPatternThumb: {
     width: 48,
     height: 48,
     borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  slotSwatchLabel: {
-    ...Typography.caption,
-    fontWeight: FontWeight.bold,
-  },
-  slotAction: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.semibold,
-  },
-  patternRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    padding: Spacing.sm,
-    borderRadius: Radius.lg,
     backgroundColor: Colors.cardSurface,
   },
-  patternThumb: {
-    width: 84,
-    height: 56,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.elevatedControl,
-  },
-  patternCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  patternTitle: {
-    ...Typography.label,
+  addPatternTitle: {
+    ...Typography.caption,
     color: Colors.textPrimary,
-  },
-  patternMeta: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  storyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    padding: Spacing.sm,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.cardSurface,
-  },
-  storyCover: {
-    width: 56,
-    height: 72,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.elevatedControl,
-  },
-  storyCoverEmpty: {
-    backgroundColor: '#000000',
-  },
-  watchLabel: {
-    ...Typography.caption,
-    color: Colors.accentPrimary,
+    flex: 1,
     fontWeight: FontWeight.semibold,
   },
   pressed: {
