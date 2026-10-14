@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-14T22:36:18.951Z",
+  "generatedAt": "2026-10-14T23:23:34.703Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -657,6 +657,219 @@
         "ch",
         "sc",
         "dc"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-crochet-pumpkin-drink-cozy-game-day-drink-cozy-f",
+      "title": "Crochet Pumpkin Drink Cozy / Game Day Drink Cozy / Fall Drink Cozy / Beginner Friendly Drink Cozy",
+      "creator": "Montana Crochet Creations",
+      "youtubeUrl": "https://www.youtube.com/watch?v=QVhRy3WFQWA",
+      "videoId": "QVhRy3WFQWA",
+      "thumbnailUrl": "https://i.ytimg.com/vi/QVhRy3WFQWA/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "5.0 mm",
+      "totalRows": 15,
+      "stitchesPerRow": 30,
+      "tags": [
+        "drinkcozy",
+        "pumpkindrinkcozy",
+        "pumpkin",
+        "gameday",
+        "fall",
+        "halloween",
+        "ch",
+        "sc"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-how-to-crochet-pumpkin-earphone-case-c-mo-tejer-",
+      "title": "How to Crochet Pumpkin Earphone Case | Cómo Tejer Auriculares de Calabaza a Crochet | Super Easy",
+      "creator": "BalleriniCrochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=9IX-ITLTkCQ",
+      "videoId": "9IX-ITLTkCQ",
+      "thumbnailUrl": "https://i.ytimg.com/vi/9IX-ITLTkCQ/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "sport",
+      "hookSize": "3.0 mm",
+      "totalRows": 10,
+      "stitchesPerRow": 24,
+      "tags": [
+        "pumpkinearphonecase",
+        "crochetforbeginners",
+        "easycrochet",
+        "crochettutorial",
+        "beginnercrochet",
+        "crochetpumpkin",
+        "amigurumitutorial",
+        "diycrochet"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-easy-crochet-ghost-cape-tutorial-for-dolls-hallo",
+      "title": "Easy Crochet Ghost Cape Tutorial for Dolls 👻 Halloween DIY",
+      "creator": "Handmade by DEP",
+      "youtubeUrl": "https://www.youtube.com/watch?v=UEi-2Ds-Ln8",
+      "videoId": "UEi-2Ds-Ln8",
+      "thumbnailUrl": "https://i.ytimg.com/vi/UEi-2Ds-Ln8/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "fingering",
+      "hookSize": "1.40 mm",
+      "totalRows": 8,
+      "stitchesPerRow": 20,
+      "tags": [
+        "crochet",
+        "crochettutorial",
+        "easycrochet",
+        "craft",
+        "dollclothes",
+        "dolloutfit",
+        "labubu",
+        "halloweencostume"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-easy-mini-crochet-ghost-tutorial-cute-halloween-",
+      "title": "👻 Easy Mini Crochet Ghost Tutorial | Cute Halloween Crochet Pin 🎃",
+      "creator": "Shee's Crochet Corner",
+      "youtubeUrl": "https://www.youtube.com/watch?v=S7PnSZWPazk",
+      "videoId": "S7PnSZWPazk",
+      "thumbnailUrl": "https://i.ytimg.com/vi/S7PnSZWPazk/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4.0 mm",
+      "totalRows": 6,
+      "stitchesPerRow": 15,
+      "tags": [
+        "crochetghost",
+        "halloweencrochet",
+        "crochettutorial",
+        "crochetpins",
+        "minicrochet",
+        "easycrochet",
+        "handmadehalloween",
+        "halloween"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-how-to-crochet-a-pumpkin-easy-amigurumi-pumpkin-",
+      "title": "How to Crochet a Pumpkin | Easy Amigurumi Pumpkin Pattern",
+      "creator": "Artika world",
+      "youtubeUrl": "https://www.youtube.com/watch?v=En5wt4BCZgQ",
+      "videoId": "En5wt4BCZgQ",
+      "thumbnailUrl": "https://i.ytimg.com/vi/En5wt4BCZgQ/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "fingering",
+      "hookSize": "1.25 mm",
+      "totalRows": 12,
+      "stitchesPerRow": 36,
+      "tags": [
+        "crochetpumpkin",
+        "amigurumi",
+        "crochettutorial",
+        "halloween",
+        "mr",
+        "sc",
+        "inc",
+        "sl st"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-intro",
+          "label": "Intro",
+          "seconds": 0
+        },
+        {
+          "id": "bm-5-crochet-pumkin",
+          "label": "crochet pumkin",
+          "seconds": 5
+        },
+        {
+          "id": "bm-151-stuffing-and-closing",
+          "label": "stuffing and closing",
+          "seconds": 151
+        },
+        {
+          "id": "bm-676-stem",
+          "label": "Stem",
+          "seconds": 676
+        }
+      ]
+    },
+    {
+      "id": "pattern-easy-mini-crochet-pumpkin-tutorial-cute-hallowee",
+      "title": "🎃 Easy Mini Crochet Pumpkin Tutorial | Cute Halloween Crochet!",
+      "creator": "Shee's Crochet Corner",
+      "youtubeUrl": "https://www.youtube.com/watch?v=mou8pbsw1uE",
+      "videoId": "mou8pbsw1uE",
+      "thumbnailUrl": "https://i.ytimg.com/vi/mou8pbsw1uE/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "aran",
+      "hookSize": "4.5 mm",
+      "totalRows": 8,
+      "stitchesPerRow": 24,
+      "tags": [
+        "crochetpumpkin",
+        "halloweencrochet",
+        "crochettutorial",
+        "caronsimplysoft",
+        "minicrochet",
+        "fallcrochet",
+        "easycrochet",
+        "handmadehalloween"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-how-to-intarsia-crochet-spooky-season-edition-be",
+      "title": "How to Intarsia Crochet: Spooky Season Edition! 👻 | Beginner Friendly Tutorial",
+      "creator": "Cole Crochets Art",
+      "youtubeUrl": "https://www.youtube.com/watch?v=c7LphWnU_gg",
+      "videoId": "c7LphWnU_gg",
+      "thumbnailUrl": "https://i.ytimg.com/vi/c7LphWnU_gg/maxresdefault.jpg",
+      "difficulty": "intermediate",
+      "yarnWeight": "worsted",
+      "hookSize": "4.5 mm",
+      "totalRows": 15,
+      "stitchesPerRow": 15,
+      "tags": [
+        "crochet",
+        "intarsiacrochet",
+        "crochettutorial",
+        "beginnercrochet",
+        "spookyseason",
+        "crochetghost",
+        "halloween",
+        "ch"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-crochet-pumpkin-coaster-tutorial-size-m-rib-line",
+      "title": "Crochet Pumpkin Coaster Tutorial | Size M, Rib Lines & Scalloped Edge",
+      "creator": "ItsYourCrochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=rTl4DGstW5k",
+      "videoId": "rTl4DGstW5k",
+      "thumbnailUrl": "https://i.ytimg.com/vi/rTl4DGstW5k/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4.0 mm",
+      "totalRows": 10,
+      "stitchesPerRow": 22,
+      "tags": [
+        "pumpkincoaster",
+        "crochettutorial",
+        "fallcrochet",
+        "pumpkin",
+        "fall",
+        "ch",
+        "sc",
+        "hdc"
       ],
       "bookmarks": []
     }
