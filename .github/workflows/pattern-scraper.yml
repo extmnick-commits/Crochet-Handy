@@ -11,6 +11,8 @@ permissions:
 jobs:
   update-patterns:
     runs-on: ubuntu-latest
+    # Secrets live in Settings → Environments → ".env" (not repository secrets).
+    environment: .env
     timeout-minutes: 5
     steps:
       - name: Checkout repository
@@ -43,7 +45,7 @@ jobs:
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
         run: npm run update-patterns
 
       - name: Commit and push seed updates
