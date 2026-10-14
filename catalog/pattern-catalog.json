@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-14T07:34:59.541Z",
+  "generatedAt": "2026-10-14T07:39:54.768Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -508,6 +508,291 @@
         "sc",
         "dc",
         "valentines"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-crochet-halloween-black-cat-free-tutorial-part-1",
+      "title": "Crochet Halloween Black Cat | Free Tutorial – Part 1 #crochet #halloween",
+      "creator": "WoolayMo",
+      "youtubeUrl": "https://www.youtube.com/watch?v=mizHyfKL0Rc",
+      "videoId": "mizHyfKL0Rc",
+      "thumbnailUrl": "https://i.ytimg.com/vi/mizHyfKL0Rc/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "sport",
+      "hookSize": "2.5 mm",
+      "totalRows": 25,
+      "stitchesPerRow": 30,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "bag",
+        "single crochet",
+        "wearables",
+        "increase",
+        "decrease"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-crochet-pumpkin-beret-hat-tutorial-cute-baby-hat",
+      "title": "Crochet Pumpkin Beret Hat Tutorial 🎃 | Cute Baby Hat for 1–2 Year Olds",
+      "creator": "anxin_crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=qUqNLI07iZI",
+      "videoId": "qUqNLI07iZI",
+      "thumbnailUrl": "https://i.ytimg.com/vi/qUqNLI07iZI/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "dk",
+      "hookSize": "4.0 mm",
+      "totalRows": 15,
+      "stitchesPerRow": 60,
+      "tags": [
+        "wearables",
+        "halloween",
+        "thanksgiving",
+        "half double crochet",
+        "valentines",
+        "slip stitch",
+        "chain"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-easy-crochet-ghost-that-glows-in-the-dark",
+      "title": "Easy Crochet Ghost That Glows in the Dark",
+      "creator": "Diving Ducks Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=EXoe5v870F8",
+      "videoId": "EXoe5v870F8",
+      "thumbnailUrl": "https://i.ytimg.com/vi/EXoe5v870F8/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "3.5 mm",
+      "totalRows": 20,
+      "stitchesPerRow": 24,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "single crochet",
+        "valentines",
+        "thanksgiving",
+        "wearables",
+        "increase",
+        "decrease"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-glow-in-the-dark-crochet",
+          "label": "Glow-in-the-dark crochet ghost",
+          "seconds": 0
+        },
+        {
+          "id": "bm-16-yarn-and-materials",
+          "label": "Yarn and materials",
+          "seconds": 16
+        },
+        {
+          "id": "bm-62-crocheting-and-shaping-t",
+          "label": "Crocheting and shaping the ghost",
+          "seconds": 62
+        },
+        {
+          "id": "bm-312-making-the-wavy-ghost-ed",
+          "label": "Making the wavy ghost edge",
+          "seconds": 312
+        },
+        {
+          "id": "bm-497-eyes-bottom-and-finishin",
+          "label": "Eyes, bottom and finishing",
+          "seconds": 497
+        }
+      ]
+    },
+    {
+      "id": "pattern-crochet-ghost-easy-amigurumi-tutorial-for-beginn",
+      "title": "Crochet Ghost 👻 | Easy Amigurumi Tutorial for Beginners | Halloween",
+      "creator": "Tommy's sheep crochet and knitting",
+      "youtubeUrl": "https://www.youtube.com/watch?v=ECsykJ-3RoU",
+      "videoId": "ECsykJ-3RoU",
+      "thumbnailUrl": "https://i.ytimg.com/vi/ECsykJ-3RoU/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "sport",
+      "hookSize": "2.5 mm",
+      "totalRows": 18,
+      "stitchesPerRow": 20,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "single crochet",
+        "mothers-day",
+        "increase",
+        "decrease",
+        "slip stitch"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-crochet-pumpkin-granny-square-easy-step-by-step-",
+      "title": "Crochet Pumpkin Granny Square 🎃 Easy Step-by-Step Tutorial",
+      "creator": "Crochet Jewel",
+      "youtubeUrl": "https://www.youtube.com/watch?v=HhH1nGRq9mg",
+      "videoId": "HhH1nGRq9mg",
+      "thumbnailUrl": "https://i.ytimg.com/vi/HhH1nGRq9mg/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4.0 mm",
+      "totalRows": 6,
+      "stitchesPerRow": 44,
+      "tags": [
+        "blanket",
+        "halloween",
+        "thanksgiving",
+        "double crochet",
+        "stpatricks",
+        "mothers-day",
+        "bag",
+        "chain"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-easy-crochet-pumpkin-with-chunky-yarn-cozy-fall-",
+      "title": "Easy Crochet Pumpkin with Chunky Yarn Cozy Fall Decor",
+      "creator": "Raji's Craft Hobby",
+      "youtubeUrl": "https://www.youtube.com/watch?v=9LE9Up0LAdc",
+      "videoId": "9LE9Up0LAdc",
+      "thumbnailUrl": "https://i.ytimg.com/vi/9LE9Up0LAdc/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "bulky",
+      "hookSize": "8.0 mm",
+      "totalRows": 12,
+      "stitchesPerRow": 20,
+      "tags": [
+        "halloween",
+        "thanksgiving",
+        "half double crochet",
+        "winter",
+        "valentines",
+        "slip stitch",
+        "chain"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-super-easy-crochet-ghost-tutorial-quick-diy-hall",
+      "title": "Super Easy Crochet Ghost Tutorial 👻 | Quick DIY Halloween Keychain",
+      "creator": "Hasthi creation",
+      "youtubeUrl": "https://www.youtube.com/watch?v=m2YHvGJR2MM",
+      "videoId": "m2YHvGJR2MM",
+      "thumbnailUrl": "https://i.ytimg.com/vi/m2YHvGJR2MM/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "sport",
+      "hookSize": "3.0 mm",
+      "totalRows": 15,
+      "stitchesPerRow": 18,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "bag",
+        "single crochet",
+        "increase",
+        "decrease"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-intro-materials",
+          "label": "Intro & Materials",
+          "seconds": 0
+        },
+        {
+          "id": "bm-60-starting-the-ghost-body",
+          "label": "Starting the Ghost Body",
+          "seconds": 60
+        },
+        {
+          "id": "bm-300-shaping-stuffed-detail",
+          "label": "Shaping & Stuffed Detail",
+          "seconds": 300
+        },
+        {
+          "id": "bm-480-adding-safety-eyes-keych",
+          "label": "Adding Safety Eyes & Keychain Ring",
+          "seconds": 480
+        },
+        {
+          "id": "bm-570-final-look",
+          "label": "Final Look",
+          "seconds": 570
+        }
+      ]
+    },
+    {
+      "id": "pattern-crochet-ghost-applique-tutorial-easy-halloween-c",
+      "title": "Crochet Ghost Applique Tutorial | Easy Halloween Crochet",
+      "creator": "Zam Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Zt6aNlfT1BQ",
+      "videoId": "Zt6aNlfT1BQ",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Zt6aNlfT1BQ/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "fingering",
+      "hookSize": "2.0 mm",
+      "totalRows": 5,
+      "stitchesPerRow": 25,
+      "tags": [
+        "halloween",
+        "blanket",
+        "bag",
+        "single crochet",
+        "thanksgiving",
+        "wearables",
+        "double crochet",
+        "half double crochet"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-easy-crochet-ghost-keychain-tutorial-halloween-c",
+      "title": "👻 Easy Crochet Ghost Keychain Tutorial | Halloween Crochet for Beginners 🎃",
+      "creator": "Fame art with Poonam",
+      "youtubeUrl": "https://www.youtube.com/watch?v=AxSlueTuHUc",
+      "videoId": "AxSlueTuHUc",
+      "thumbnailUrl": "https://i.ytimg.com/vi/AxSlueTuHUc/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "3.5 mm",
+      "totalRows": 16,
+      "stitchesPerRow": 20,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "bag",
+        "single crochet",
+        "valentines",
+        "thanksgiving",
+        "wearables",
+        "increase"
+      ],
+      "bookmarks": []
+    },
+    {
+      "id": "pattern-crochet-spiderweb-coaster-crochet-halloween-deco",
+      "title": "Crochet Spiderweb Coaster | crochet halloween decoration | natalie sttar crochet",
+      "creator": "Natalie Sttar Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=CjN-ZmWwdW4",
+      "videoId": "CjN-ZmWwdW4",
+      "thumbnailUrl": "https://i.ytimg.com/vi/CjN-ZmWwdW4/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "sport",
+      "hookSize": "3.0 mm",
+      "totalRows": 8,
+      "stitchesPerRow": 32,
+      "tags": [
+        "halloween",
+        "double crochet",
+        "treble crochet",
+        "valentines",
+        "chain",
+        "half double crochet",
+        "slip stitch"
       ],
       "bookmarks": []
     }
