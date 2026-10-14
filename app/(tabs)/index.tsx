@@ -253,7 +253,11 @@ export default function PatternsScreen() {
         }}
       />
 
-      <PatternDetailSheet patternId={selectedId} onClose={() => setSelectedId(null)} />
+      <PatternDetailSheet
+        patternId={selectedId}
+        onClose={() => setSelectedId(null)}
+        onPatternChange={setSelectedId}
+      />
     </View>
   );
 }

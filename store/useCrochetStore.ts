@@ -54,6 +54,9 @@ import {
   applyRemoveProjectYarnColor,
   applySetAccount,
   applySetRowNote,
+  applyAddPatternComment,
+  applyRemovePatternComment,
+  applyToggleFollowCreator,
   applyToggleLikePattern,
   applyTogglePatternInFolder,
   applyUpdateAccountProfile,
@@ -69,7 +72,9 @@ import {
   type CrochetPersistedSlice,
   type CrochetProject,
   type IdeaFolder,
+  type NewPatternCommentInput,
   type NewPatternInput,
+  type PatternComment,
   type UserAccount,
   type VideoBookmark,
   type NewProgressPhotoInput,
@@ -88,6 +93,7 @@ export type {
   CrochetPattern,
   CrochetProject,
   IdeaFolder,
+  PatternComment,
   PatternDifficulty,
   ProjectStatus,
   ProgressPhoto,
@@ -167,6 +173,9 @@ type CrochetActions = {
   }) => void;
   toggleLikePattern: (patternId: string) => void;
   toggleCollectPattern: (patternId: string) => void;
+  addPatternComment: (input: NewPatternCommentInput) => string | null;
+  removePatternComment: (commentId: string) => void;
+  toggleFollowCreator: (creator: string) => void;
   createCollectionFolder: (input: { name: string; description?: string }) => string | null;
   renameCollectionFolder: (folderId: string, name: string) => void;
   updateCollectionFolder: (folderId: string, patch: { name?: string; description?: string }) => void;
@@ -195,6 +204,8 @@ function readData(state: CrochetStore): CrochetData {
     likedPatternIds: state.likedPatternIds,
     collectedPatternIds: state.collectedPatternIds,
     collectionFolders: state.collectionFolders,
+    patternComments: state.patternComments,
+    followedCreators: state.followedCreators,
     tapHistory: state.tapHistory,
   };
 }
@@ -210,6 +221,8 @@ export function partializeCrochetState(state: CrochetStore): CrochetPersistedSli
     likedPatternIds: state.likedPatternIds,
     collectedPatternIds: state.collectedPatternIds,
     collectionFolders: state.collectionFolders,
+    patternComments: state.patternComments,
+    followedCreators: state.followedCreators,
   };
 }
 
@@ -358,6 +371,15 @@ export const useCrochetStore = create<CrochetStore>()(
         updateAccountProfile: (patch) => commit((data, now) => applyUpdateAccountProfile(data, patch, now)),
         toggleLikePattern: (patternId) => commit((data) => applyToggleLikePattern(data, patternId)),
         toggleCollectPattern: (patternId) => commit((data) => applyToggleCollectPattern(data, patternId)),
+        addPatternComment: (input) => {
+          const id = createId('comment');
+          const next = applyAddPatternComment(readData(get()), id, input, Date.now());
+          if (!next) return null;
+          set(next);
+          return id;
+        },
+        removePatternComment: (commentId) => commit((data) => applyRemovePatternComment(data, commentId)),
+        toggleFollowCreator: (creator) => commit((data) => applyToggleFollowCreator(data, creator)),
         createCollectionFolder: (input) => {
           const id = createId('folder');
           const next = applyCreateCollectionFolder(readData(get()), id, input, Date.now());
@@ -430,6 +452,14 @@ export function selectIsPatternLiked(state: CrochetStore, patternId: string): bo
 
 export function selectIsPatternCollected(state: CrochetStore, patternId: string): boolean {
   return state.collectedPatternIds.includes(patternId);
+}
+
+export function selectIsCreatorFollowed(state: CrochetStore, creator: string): boolean {
+  return state.followedCreators.includes(creator);
+}
+
+export function selectPatternComments(state: CrochetStore, patternId: string): PatternComment[] {
+  return state.patternComments.filter((comment) => comment.patternId === patternId);
 }
 
 export function selectFoldersForPattern(state: CrochetStore, patternId: string): IdeaFolder[] {

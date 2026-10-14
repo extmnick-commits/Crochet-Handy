@@ -596,7 +596,11 @@ export default function MeScreen() {
 
       <AddYarnModal visible={yarnModalOpen} onClose={() => setYarnModalOpen(false)} />
       <AuthAccountModal visible={authOpen} initialMode={authMode} onClose={() => setAuthOpen(false)} />
-      <PatternDetailSheet patternId={patternId} onClose={() => setPatternId(null)} />
+      <PatternDetailSheet
+        patternId={patternId}
+        onClose={() => setPatternId(null)}
+        onPatternChange={setPatternId}
+      />
       <PhotoProgressModal
         visible={storyProjectId != null}
         projectId={storyProjectId}

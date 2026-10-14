@@ -37,6 +37,8 @@ const MAX_BIO_CHARS = 240;
 const MAX_FOLDER_NAME_CHARS = 64;
 const MAX_FOLDER_DESC_CHARS = 240;
 const MAX_IDEA_FOLDERS = 48;
+const MAX_PATTERN_COMMENT_BODY_CHARS = 500;
+const MAX_PATTERN_COMMENTS = 240;
 /** Caps a corrupted timestamp that landed in the seconds field (~11 years). */
 const MAX_ACCUMULATED_SECONDS = 100_000 * 60 * 60;
 
@@ -137,6 +139,19 @@ export type CrochetPattern = {
   bookmarks: VideoBookmark[];
 };
 
+export type PatternComment = {
+  id: string;
+  patternId: string;
+  authorName: string;
+  authorUsername: string;
+  avatarColor: string;
+  rating: number;
+  body: string;
+  createdAt: number;
+  pinned?: boolean;
+  photoUri?: string;
+};
+
 export type CrochetProject = {
   id: string;
   name: string;
@@ -180,6 +195,9 @@ export type CrochetData = {
   /** Patterns saved to the user's general library (Collections → Patterns). */
   collectedPatternIds: string[];
   collectionFolders: IdeaFolder[];
+  patternComments: PatternComment[];
+  /** Display names of creators the user follows from the pattern detail header. */
+  followedCreators: string[];
   tapHistory: Record<string, CounterSnapshot[]>;
 };
 
@@ -193,6 +211,8 @@ export type CrochetPersistedSlice = {
   likedPatternIds: string[];
   collectedPatternIds: string[];
   collectionFolders: IdeaFolder[];
+  patternComments: PatternComment[];
+  followedCreators: string[];
 };
 
 export type NewPatternInput = {
@@ -248,6 +268,16 @@ export type NewProgressPhotoInput = {
 };
 
 export type YarnStashPatch = Partial<Omit<YarnStashItem, 'id'>>;
+
+export type NewPatternCommentInput = {
+  patternId: string;
+  authorName: string;
+  authorUsername?: string;
+  avatarColor?: string;
+  rating: number;
+  body: string;
+  photoUri?: string;
+};
 
 const YARN_WEIGHT_SET: ReadonlySet<string> = new Set(YARN_WEIGHTS);
 const DIFFICULTIES: ReadonlySet<string> = new Set(['beginner', 'easy', 'intermediate', 'advanced']);
@@ -687,6 +717,8 @@ export function applyRemovePattern(data: CrochetData, patternId: string, now: nu
     updatedAt: folder.patternIds.includes(patternId) ? now : folder.updatedAt,
   }));
   const foldersChanged = collectionFolders.some((folder, index) => folder !== data.collectionFolders[index]);
+  const patternComments = data.patternComments.filter((comment) => comment.patternId !== patternId);
+  const commentsChanged = patternComments.length !== data.patternComments.length;
   return {
     ...data,
     patterns: data.patterns.filter((pattern) => pattern.id !== patternId),
@@ -696,6 +728,7 @@ export function applyRemovePattern(data: CrochetData, patternId: string, now: nu
     likedPatternIds,
     collectedPatternIds,
     collectionFolders: foldersChanged ? collectionFolders : data.collectionFolders,
+    ...(commentsChanged ? { patternComments } : {}),
   };
 }
 
@@ -763,6 +796,52 @@ export function applyToggleCollectPattern(data: CrochetData, patternId: string):
     ? data.collectedPatternIds.filter((id) => id !== patternId)
     : [...data.collectedPatternIds, patternId];
   return { ...data, collectedPatternIds };
+}
+
+export function applyAddPatternComment(
+  data: CrochetData,
+  id: string,
+  input: NewPatternCommentInput,
+  now: number,
+): CrochetData | null {
+  if (!isSafeId(id) || data.patternComments.length >= MAX_PATTERN_COMMENTS) return null;
+  if (data.patternComments.some((comment) => comment.id === id)) return null;
+  if (!data.patterns.some((pattern) => pattern.id === input.patternId)) return null;
+  const body = sanitizeText(input.body, MAX_PATTERN_COMMENT_BODY_CHARS);
+  if (!body) return null;
+  const authorName = sanitizeText(input.authorName, 60);
+  if (!authorName) return null;
+  const authorUsername = sanitizeUsername(input.authorUsername ?? authorName) ?? 'maker';
+  const avatarColor = normalizeHex(input.avatarColor ?? '') ?? '#2F6B4F';
+  const rating = clampInt(input.rating, 1, 5);
+  const photoUri = typeof input.photoUri === 'string' && isCommentPhotoUri(input.photoUri) ? input.photoUri : undefined;
+  const comment: PatternComment = {
+    id,
+    patternId: input.patternId,
+    authorName,
+    authorUsername,
+    avatarColor,
+    rating,
+    body,
+    createdAt: now,
+    ...(photoUri ? { photoUri } : {}),
+  };
+  return { ...data, patternComments: [...data.patternComments, comment] };
+}
+
+export function applyRemovePatternComment(data: CrochetData, commentId: string): CrochetData | null {
+  if (!data.patternComments.some((comment) => comment.id === commentId)) return null;
+  return { ...data, patternComments: data.patternComments.filter((comment) => comment.id !== commentId) };
+}
+
+export function applyToggleFollowCreator(data: CrochetData, creator: string): CrochetData | null {
+  const name = sanitizeText(creator, 60);
+  if (!name) return null;
+  const followed = data.followedCreators.includes(name);
+  const followedCreators = followed
+    ? data.followedCreators.filter((item) => item !== name)
+    : [...data.followedCreators, name];
+  return { ...data, followedCreators };
 }
 
 export function applyCreateCollectionFolder(
@@ -884,6 +963,8 @@ export function applyHydrateCloudSlice(
     likedPatternIds,
     collectedPatternIds,
     collectionFolders,
+    patternComments: repaired.patternComments,
+    followedCreators: repaired.followedCreators,
     tapHistory: data.tapHistory,
   };
   const reconciled = applyReconcileTimers(merged, now);
@@ -1160,6 +1241,9 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
     collectedPatternIds = repairCollectedPatternIds(fromFolders, patterns);
   }
 
+  const patternComments = repairPatternComments(input.patternComments, patterns);
+  const followedCreators = repairFollowedCreators(input.followedCreators);
+
   return {
     patterns,
     projects,
@@ -1170,6 +1254,8 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
     likedPatternIds,
     collectedPatternIds,
     collectionFolders,
+    patternComments,
+    followedCreators,
   };
 }
 
@@ -1230,6 +1316,12 @@ function isProgressPhotoUri(uri: string): boolean {
     uri.startsWith('ph://') ||
     uri.startsWith('assets-library://')
   );
+}
+
+function isCommentPhotoUri(uri: string): boolean {
+  if (uri.length === 0 || uri.length > 2048) return false;
+  if (isProgressPhotoUri(uri)) return true;
+  return uri.startsWith('https://') || uri.startsWith('http://');
 }
 
 function commitCounter(
@@ -1587,6 +1679,64 @@ function repairAccount(input: unknown): UserAccount | null {
     typeof input.avatarColor === 'string' ? (normalizeHex(input.avatarColor) ?? '#2F6B4F') : '#2F6B4F';
   const updatedAt = finiteTimestamp(input.updatedAt, Date.now());
   return { uid: input.uid, email, displayName, username, bio, avatarColor, updatedAt };
+}
+
+function repairPatternComments(input: unknown, patterns: CrochetPattern[]): PatternComment[] {
+  const patternIds = new Set(patterns.map((pattern) => pattern.id));
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const result: PatternComment[] = [];
+  for (const entry of input) {
+    const comment = repairPatternComment(entry, patternIds);
+    if (!comment || seen.has(comment.id)) continue;
+    seen.add(comment.id);
+    result.push(comment);
+    if (result.length >= MAX_PATTERN_COMMENTS) break;
+  }
+  return result;
+}
+
+function repairPatternComment(input: unknown, patternIds: Set<string>): PatternComment | null {
+  if (!isRecord(input) || !isSafeId(input.id) || typeof input.patternId !== 'string') return null;
+  if (!patternIds.has(input.patternId)) return null;
+  const authorName = typeof input.authorName === 'string' ? sanitizeText(input.authorName, 60) : null;
+  if (!authorName) return null;
+  const authorUsername =
+    typeof input.authorUsername === 'string' ? sanitizeUsername(input.authorUsername) ?? 'maker' : 'maker';
+  const avatarColor =
+    typeof input.avatarColor === 'string' ? (normalizeHex(input.avatarColor) ?? '#2F6B4F') : '#2F6B4F';
+  const body = typeof input.body === 'string' ? sanitizeText(input.body, MAX_PATTERN_COMMENT_BODY_CHARS) : null;
+  if (!body) return null;
+  const rating = clampInt(numberOr(input.rating, 5), 1, 5);
+  const createdAt = finiteTimestamp(input.createdAt, 1);
+  const pinned = input.pinned === true ? true : undefined;
+  const photoUri = typeof input.photoUri === 'string' && isCommentPhotoUri(input.photoUri) ? input.photoUri : undefined;
+  return {
+    id: input.id,
+    patternId: input.patternId,
+    authorName,
+    authorUsername,
+    avatarColor,
+    rating,
+    body,
+    createdAt,
+    ...(pinned ? { pinned } : {}),
+    ...(photoUri ? { photoUri } : {}),
+  };
+}
+
+function repairFollowedCreators(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of input) {
+    if (typeof entry !== 'string') continue;
+    const name = sanitizeText(entry, 60);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    result.push(name);
+  }
+  return result;
 }
 
 function repairLikedPatternIds(input: unknown, patterns: CrochetPattern[]): string[] {

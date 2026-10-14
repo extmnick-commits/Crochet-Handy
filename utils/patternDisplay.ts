@@ -4,7 +4,14 @@
  * Yarn "size" is the Craft Yarn Council number (#4 worsted, #3 DK, …).
  * Hook sizes are normalized to the compact badge form used on cards (`4.0mm`).
  */
-import { MAX_COUNT, type CrochetPattern, type PatternDifficulty, type YarnWeight } from '@/store/machine';
+import {
+  MAX_COUNT,
+  type CrochetPattern,
+  type PatternComment,
+  type PatternDifficulty,
+  type YarnWeight,
+} from '@/store/machine';
+import { SEED_PATTERNS, seedCommunityReviewsForPattern, type SeedPatternMaterial, type SeedPatternTool } from '@/store/seed';
 import {
   getActiveHolidayTopics,
   getHolidayTopic,
@@ -198,10 +205,111 @@ export function displayLikeCount(id: string, isLiked = false): number {
 
 export function formatLikeCount(id: string, isLiked = false): string {
   const count = displayLikeCount(id, isLiked);
+  return formatCompactCount(count);
+}
+
+function hashPatternMetric(id: string, salt: string, min: number, span: number): number {
+  let hash = 2166136261;
+  const key = `${salt}:${id}`;
+  for (let index = 0; index < key.length; index += 1) {
+    hash ^= key.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return min + (hash >>> 0) % span;
+}
+
+export function displayViewCount(id: string): number {
+  return hashPatternMetric(id, 'views', 1200, 890_000);
+}
+
+export function displayMakeCount(id: string): number {
+  return hashPatternMetric(id, 'makes', 48, 24_000);
+}
+
+export function displayCollectCount(id: string): number {
+  return hashPatternMetric(id, 'collect', 90, 18_000);
+}
+
+export function displayCommentCount(id: string, userCommentCount = 0): number {
+  return hashPatternMetric(id, 'comments', 6, 420) + userCommentCount;
+}
+
+export function formatCompactCount(count: number): string {
   if (count < 1000) return String(count);
   const scaled = count / 1000;
   const rounded = scaled >= 10 ? Math.round(scaled) : Math.round(scaled * 10) / 10;
   return `${rounded}k`;
+}
+
+export function formatViewCount(id: string): string {
+  return formatCompactCount(displayViewCount(id));
+}
+
+export function formatMakeCount(id: string): string {
+  return formatCompactCount(displayMakeCount(id));
+}
+
+export function formatCollectCount(id: string): string {
+  return formatCompactCount(displayCollectCount(id));
+}
+
+export function formatCommentCount(id: string, userCommentCount = 0): string {
+  return formatCompactCount(displayCommentCount(id, userCommentCount));
+}
+
+export type PatternExtendedMeta = {
+  description: string;
+  materials: SeedPatternMaterial[];
+  tools: SeedPatternTool[];
+  keyStitches: string[];
+  estimatedTimeMinutes: number;
+  communityReviews: PatternComment[];
+};
+
+export function getPatternExtendedMeta(pattern: CrochetPattern): PatternExtendedMeta {
+  const seed = SEED_PATTERNS.find((entry) => entry.id === pattern.id);
+  const communityReviews = seedCommunityReviewsForPattern(pattern);
+  if (seed) {
+    return {
+      description: seed.description,
+      materials: seed.materials,
+      tools: seed.tools,
+      keyStitches: seed.keyStitches,
+      estimatedTimeMinutes: seed.estimatedTimeMinutes,
+      communityReviews,
+    };
+  }
+  return {
+    description: 'Crochet tutorial from the community library.',
+    materials: [{ name: 'Yarn', weight: yarnWeightMeta(pattern.yarnWeight).label, yardage: '—' }],
+    tools: [{ type: 'Crochet Hook', size: formatHookSize(pattern.hookSize) }],
+    keyStitches: pattern.tags.filter((tag) => tag.includes('crochet') || tag.includes('stitch')).slice(0, 4),
+    estimatedTimeMinutes: Math.max(30, pattern.totalRows * 8),
+    communityReviews,
+  };
+}
+
+export function getRelatedPatterns(
+  pattern: CrochetPattern,
+  allPatterns: readonly CrochetPattern[],
+  limit = 8,
+): CrochetPattern[] {
+  const tagSet = new Set(pattern.tags.map((tag) => tag.toLowerCase()));
+  const scored = allPatterns
+    .filter((item) => item.id !== pattern.id)
+    .map((item) => {
+      let score = 0;
+      if (item.yarnWeight === pattern.yarnWeight) score += 4;
+      if (item.difficulty === pattern.difficulty) score += 3;
+      if (item.creator === pattern.creator) score += 5;
+      for (const tag of item.tags) {
+        if (tagSet.has(tag.toLowerCase())) score += 2;
+      }
+      return { item, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title));
+  return scored.slice(0, limit).map((entry) => entry.item);
 }
 
 export function creatorInitials(creator: string): string {

@@ -4,7 +4,7 @@
 import * as Haptics from 'expo-haptics';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { HeartIcon } from '@/components/PatternDetailSheet';
+import { HeartIcon } from '@/components/HeartIcon';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { selectIsPatternLiked, useCrochetStore, type CrochetPattern } from '@/store/useCrochetStore';
 import {

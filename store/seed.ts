@@ -9,6 +9,7 @@ import {
   type CrochetPattern,
   type CrochetPersistedSlice,
   type CrochetProject,
+  type PatternComment,
   type PatternDifficulty,
   type YarnStashItem,
   type YarnWeight,
@@ -111,6 +112,49 @@ const sage: YarnStashItem = {
   hookSize: '6.0 mm',
   skeinCount: 1,
 };
+
+const SEED_AVATAR_COLORS = ['#2F6B4F', '#6B4A2F', '#2F4A6B', '#6B2F4A', '#4A6B2F'] as const;
+
+function seedCreatorUsername(creator: string): string {
+  const slug = creator.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24);
+  return slug.length >= 2 ? slug : 'designer';
+}
+
+function seedAvatarColor(seed: string): string {
+  let hash = 0;
+  for (const char of seed) hash = (hash + char.charCodeAt(0)) % SEED_AVATAR_COLORS.length;
+  return SEED_AVATAR_COLORS[hash] ?? SEED_AVATAR_COLORS[0];
+}
+
+/** Bundled community reviews shown before the user posts their own. */
+export function seedCommunityReviewsForPattern(pattern: CrochetPattern): PatternComment[] {
+  const pinnedAt = Date.UTC(2026, 8, 1, 12, 0, 0);
+  const communityAt = Date.UTC(2026, 8, 14, 9, 30, 0);
+  return [
+    {
+      id: `seed-comment-${pattern.id}-designer`,
+      patternId: pattern.id,
+      authorName: pattern.creator,
+      authorUsername: seedCreatorUsername(pattern.creator),
+      avatarColor: seedAvatarColor(pattern.creator),
+      rating: 5,
+      body: 'Thanks for making this pattern! Pinning tips from the video — watch the tension on the first few rows.',
+      createdAt: pinnedAt,
+      pinned: true,
+      photoUri: pattern.thumbnailUrl,
+    },
+    {
+      id: `seed-comment-${pattern.id}-maker`,
+      patternId: pattern.id,
+      authorName: 'StitchLover42',
+      authorUsername: 'stitchlover42',
+      avatarColor: seedAvatarColor(`${pattern.id}-maker`),
+      rating: 4,
+      body: 'Finished mine in an afternoon. The stitch count matched the tutorial exactly.',
+      createdAt: communityAt,
+    },
+  ];
+}
 
 function patternFromSeed(entry: SeedPattern): CrochetPattern {
   const bookmarks = entry.bookmarks ?? [];
@@ -1667,5 +1711,7 @@ export function createSeedData(): CrochetPersistedSlice {
     likedPatternIds: [],
     collectedPatternIds: [],
     collectionFolders: [],
+    patternComments: patterns.flatMap(seedCommunityReviewsForPattern),
+    followedCreators: [],
   };
 }

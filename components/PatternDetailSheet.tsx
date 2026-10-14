@@ -1,69 +1,179 @@
 /**
- * Pattern detail sheet opened from a feed card.
- *
- * Yarn swatches come from the stash (same weight) and from any project already
- * using this pattern. Starting a project copies the pattern's row counts and
- * makes that project the one on the Active tab.
+ * Full-screen pattern detail (Bambu Handy / MakerWorld style).
  */
 import * as Haptics from 'expo-haptics';
-import { useMemo, useState } from 'react';
-import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Image,
+  Linking,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import Svg, { Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
+import { HeartIcon } from '@/components/HeartIcon';
+import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { SaveToFolderSheet } from '@/components/SaveToFolderSheet';
-import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
+  selectIsCreatorFollowed,
   selectIsPatternLiked,
   useCrochetStore,
   type CrochetPattern,
   type CrochetProject,
+  type PatternComment,
   type YarnStashItem,
 } from '@/store/useCrochetStore';
+import { formatBookmarkTime } from '@/utils/chapters';
 import {
   creatorColor,
   creatorInitials,
   difficultyLabel,
+  formatCollectCount,
+  formatCommentCount,
   formatHookSize,
   formatLikeCount,
+  formatMakeCount,
   formatSpecBadge,
+  formatViewCount,
+  getPatternExtendedMeta,
+  getRelatedPatterns,
+  packMasonryColumns,
   yarnSizeLabel,
 } from '@/utils/patternDisplay';
-import { formatBookmarkTime } from '@/utils/chapters';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
 
 type PatternDetailSheetProps = {
   patternId: string | null;
   onClose: () => void;
+  onPatternChange?: (patternId: string) => void;
 };
 
-type Swatch = {
-  hex: string;
-  name: string;
-};
+type DetailTab = 'details' | 'bom' | 'reviews' | 'for-you';
 
-export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetProps) {
+const TABS: { id: DetailTab; label: string }[] = [
+  { id: 'details', label: 'Details' },
+  { id: 'bom', label: 'BOM' },
+  { id: 'reviews', label: 'Reviews' },
+  { id: 'for-you', label: 'For you' },
+];
+
+type Swatch = { hex: string; name: string };
+
+const EMPTY_PATTERN_COMMENTS: PatternComment[] = [];
+
+export function PatternDetailSheet({ patternId, onClose, onPatternChange }: PatternDetailSheetProps) {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionOffsets = useRef<Partial<Record<DetailTab, number>>>({});
+
   const pattern = useCrochetStore((state) =>
     patternId ? (state.patterns.find((item) => item.id === patternId) ?? null) : null,
   );
+  const allPatterns = useCrochetStore((state) => state.patterns);
   const projects = useCrochetStore((state) => state.projects);
   const yarnStash = useCrochetStore((state) => state.yarnStash);
+  const account = useCrochetStore((state) => state.account);
+  const allPatternComments = useCrochetStore((state) => state.patternComments);
+  const storeComments = useMemo(() => {
+    if (!patternId) return EMPTY_PATTERN_COMMENTS;
+    return allPatternComments.filter((comment) => comment.patternId === patternId);
+  }, [allPatternComments, patternId]);
   const createProject = useCrochetStore((state) => state.createProject);
   const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
-  const collectionFolders = useCrochetStore((state) => state.collectionFolders);
+  const toggleFollowCreator = useCrochetStore((state) => state.toggleFollowCreator);
+  const addPatternComment = useCrochetStore((state) => state.addPatternComment);
+  const collectedPatternIds = useCrochetStore((state) => state.collectedPatternIds);
   const liked = useCrochetStore((state) => (patternId ? selectIsPatternLiked(state, patternId) : false));
-  const savedFolders = useMemo(
-    () => (patternId ? collectionFolders.filter((folder) => folder.patternIds.includes(patternId)) : []),
-    [collectionFolders, patternId],
+  const creatorName = pattern?.creator ?? '';
+  const following = useCrochetStore((state) =>
+    creatorName ? selectIsCreatorFollowed(state, creatorName) : false,
   );
-  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
 
+  const [activeTab, setActiveTab] = useState<DetailTab>('details');
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [reviewsExpanded, setReviewsExpanded] = useState(false);
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [draftComment, setDraftComment] = useState('');
+  const [draftRating, setDraftRating] = useState(5);
+
+  const meta = useMemo(() => (pattern ? getPatternExtendedMeta(pattern) : null), [pattern]);
+  const comments = useMemo(
+    () => (pattern ? mergeComments(storeComments, meta?.communityReviews ?? []) : []),
+    [pattern, storeComments, meta],
+  );
+  const userCommentCount = useMemo(
+    () => storeComments.filter((comment) => !comment.id.startsWith('seed-comment-')).length,
+    [storeComments],
+  );
   const swatches = useMemo(
     () => (pattern ? collectSwatches(pattern, projects, yarnStash) : []),
     [pattern, projects, yarnStash],
   );
+  const related = useMemo(
+    () => (pattern ? getRelatedPatterns(pattern, allPatterns, 8) : []),
+    [pattern, allPatterns],
+  );
+
+  const columnGap = Spacing.md;
+  const columnWidth = Math.floor((windowWidth - Layout.screenGutter * 2 - columnGap) / 2);
+  const masonry = useMemo(
+    () => packMasonryColumns(related, columnWidth, undefined, columnGap),
+    [related, columnWidth, columnGap],
+  );
+
+  const heroSlides = useMemo(() => {
+    if (!pattern) return [];
+    const hq = youtubeThumbnailUrl(pattern.videoId, 'hq');
+    const slides = [pattern.thumbnailUrl, hq].filter((uri, index, list) => list.indexOf(uri) === index);
+    return slides;
+  }, [pattern]);
+
+  useEffect(() => {
+    if (!patternId) return;
+    setActiveTab('details');
+    setHeroIndex(0);
+    setDescExpanded(false);
+    setReviewsExpanded(false);
+    setDraftComment('');
+    setDraftRating(5);
+    sectionOffsets.current = {};
+    requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
+  }, [patternId]);
+
+  const scrollToSection = (tab: DetailTab) => {
+    const y = sectionOffsets.current[tab];
+    if (y == null) return;
+    setActiveTab(tab);
+    scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+  };
+
+  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = event.nativeEvent.contentOffset.y + 120;
+    const entries = TABS.map((tab) => ({ tab: tab.id, y: sectionOffsets.current[tab.id] ?? 0 }))
+      .filter((entry) => entry.y > 0)
+      .sort((a, b) => a.y - b.y);
+    let next: DetailTab = 'details';
+    for (const entry of entries) {
+      if (y >= entry.y) next = entry.tab;
+    }
+    if (next !== activeTab) setActiveTab(next);
+  };
 
   const onStart = () => {
     if (!pattern) return;
@@ -73,183 +183,507 @@ export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetPro
     router.navigate('/active');
   };
 
+  const onLoadActive = () => {
+    if (!pattern) return;
+    createProject({ name: pattern.title, patternId: pattern.id });
+    onClose();
+    router.navigate('/active');
+  };
+
+  const onShare = async () => {
+    if (!pattern) return;
+    tick();
+    try {
+      await Share.share({ message: `${pattern.title}\n${pattern.youtubeUrl}`, url: pattern.youtubeUrl });
+    } catch {
+      void Linking.openURL(pattern.youtubeUrl);
+    }
+  };
+
+  const onPostComment = () => {
+    if (!pattern || !draftComment.trim()) return;
+    const authorName = account?.displayName ?? 'Maker';
+    const authorUsername = account?.username;
+    const avatarColor = account?.avatarColor;
+    addPatternComment({
+      patternId: pattern.id,
+      authorName,
+      authorUsername,
+      avatarColor,
+      rating: draftRating,
+      body: draftComment.trim(),
+    });
+    setDraftComment('');
+    tick();
+  };
+
+  const visibleReviews = reviewsExpanded ? comments : comments.slice(0, 3);
+  const avgRating =
+    comments.length > 0 ? comments.reduce((sum, item) => sum + item.rating, 0) / comments.length : 0;
+
   return (
-    <BottomSheet
+    <Modal
       visible={pattern !== null}
-      onClose={onClose}
-      footer={
-        pattern ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Start Project (Send to Active Tab)"
-            testID="pattern-detail-start"
-            onPress={onStart}
-            style={({ pressed }) => [styles.start, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.startText}>Start Project (Send to Active Tab)</Text>
-          </Pressable>
-        ) : null
-      }
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      presentationStyle="fullScreen"
     >
-      {pattern && (
-        <View style={styles.content}>
-          <View style={styles.hero}>
-            <Image
-              accessible={false}
-              source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-              style={styles.heroImage}
-            />
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{formatSpecBadge(pattern)}</Text>
-            </View>
+      {pattern && meta ? (
+        <View style={styles.screen} testID="pattern-detail-sheet">
+          <View style={[styles.topBar, { paddingTop: insets.top + Spacing.xs }]}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Close"
+              accessibilityLabel="Back"
               onPress={onClose}
-              style={({ pressed }) => [styles.closeButton, pressed && styles.pressed, webCursor]}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed, webCursor]}
             >
-              <Text style={styles.closeGlyph}>×</Text>
+              <ChevronLeftIcon color={Colors.textPrimary} />
             </Pressable>
-          </View>
-
-          <Text role="heading" aria-level={2} style={styles.title}>
-            {pattern.title}
-          </Text>
-
-          <View style={styles.creatorRow}>
-            <View style={[styles.avatar, { backgroundColor: creatorColor(pattern.creator) }]}>
-              <Text style={styles.avatarText}>{creatorInitials(pattern.creator)}</Text>
+            <View style={styles.topCreator}>
+              <View style={[styles.avatar, { backgroundColor: creatorColor(pattern.creator) }]}>
+                <Text style={styles.avatarText}>{creatorInitials(pattern.creator)}</Text>
+              </View>
+              <Text style={styles.topCreatorName} numberOfLines={1}>{pattern.creator}</Text>
             </View>
-            <Text style={styles.creator} numberOfLines={1}>
-              {pattern.creator}
-            </Text>
-          </View>
-
-          <View style={styles.actionBar}>
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ selected: liked }}
-              accessibilityLabel={liked ? 'Unlike pattern' : 'Like pattern'}
+              accessibilityState={{ selected: following }}
+              accessibilityLabel={following ? 'Unfollow creator' : 'Follow creator'}
               onPress={() => {
                 tick();
-                toggleLikePattern(pattern.id);
+                toggleFollowCreator(pattern.creator);
               }}
               style={({ pressed }) => [
-                styles.actionPill,
-                liked && styles.actionPillOn,
+                styles.followPill,
+                following && styles.followPillOn,
                 pressed && styles.pressed,
                 webCursor,
               ]}
             >
-              <HeartIcon color={liked ? Colors.accentPrimary : Colors.textSecondary} filled={liked} size={16} />
-              <Text style={[styles.actionPillText, liked && styles.actionPillTextOn]}>
-                {formatLikeCount(pattern.id, liked)}
+              <Text style={[styles.followText, following && styles.followTextOn]}>
+                {following ? 'Following' : 'Follow'}
               </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Save to folder"
-              onPress={() => {
-                tick();
-                setFolderPickerOpen(true);
-              }}
-              style={({ pressed }) => [styles.actionPill, pressed && styles.pressed, webCursor]}
+              accessibilityLabel="Share pattern"
+              onPress={() => void onShare()}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed, webCursor]}
             >
-              <FolderIcon color={savedFolders.length > 0 ? Colors.accentPrimary : Colors.textSecondary} />
-              <Text style={[styles.actionPillText, savedFolders.length > 0 && styles.actionPillTextOn]}>
-                {savedFolders.length > 0 ? `${savedFolders.length} folders` : 'Collect'}
-              </Text>
+              <ShareIcon color={Colors.textPrimary} />
             </Pressable>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Yarn colors</Text>
-            {swatches.length > 0 ? (
-              <ScrollView
-                horizontal
-                nestedScrollEnabled
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.swatchRow}
+          <View style={styles.tabBar}>
+            {TABS.map((tab) => {
+              const on = activeTab === tab.id;
+              return (
+                <Pressable
+                  key={tab.id}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: on }}
+                  onPress={() => scrollToSection(tab.id)}
+                  style={({ pressed }) => [styles.tab, pressed && styles.pressed, webCursor]}
+                >
+                  <Text style={[styles.tabLabel, on && styles.tabLabelOn]}>{tab.label}</Text>
+                  {on ? <View style={styles.tabIndicator} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <ScrollView
+            ref={scrollRef}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 96 }]}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View
+              onLayout={(event) => {
+                sectionOffsets.current.details = event.nativeEvent.layout.y;
+              }}
+            >
+              <View style={styles.heroWrap}>
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  onMomentumScrollEnd={(event) => {
+                    const index = Math.round(event.nativeEvent.contentOffset.x / windowWidth);
+                    setHeroIndex(index);
+                  }}
+                >
+                  {heroSlides.map((uri) => (
+                    <Image
+                      key={uri}
+                      accessible={false}
+                      source={{ uri }}
+                      style={[styles.heroImage, { width: windowWidth }]}
+                    />
+                  ))}
+                </ScrollView>
+                <View style={styles.heroBadge}>
+                  <Text style={styles.heroBadgeText}>{heroIndex + 1}/{heroSlides.length}</Text>
+                </View>
+              </View>
+              <View style={styles.dotsRow}>
+                {heroSlides.map((uri, index) => (
+                  <View key={uri} style={[styles.dot, index === heroIndex && styles.dotOn]} />
+                ))}
+              </View>
+
+              <Text role="heading" aria-level={2} style={styles.title}>{pattern.title}</Text>
+              <View style={styles.statsRow}>
+                <Text style={styles.stat}>{formatViewCount(pattern.id)} views</Text>
+                <Text style={styles.statDot}>·</Text>
+                <Text style={styles.stat}>{formatMakeCount(pattern.id)} makes</Text>
+                <Text style={styles.statDot}>·</Text>
+                <Text style={styles.stat}>{difficultyLabel(pattern.difficulty)}</Text>
+              </View>
+
+              <Text
+                style={styles.description}
+                numberOfLines={descExpanded ? undefined : 3}
               >
-                {swatches.map((swatch) => (
-                  <View key={swatch.hex} style={styles.swatchItem} accessibilityLabel={`${swatch.name} ${swatch.hex}`}>
-                    <View style={[styles.swatch, { backgroundColor: swatch.hex }]} />
-                    <Text style={styles.swatchName} numberOfLines={2}>
-                      {swatch.name}
-                    </Text>
+                {meta.description}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={descExpanded ? 'Show less description' : 'Show more description'}
+                onPress={() => setDescExpanded((value) => !value)}
+                style={({ pressed }) => [styles.moreToggle, pressed && styles.pressed, webCursor]}
+              >
+                <Text style={styles.moreToggleText}>{descExpanded ? 'Less ⌃' : 'More ⌄'}</Text>
+              </Pressable>
+
+              {descExpanded ? (
+                <View style={styles.expandedBlock}>
+                  {meta.keyStitches.length > 0 ? (
+                    <View style={styles.keyStitches}>
+                      <Text style={styles.sectionHeading}>Key stitches</Text>
+                      <Text style={styles.bodyText}>{meta.keyStitches.join(' · ')}</Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.tutorialCard}>
+                    <Image
+                      accessible={false}
+                      source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
+                      style={styles.tutorialThumb}
+                    />
+                    <View style={styles.tutorialCopy}>
+                      <Text style={styles.tutorialTitle}>Tutorial preview</Text>
+                      <Text style={styles.tutorialMeta} numberOfLines={2}>{pattern.title}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.clubCard}>
+                    <Text style={styles.clubTitle}>{pattern.creator} Club</Text>
+                    <Text style={styles.clubBody}>Get early drops, BOM packs, and maker-only chapters.</Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="link"
+                    onPress={() => void Linking.openURL(pattern.youtubeUrl)}
+                    style={({ pressed }) => [styles.youtubeLink, pressed && styles.pressed, webCursor]}
+                  >
+                    <Text style={styles.youtubeLinkText}>{pattern.youtubeUrl}</Text>
+                  </Pressable>
+                  <View style={styles.tagRow}>
+                    {pattern.tags.map((tag) => (
+                      <View key={tag} style={styles.tagPill}>
+                        <Text style={styles.tagText}>#{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {pattern.bookmarks.length > 0 ? (
+                    <View style={styles.chapterWrap}>
+                      {pattern.bookmarks.map((bookmark) => (
+                        <View key={bookmark.id} style={styles.chapterChip}>
+                          <Text style={styles.chapterTime}>{formatBookmarkTime(bookmark.seconds)}</Text>
+                          <Text numberOfLines={1} style={styles.chapterLabel}>{bookmark.label}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  <View style={styles.specsCard}>
+                    <Spec label="Yarn size" value={yarnSizeLabel(pattern.yarnWeight)} />
+                    <Spec label="Hook size" value={formatHookSize(pattern.hookSize)} />
+                    <Spec label="Total rows" value={String(pattern.totalRows)} />
+                    <Spec label="Stitches / row" value={String(pattern.stitchesPerRow)} />
+                    <Spec label="Est. time" value={formatEstimated(meta.estimatedTimeMinutes)} />
+                    <Spec label="Difficulty" value={difficultyLabel(pattern.difficulty)} />
+                  </View>
+                </View>
+              ) : null}
+            </View>
+
+            <View
+              style={styles.section}
+              onLayout={(event) => {
+                sectionOffsets.current.bom = event.nativeEvent.layout.y;
+              }}
+            >
+              <Text style={styles.sectionHeading}>Ready-to-Crochet Pack</Text>
+              <View style={styles.packCard}>
+                <Text style={styles.packBody}>
+                  {formatSpecBadge(pattern)} · {meta.materials.length} materials · {meta.tools.length} tools
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Load in Active"
+                  onPress={onLoadActive}
+                  style={({ pressed }) => [styles.packCta, pressed && styles.pressed, webCursor]}
+                >
+                  <Text style={styles.packCtaText}>Load in Active</Text>
+                </Pressable>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bomRow}>
+                {meta.materials.map((material) => (
+                  <View key={`${material.name}-${material.weight}`} style={styles.bomCard}>
+                    <YarnSkeinIcon color={Colors.accentPrimary} />
+                    <Text style={styles.bomTitle} numberOfLines={2}>{material.name}</Text>
+                    <Text style={styles.bomMeta}>{material.weight}</Text>
+                    <Text style={styles.bomMeta}>{material.yardage} yds</Text>
+                  </View>
+                ))}
+                {meta.tools.map((tool) => (
+                  <View key={`${tool.type}-${tool.size}`} style={styles.bomCard}>
+                    <HookIcon color={Colors.textSecondary} />
+                    <Text style={styles.bomTitle} numberOfLines={2}>{tool.type}</Text>
+                    <Text style={styles.bomMeta}>{tool.size}</Text>
                   </View>
                 ))}
               </ScrollView>
-            ) : (
-              <Text style={styles.emptySwatches}>No yarn in this weight is in your stash yet.</Text>
-            )}
-          </View>
+              {swatches.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatchRow}>
+                  {swatches.map((swatch) => (
+                    <View key={swatch.hex} style={styles.swatchItem}>
+                      <View style={[styles.swatch, { backgroundColor: swatch.hex }]} />
+                      <Text style={styles.swatchName} numberOfLines={2}>{swatch.name}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              ) : null}
+            </View>
 
-          {pattern.bookmarks.length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Tutorial chapters</Text>
-              <View style={styles.chapterWrap}>
-                {pattern.bookmarks.map((bookmark) => (
-                  <View
-                    key={bookmark.id}
-                    style={styles.chapterChip}
-                    accessibilityLabel={`${formatBookmarkTime(bookmark.seconds)} ${bookmark.label}`}
+            <View
+              style={styles.section}
+              onLayout={(event) => {
+                sectionOffsets.current.reviews = event.nativeEvent.layout.y;
+              }}
+            >
+              <Text style={styles.sectionHeading}>
+                Ratings & Reviews ({formatCommentCount(pattern.id, userCommentCount)})
+              </Text>
+              <View style={styles.ratingBar}>
+                <Text style={styles.ratingValue}>{avgRating.toFixed(1)}</Text>
+                <View style={styles.ratingTrack}>
+                  <View style={[styles.ratingFill, { width: `${(avgRating / 5) * 100}%` }]} />
+                </View>
+              </View>
+              <View style={styles.composeBox}>
+                <TextInput
+                  value={draftComment}
+                  onChangeText={setDraftComment}
+                  placeholder="Add a comment..."
+                  placeholderTextColor={Colors.textTertiary}
+                  style={styles.composeInput}
+                  multiline
+                />
+                <View style={styles.composeActions}>
+                  <StarPicker value={draftRating} onChange={setDraftRating} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Post review"
+                    onPress={onPostComment}
+                    style={({ pressed }) => [styles.postButton, pressed && styles.pressed, webCursor]}
                   >
-                    <Text style={styles.chapterTime}>{formatBookmarkTime(bookmark.seconds)}</Text>
-                    <Text numberOfLines={1} style={styles.chapterLabel}>
-                      {bookmark.label}
-                    </Text>
+                    <Text style={styles.postButtonText}>Post</Text>
+                  </Pressable>
+                </View>
+              </View>
+              {visibleReviews.map((comment) => (
+                <ReviewCard key={comment.id} comment={comment} />
+              ))}
+              {comments.length > 3 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setReviewsExpanded((value) => !value)}
+                  style={({ pressed }) => [styles.seeAll, pressed && styles.pressed, webCursor]}
+                >
+                  <Text style={styles.seeAllText}>
+                    {reviewsExpanded ? 'Show fewer reviews' : 'See All Reviews'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            <View
+              style={styles.section}
+              onLayout={(event) => {
+                sectionOffsets.current['for-you'] = event.nativeEvent.layout.y;
+              }}
+            >
+              <Text style={styles.sectionHeading}>You May Also Like</Text>
+              <View style={styles.masonry}>
+                {masonry.map((column, columnIndex) => (
+                  <View
+                    key={`col-${columnIndex}`}
+                    style={[styles.masonryColumn, columnIndex === 0 ? null : { marginLeft: columnGap }]}
+                  >
+                    {column.map(({ pattern: relatedPattern, imageHeight }) => (
+                      <PatternFeedCard
+                        key={relatedPattern.id}
+                        pattern={relatedPattern}
+                        imageHeight={imageHeight}
+                        onPress={() => {
+                          onPatternChange?.(relatedPattern.id);
+                          scrollRef.current?.scrollTo({ y: 0, animated: false });
+                        }}
+                      />
+                    ))}
                   </View>
                 ))}
               </View>
             </View>
-          ) : null}
+          </ScrollView>
 
-          <View style={styles.specs}>
-            <Spec label="Yarn size" value={yarnSizeLabel(pattern.yarnWeight)} />
-            <Spec label="Hook size" value={formatHookSize(pattern.hookSize)} />
-            <Spec label="Total rows" value={String(pattern.totalRows)} />
-            <Spec label="Stitches per row" value={String(pattern.stitchesPerRow)} />
-            <Spec label="Difficulty" value={difficultyLabel(pattern.difficulty)} />
+          <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
+            <IconCountButton
+              label="Like"
+              count={formatLikeCount(pattern.id, liked)}
+              onPress={() => {
+                tick();
+                toggleLikePattern(pattern.id);
+              }}
+              icon={<HeartIcon color={liked ? Colors.accentPrimary : Colors.textSecondary} filled={liked} size={20} />}
+              active={liked}
+            />
+            <IconCountButton
+              label="Collect"
+              count={formatCollectCount(pattern.id)}
+              onPress={() => {
+                tick();
+                setFolderPickerOpen(true);
+              }}
+              icon={<FolderIcon color={collectedPatternIds.includes(pattern.id) ? Colors.accentPrimary : Colors.textSecondary} />}
+              active={collectedPatternIds.includes(pattern.id)}
+            />
+            <IconCountButton
+              label="Comment"
+              count={formatCommentCount(pattern.id, userCommentCount)}
+              onPress={() => scrollToSection('reviews')}
+              icon={<CommentIcon color={Colors.textSecondary} />}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Prepare to Crochet"
+              testID="pattern-detail-start"
+              onPress={onStart}
+              style={({ pressed }) => [styles.primaryCta, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.primaryCtaText}>Prepare to Crochet</Text>
+            </Pressable>
           </View>
 
-          <Pressable
-            accessibilityRole="link"
-            accessibilityLabel="Watch tutorial on YouTube"
-            onPress={() => {
-              void Linking.openURL(pattern.youtubeUrl);
-            }}
-            style={({ pressed }) => [styles.watch, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.watchText}>Watch tutorial</Text>
-          </Pressable>
+          <SaveToFolderSheet
+            visible={folderPickerOpen}
+            patternId={pattern.id}
+            onClose={() => setFolderPickerOpen(false)}
+          />
         </View>
-      )}
-      <SaveToFolderSheet
-        visible={folderPickerOpen}
-        patternId={pattern?.id ?? null}
-        onClose={() => setFolderPickerOpen(false)}
-      />
-    </BottomSheet>
+      ) : null}
+    </Modal>
   );
 }
 
-function FolderIcon({ color }: { color: string }) {
+function mergeComments(store: PatternComment[], seed: PatternComment[]): PatternComment[] {
+  const map = new Map<string, PatternComment>();
+  for (const comment of seed) map.set(comment.id, comment);
+  for (const comment of store) map.set(comment.id, comment);
+  return [...map.values()].sort(
+    (a, b) =>
+      Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.createdAt - a.createdAt || a.id.localeCompare(b.id),
+  );
+}
+
+function formatEstimated(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours <= 0) return `${mins} min`;
+  if (mins === 0) return `${hours} h`;
+  return `${hours} h ${mins} min`;
+}
+
+function ReviewCard({ comment }: { comment: PatternComment }) {
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M4 8.5 A2 2 0 0 1 6 6.5 H10 L12 9 H18 A2 2 0 0 1 20 11 V18.5 A2 2 0 0 1 18 20.5 H6 A2 2 0 0 1 4 18.5 V8.5 Z"
-        stroke={color}
-        strokeWidth={1.6}
-        strokeLinejoin="round"
-      />
-    </Svg>
+    <View style={styles.reviewCard}>
+      <View style={styles.reviewHeader}>
+        <View style={[styles.avatar, { backgroundColor: comment.avatarColor }]}>
+          <Text style={styles.avatarText}>{comment.authorName.slice(0, 2).toUpperCase()}</Text>
+        </View>
+        <View style={styles.reviewMeta}>
+          <Text style={styles.reviewAuthor}>{comment.authorName}</Text>
+          <Text style={styles.reviewUsername}>@{comment.authorUsername}</Text>
+        </View>
+        <Text style={styles.reviewStars}>{'★'.repeat(comment.rating)}</Text>
+      </View>
+      {comment.pinned ? (
+        <View style={styles.pinnedBadge}>
+          <Text style={styles.pinnedText}>Pinned by Designer</Text>
+        </View>
+      ) : null}
+      <Text style={styles.reviewBody}>{comment.body}</Text>
+      {comment.photoUri ? (
+        <Image accessible={false} source={{ uri: comment.photoUri }} style={styles.reviewPhoto} />
+      ) : null}
+    </View>
   );
 }
 
-function tick() {
-  if (Platform.OS === 'web') return;
-  void Haptics.selectionAsync();
+function StarPicker({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  return (
+    <View style={styles.starRow}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Pressable
+          key={star}
+          accessibilityRole="button"
+          accessibilityLabel={`${star} star rating`}
+          onPress={() => onChange(star)}
+          style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+        >
+          <Text style={[styles.starGlyph, star <= value && styles.starGlyphOn]}>★</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function IconCountButton({
+  label,
+  count,
+  onPress,
+  icon,
+  active,
+}: {
+  label: string;
+  count: string;
+  onPress: () => void;
+  icon: ReactNode;
+  active?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [styles.bottomIconButton, pressed && styles.pressed, webCursor]}
+    >
+      {icon}
+      <Text style={[styles.bottomIconCount, active && styles.bottomIconCountOn]}>{count}</Text>
+    </Pressable>
+  );
 }
 
 function Spec({ label, value }: { label: string; value: string }) {
@@ -264,7 +698,6 @@ function Spec({ label, value }: { label: string; value: string }) {
 function collectSwatches(pattern: CrochetPattern, projects: CrochetProject[], stash: YarnStashItem[]): Swatch[] {
   const swatches: Swatch[] = [];
   const seen = new Set<string>();
-
   const push = (hex: string, name: string) => {
     const normalized = hex.trim().toUpperCase();
     const label = name.trim();
@@ -272,292 +705,232 @@ function collectSwatches(pattern: CrochetPattern, projects: CrochetProject[], st
     seen.add(normalized);
     swatches.push({ hex: normalized, name: label });
   };
-
   for (const project of projects) {
     if (project.patternId !== pattern.id) continue;
-    for (const color of project.yarnColors) {
-      push(color.hexColor, color.label);
-    }
+    for (const color of project.yarnColors) push(color.hexColor, color.label);
   }
-
   for (const item of stash) {
     if (item.yarnWeight !== pattern.yarnWeight) continue;
     push(item.hexColor, item.colorName);
   }
-
   return swatches;
 }
 
-/** Heart used beside the like count and on the detail action bar. */
-export function HeartIcon({
-  color,
-  size = 14,
-  filled = false,
-}: {
-  color: string;
-  size?: number;
-  filled?: boolean;
-}) {
-  const path =
-    'M12 19.4 C7.2 16.2 4 13.4 4 9.8 C4 7.2 6 5.2 8.5 5.2 C10 5.2 11.2 5.9 12 7 C12.8 5.9 14 5.2 15.5 5.2 C18 5.2 20 7.2 20 9.8 C20 13.4 16.8 16.2 12 19.4 Z';
+function FolderIcon({ color }: { color: string }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path
-        d={path}
-        fill={filled ? color : 'none'}
+        d="M4 8.5 A2 2 0 0 1 6 6.5 H10 L12 9 H18 A2 2 0 0 1 20 11 V18.5 A2 2 0 0 1 18 20.5 H6 A2 2 0 0 1 4 18.5 V8.5 Z"
         stroke={color}
-        strokeWidth={1.8}
+        strokeWidth={1.6}
         strokeLinejoin="round"
       />
     </Svg>
   );
 }
 
+function CommentIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 5.5 A2.5 2.5 0 0 1 6.5 3 H17.5 A2.5 2.5 0 0 1 20 5.5 V14.5 A2.5 2.5 0 0 1 17.5 17 H10 L6 20.5 V17 H6.5 A2.5 2.5 0 0 1 4 14.5 V5.5 Z"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function ChevronLeftIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path d="M14.5 6 L8.5 12 L14.5 18" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function ShareIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 4 L12 14 M12 4 L8 8 M12 4 L16 8 M6 14 L6 18 A2 2 0 0 0 8 20 L16 20 A2 2 0 0 0 18 18 L18 14"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function YarnSkeinIcon({ color }: { color: string }) {
+  return (
+    <Svg width={36} height={36} viewBox="0 0 36 36" fill="none">
+      <Circle cx={18} cy={18} r={12} stroke={color} strokeWidth={1.6} />
+      <Path d="M10 14 C14 10 22 10 26 14 M10 22 C14 26 22 26 26 22" stroke={color} strokeWidth={1.4} />
+    </Svg>
+  );
+}
+
+function HookIcon({ color }: { color: string }) {
+  return (
+    <Svg width={36} height={36} viewBox="0 0 36 36" fill="none">
+      <Path
+        d="M10 8 C10 8 10 20 18 20 C24 20 26 16 26 12 C26 8 22 6 18 8"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+      <Rect x={8} y={22} width={6} height={8} rx={2} fill={color} opacity={0.35} />
+    </Svg>
+  );
+}
+
+function tick() {
+  if (Platform.OS === 'web') return;
+  void Haptics.selectionAsync();
+}
+
 const webCursor = Platform.OS === 'web' ? ({ cursor: 'pointer' } as const) : null;
 
 const styles = StyleSheet.create({
-  content: {
+  screen: { flex: 1, backgroundColor: Colors.backgroundPrimary },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Layout.screenGutter,
     paddingBottom: Spacing.sm,
-    gap: Spacing.md,
+    backgroundColor: Colors.backgroundPrimary,
+    borderBottomWidth: Layout.hairline,
+    borderBottomColor: Colors.border,
   },
-  hero: {
-    marginHorizontal: Layout.screenGutter,
-    borderRadius: Radius.md,
-    overflow: 'hidden',
-    backgroundColor: Colors.elevatedControl,
-  },
-  heroImage: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-  },
-  badge: {
-    position: 'absolute',
-    top: Spacing.sm,
-    left: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.accentPrimary,
-  },
-  badgeText: {
-    ...Typography.caption,
-    color: Colors.onAccent,
-    fontWeight: FontWeight.bold,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: Spacing.sm,
-    right: Spacing.sm,
-    width: 32,
-    height: 32,
+  iconButton: {
+    width: 40,
+    height: 40,
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(18, 18, 18, 0.72)',
+    backgroundColor: Colors.elevatedControl,
   },
-  closeGlyph: {
-    marginTop: -2,
-    color: Colors.textPrimary,
-    fontSize: 22,
-    lineHeight: 24,
-    fontWeight: FontWeight.medium,
+  topCreator: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minWidth: 0 },
+  topCreatorName: { ...Typography.callout, color: Colors.textPrimary, flex: 1 },
+  followPill: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.elevatedControl,
   },
+  followPillOn: { backgroundColor: Colors.accentMuted, borderColor: Colors.accentPrimary },
+  followText: { ...Typography.caption, color: Colors.textPrimary, fontWeight: FontWeight.semibold },
+  followTextOn: { color: Colors.accentPrimary },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: Colors.backgroundPrimary,
+    borderBottomWidth: Layout.hairline,
+    borderBottomColor: Colors.border,
+  },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: Spacing.sm },
+  tabLabel: { ...Typography.caption, color: Colors.textSecondary, fontWeight: FontWeight.medium },
+  tabLabelOn: { color: Colors.textPrimary, fontWeight: FontWeight.bold },
+  tabIndicator: {
+    marginTop: Spacing.xs,
+    width: 28,
+    height: 3,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentPrimary,
+  },
+  scrollContent: { gap: Spacing.lg },
+  heroWrap: { position: 'relative' },
+  heroImage: { aspectRatio: 16 / 9, backgroundColor: Colors.elevatedControl },
+  heroBadge: {
+    position: 'absolute',
+    top: Spacing.sm,
+    right: Layout.screenGutter,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xxs,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.scrim,
+  },
+  heroBadgeText: { ...Typography.caption, color: Colors.textPrimary, fontWeight: FontWeight.bold },
+  dotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
+  },
+  dot: { width: 6, height: 6, borderRadius: Radius.pill, backgroundColor: Colors.textTertiary },
+  dotOn: { backgroundColor: Colors.accentPrimary, width: 16 },
   title: {
     ...Typography.headline,
     color: Colors.textPrimary,
     paddingHorizontal: Layout.screenGutter,
+    marginTop: Spacing.md,
   },
-  creatorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingHorizontal: Layout.screenGutter,
-  },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    ...Typography.caption,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.bold,
-  },
-  creator: {
-    ...Typography.callout,
-    flex: 1,
-    color: Colors.textSecondary,
-  },
-  actionBar: {
+  statsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.sm,
-    paddingHorizontal: Layout.screenGutter,
-  },
-  actionPill: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.elevatedControl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  actionPillOn: {
-    backgroundColor: Colors.accentMuted,
-    borderColor: Colors.accentPrimary,
-  },
-  actionPillText: {
-    ...Typography.caption,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
-  },
-  actionPillTextOn: {
-    color: Colors.accentPrimary,
-  },
-  folderScrim: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: Colors.scrim,
-  },
-  folderSheet: {
-    maxHeight: '72%',
-    borderTopLeftRadius: Radius.lg,
-    borderTopRightRadius: Radius.lg,
-    backgroundColor: Colors.cardSurface,
     paddingHorizontal: Layout.screenGutter,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.xl,
-    gap: Spacing.md,
+    marginTop: Spacing.xs,
   },
-  folderTitle: {
-    ...Typography.headline,
-    color: Colors.textPrimary,
-  },
-  folderSubtitle: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  newFolderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  newFolderInput: {
+  stat: { ...Typography.caption, color: Colors.textSecondary },
+  statDot: { ...Typography.caption, color: Colors.textTertiary },
+  description: {
     ...Typography.body,
-    flex: 1,
-    minHeight: 44,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
     color: Colors.textPrimary,
-    backgroundColor: Colors.elevatedControl,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    paddingHorizontal: Layout.screenGutter,
+    marginTop: Spacing.sm,
   },
-  newFolderButton: {
-    minHeight: 44,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.accentPrimary,
-  },
-  newFolderButtonText: {
-    ...Typography.caption,
-    color: Colors.onAccent,
-    fontWeight: FontWeight.bold,
-  },
-  folderList: {
-    maxHeight: 280,
-  },
-  folderEmpty: {
-    ...Typography.callout,
-    color: Colors.textSecondary,
-  },
-  folderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.elevatedControl,
+  moreToggle: { alignSelf: 'flex-start', paddingHorizontal: Layout.screenGutter, paddingVertical: Spacing.xs },
+  moreToggleText: { ...Typography.label, color: Colors.accentPrimary },
+  expandedBlock: { gap: Spacing.md, paddingHorizontal: Layout.screenGutter, marginTop: Spacing.sm },
+  keyStitches: { gap: Spacing.xs },
+  sectionHeading: {
+    ...Typography.label,
+    color: Colors.textPrimary,
+    paddingHorizontal: Layout.screenGutter,
     marginBottom: Spacing.sm,
   },
-  folderRowOn: {
-    backgroundColor: Colors.accentMuted,
-    borderWidth: 1,
-    borderColor: Colors.accentPrimary,
-  },
-  folderRowTitle: {
-    ...Typography.label,
-    color: Colors.textPrimary,
-    flex: 1,
-  },
-  folderRowMeta: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  folderDone: {
-    minHeight: 48,
-    borderRadius: Radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.elevatedControl,
-  },
-  folderDoneText: {
-    ...Typography.label,
-    color: Colors.textPrimary,
-  },
-  section: {
-    gap: Spacing.sm,
-    paddingHorizontal: Layout.screenGutter,
-  },
-  sectionLabel: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  swatchRow: {
+  bodyText: { ...Typography.callout, color: Colors.textSecondary },
+  tutorialCard: {
+    flexDirection: 'row',
     gap: Spacing.md,
-    paddingRight: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.cardSurface,
   },
-  swatchItem: {
-    width: 84,
-    alignItems: 'center',
+  tutorialThumb: { width: 96, height: 54, borderRadius: Radius.sm, backgroundColor: Colors.elevatedControl },
+  tutorialCopy: { flex: 1, justifyContent: 'center', gap: Spacing.xxs },
+  tutorialTitle: { ...Typography.label, color: Colors.textPrimary },
+  tutorialMeta: { ...Typography.caption, color: Colors.textSecondary },
+  clubCard: {
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.elevatedControl,
     gap: Spacing.xs,
   },
-  swatch: {
-    width: 28,
-    height: 28,
+  clubTitle: { ...Typography.label, color: Colors.textPrimary },
+  clubBody: { ...Typography.caption, color: Colors.textSecondary },
+  youtubeLink: { paddingVertical: Spacing.xs },
+  youtubeLinkText: { ...Typography.caption, color: Colors.info },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  tagPill: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xxs,
     borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
+    backgroundColor: Colors.elevatedControl,
   },
-  swatchName: {
-    ...Typography.caption,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
-  emptySwatches: {
-    ...Typography.callout,
-    color: Colors.textSecondary,
-  },
-  chapterWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
+  tagText: { ...Typography.caption, color: Colors.textPrimary },
+  chapterWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   chapterChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
-    maxWidth: '100%',
-    paddingLeft: Spacing.xxs,
     paddingRight: Spacing.sm,
     paddingVertical: Spacing.xxs,
     borderRadius: Radius.pill,
@@ -570,26 +943,18 @@ const styles = StyleSheet.create({
     color: Colors.onAccent,
     fontWeight: FontWeight.bold,
     backgroundColor: Colors.accentPrimary,
-    overflow: 'hidden',
     borderRadius: Radius.pill,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xxs,
   },
-  chapterLabel: {
-    ...Typography.caption,
-    flexShrink: 1,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.medium,
-  },
-  specs: {
-    marginHorizontal: Layout.screenGutter,
+  chapterLabel: { ...Typography.caption, color: Colors.textPrimary, maxWidth: 180 },
+  specsCard: {
     borderRadius: Radius.md,
-    backgroundColor: Colors.backgroundPrimary,
+    backgroundColor: Colors.cardSurface,
     overflow: 'hidden',
   },
   specRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.md,
     paddingHorizontal: Spacing.md,
@@ -597,41 +962,148 @@ const styles = StyleSheet.create({
     borderBottomWidth: Layout.hairline,
     borderBottomColor: Colors.border,
   },
-  specLabel: {
-    ...Typography.callout,
-    color: Colors.textSecondary,
+  specLabel: { ...Typography.callout, color: Colors.textSecondary },
+  specValue: { ...Typography.callout, color: Colors.textPrimary, fontWeight: FontWeight.semibold },
+  section: { gap: Spacing.sm },
+  packCard: {
+    marginHorizontal: Layout.screenGutter,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.cardSurface,
+    gap: Spacing.md,
   },
-  specValue: {
-    ...Typography.callout,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
-  },
-  watch: {
+  packBody: { ...Typography.callout, color: Colors.textSecondary },
+  packCta: {
     alignSelf: 'flex-start',
-    marginHorizontal: Layout.screenGutter,
-    paddingVertical: Spacing.xs,
-  },
-  watchText: {
-    ...Typography.label,
-    color: Colors.accentPrimary,
-  },
-  start: {
-    marginHorizontal: Layout.screenGutter,
-    marginTop: Spacing.sm,
-    minHeight: 52,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentMuted,
+    borderWidth: 1,
+    borderColor: Colors.accentPrimary,
+  },
+  packCtaText: { ...Typography.caption, color: Colors.accentPrimary, fontWeight: FontWeight.bold },
+  bomRow: { gap: Spacing.md, paddingHorizontal: Layout.screenGutter },
+  bomCard: {
+    width: 132,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.elevatedControl,
+    gap: Spacing.xs,
+    alignItems: 'flex-start',
+  },
+  bomTitle: { ...Typography.label, color: Colors.textPrimary },
+  bomMeta: { ...Typography.caption, color: Colors.textSecondary },
+  swatchRow: { gap: Spacing.md, paddingHorizontal: Layout.screenGutter },
+  swatchItem: { width: 72, alignItems: 'center', gap: Spacing.xs },
+  swatch: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  swatchName: { ...Typography.caption, color: Colors.textPrimary, textAlign: 'center' },
+  ratingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Layout.screenGutter,
+  },
+  ratingValue: { ...Typography.headline, color: Colors.textPrimary },
+  ratingTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.elevatedControl,
+    overflow: 'hidden',
+  },
+  ratingFill: { height: '100%', backgroundColor: Colors.accentPrimary },
+  composeBox: {
+    marginHorizontal: Layout.screenGutter,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.cardSurface,
+    gap: Spacing.sm,
+  },
+  composeInput: {
+    ...Typography.body,
+    minHeight: 72,
+    color: Colors.textPrimary,
+  },
+  composeActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  starRow: { flexDirection: 'row', gap: Spacing.xs },
+  starGlyph: { fontSize: 22, color: Colors.textTertiary },
+  starGlyphOn: { color: Colors.warning },
+  postButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentPrimary,
+  },
+  postButtonText: { ...Typography.caption, color: Colors.onAccent, fontWeight: FontWeight.bold },
+  reviewCard: {
+    marginHorizontal: Layout.screenGutter,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.cardSurface,
+    gap: Spacing.sm,
+  },
+  reviewHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  reviewMeta: { flex: 1 },
+  reviewAuthor: { ...Typography.label, color: Colors.textPrimary },
+  reviewUsername: { ...Typography.caption, color: Colors.textSecondary },
+  reviewStars: { ...Typography.caption, color: Colors.warning },
+  pinnedBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xxs,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentMuted,
+  },
+  pinnedText: { ...Typography.caption, color: Colors.accentPrimary, fontWeight: FontWeight.bold },
+  reviewBody: { ...Typography.callout, color: Colors.textPrimary },
+  reviewPhoto: { width: '100%', height: 160, borderRadius: Radius.md, backgroundColor: Colors.elevatedControl },
+  seeAll: { alignSelf: 'center', paddingVertical: Spacing.sm },
+  seeAllText: { ...Typography.label, color: Colors.accentPrimary },
+  masonry: {
+    flexDirection: 'row',
+    paddingHorizontal: Layout.screenGutter,
+  },
+  masonryColumn: { flex: 1 },
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { ...Typography.caption, color: Colors.textPrimary, fontWeight: FontWeight.bold },
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Layout.screenGutter,
+    paddingTop: Spacing.sm,
+    backgroundColor: Colors.cardSurface,
+    borderTopWidth: Layout.hairline,
+    borderTopColor: Colors.border,
+  },
+  bottomIconButton: { alignItems: 'center', justifyContent: 'center', minWidth: 44, gap: 2 },
+  bottomIconCount: { ...Typography.caption, color: Colors.textSecondary, fontSize: 11 },
+  bottomIconCountOn: { color: Colors.accentPrimary },
+  primaryCta: {
+    flex: 1,
+    minHeight: 48,
     borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.accentPrimary,
   },
-  startText: {
-    ...Typography.label,
-    color: Colors.onAccent,
-    textAlign: 'center',
-  },
-  pressed: {
-    opacity: 0.72,
-  },
+  primaryCtaText: { ...Typography.label, color: Colors.onAccent, fontWeight: FontWeight.bold },
+  pressed: { opacity: 0.72 },
 });

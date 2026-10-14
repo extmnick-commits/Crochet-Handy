@@ -15,6 +15,9 @@ import {
   applyCreateProject,
   applyHydrateCloudSlice,
   applySetAccount,
+  applyAddPatternComment,
+  applyRemovePatternComment,
+  applyToggleFollowCreator,
   applyToggleLikePattern,
   applyTogglePatternInFolder,
   applyUpdateAccountProfile,
@@ -50,6 +53,13 @@ import {
   type CrochetProject,
 } from '../store/machine';
 import { createSeedData, SEED_PATTERNS } from '../store/seed';
+import {
+  formatCommentCount,
+  formatMakeCount,
+  formatViewCount,
+  getPatternExtendedMeta,
+  getRelatedPatterns,
+} from '../utils/patternDisplay';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -248,6 +258,8 @@ function projectFixture(overrides: Partial<CrochetProject> = {}): CrochetData {
     likedPatternIds: [],
     collectedPatternIds: [],
     collectionFolders: [],
+    patternComments: [],
+    followedCreators: [],
     tapHistory: {},
   };
 }
@@ -599,5 +611,46 @@ assert(
   removedPattern.collectionFolders.every((folder: { patternIds: string[] }) => !folder.patternIds.includes(patternId)),
   'remove pattern clears folders',
 );
+
+equal(seed.patternComments.length > 0, true, 'seed includes pattern comments');
+equal(formatViewCount(patternId), formatViewCount(patternId), 'view count is stable');
+equal(formatMakeCount(patternId), formatMakeCount(patternId), 'make count is stable');
+const meta = getPatternExtendedMeta(seed.patterns[0]!);
+assert(meta.description.length > 0, 'extended meta description');
+assert(meta.communityReviews.some((comment) => comment.pinned), 'pinned designer review');
+const related = getRelatedPatterns(seed.patterns[0]!, seed.patterns, 4);
+assert(related.every((item) => item.id !== patternId), 'related excludes self');
+
+const commented = applyAddPatternComment(
+  dataFrom(seed),
+  'comment-user-1',
+  {
+    patternId,
+    authorName: 'Nick',
+    authorUsername: 'nick',
+    rating: 5,
+    body: 'Love this stitch!',
+  },
+  t0,
+);
+assert(commented?.patternComments.some((comment) => comment.id === 'comment-user-1'), 'add pattern comment');
+const uncommented = applyRemovePatternComment(commented!, 'comment-user-1');
+assert(uncommented && !uncommented.patternComments.some((comment) => comment.id === 'comment-user-1'), 'remove comment');
+assert(applyAddPatternComment(dataFrom(seed), 'comment-user-1', { patternId: 'missing', authorName: 'X', rating: 3, body: 'nope' }, t0) == null, 'comment on missing pattern');
+
+const creator = seed.patterns[0]!.creator;
+const followed = applyToggleFollowCreator(dataFrom(seed), creator);
+assert(followed?.followedCreators.includes(creator), 'follow creator');
+const unfollowed = applyToggleFollowCreator(followed!, creator);
+assert(unfollowed && !unfollowed.followedCreators.includes(creator), 'unfollow creator');
+
+const removedWithComments = applyRemovePattern(
+  applyAddPatternComment(dataFrom(seed), 'comment-temp', { patternId, authorName: 'A', rating: 4, body: 'temp' }, t0)!,
+  patternId,
+  t0 + 6,
+);
+assert(removedWithComments && removedWithComments.patternComments.every((comment) => comment.patternId !== patternId), 'remove pattern clears comments');
+
+equal(formatCommentCount(patternId, 1), formatCommentCount(patternId, 1), 'comment count stable');
 
 console.log('crochet machine checks passed');
