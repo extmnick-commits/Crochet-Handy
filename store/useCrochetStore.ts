@@ -33,11 +33,14 @@ import {
   applyReopenProject,
   applyResetTimer,
   applySetActiveProject,
+  applySetHookAndYarn,
   applySetStitchesPerRow,
   applySetTotalRows,
   applyStartTimer,
   applyToggleTimer,
   applyUndoLastTap,
+  applyAddProgressPhoto,
+  applyRemoveProgressPhoto,
   applyUnlinkSlot,
   applyUpdateSlot,
   applyUpdateStashItem,
@@ -51,10 +54,12 @@ import {
   type CrochetPersistedSlice,
   type CrochetProject,
   type NewPatternInput,
+  type NewProgressPhotoInput,
   type NewYarnInput,
   type YarnSlotPatch,
   type YarnStashItem,
   type YarnStashPatch,
+  type YarnWeight,
 } from './machine';
 import { createSeedData } from './seed';
 
@@ -67,6 +72,7 @@ export type {
   CrochetProject,
   PatternDifficulty,
   ProjectStatus,
+  ProgressPhoto,
   YarnStashItem,
   YarnWeight,
 } from './machine';
@@ -78,7 +84,10 @@ export {
   formatElapsed,
   isSlotEmpty,
   isTimerRunning,
+  MAX_SKEINS,
   projectProgress,
+  rowPercent,
+  stitchesDone,
   YARN_WEIGHTS,
 } from './machine';
 
@@ -90,6 +99,7 @@ type CrochetActions = {
   undoLastTap: () => void;
   setStitchesPerRow: (value: number) => void;
   setTotalRows: (value: number) => void;
+  setHookAndYarn: (patch: { hookSize?: string; yarnWeight?: YarnWeight }) => void;
   startTimer: () => void;
   pauseTimer: () => void;
   resetTimer: () => void;
@@ -114,6 +124,9 @@ type CrochetActions = {
   updateSlot: (slotId: AmsSlotId, patch: YarnSlotPatch) => void;
   unlinkSlot: (slotId: AmsSlotId) => void;
   clearSlot: (slotId: AmsSlotId) => void;
+  /** Returns the new photo id, or null when the still can't be stored. */
+  addProgressPhoto: (input: NewProgressPhotoInput) => string | null;
+  removeProgressPhoto: (photoId: string) => void;
   resetToSeed: () => void;
 };
 
@@ -129,6 +142,7 @@ function readData(state: CrochetStore): CrochetData {
     projects: state.projects,
     activeProjectId: state.activeProjectId,
     yarnStash: state.yarnStash,
+    progressPhotos: state.progressPhotos,
     tapHistory: state.tapHistory,
   };
 }
@@ -139,6 +153,7 @@ function partializeCrochetState(state: CrochetStore): CrochetPersistedSlice {
     projects: state.projects,
     activeProjectId: state.activeProjectId,
     yarnStash: state.yarnStash,
+    progressPhotos: state.progressPhotos,
   };
 }
 
@@ -170,6 +185,7 @@ export const useCrochetStore = create<CrochetStore>()(
         undoLastTap: () => commit(applyUndoLastTap),
         setStitchesPerRow: (value) => commit((data, now) => applySetStitchesPerRow(data, value, now)),
         setTotalRows: (value) => commit((data, now) => applySetTotalRows(data, value, now)),
+        setHookAndYarn: (patch) => commit((data, now) => applySetHookAndYarn(data, patch, now)),
 
         startTimer: () => commit(applyStartTimer),
         pauseTimer: () => commit(applyPauseTimer),
@@ -225,6 +241,18 @@ export const useCrochetStore = create<CrochetStore>()(
         updateSlot: (slotId, patch) => commit((data, now) => applyUpdateSlot(data, slotId, patch, now)),
         unlinkSlot: (slotId) => commit((data, now) => applyUnlinkSlot(data, slotId, now)),
         clearSlot: (slotId) => commit((data, now) => applyClearSlot(data, slotId, now)),
+
+        addProgressPhoto: (input) => {
+          const id = createId('photo');
+          const next = applyAddProgressPhoto(readData(get()), id, input);
+          if (!next) return null;
+          set(next);
+          return id;
+        },
+        removeProgressPhoto: (photoId) => {
+          const next = applyRemoveProgressPhoto(readData(get()), photoId);
+          if (next) set(next);
+        },
 
         resetToSeed: () => {
           enablePersistWrites();

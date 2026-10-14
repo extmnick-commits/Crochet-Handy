@@ -19,6 +19,11 @@ import { parseYouTubeUrl } from '../utils/youtube';
 export const AMS_SLOT_IDS = ['A1', 'A2', 'A3', 'A4'] as const;
 export const MAX_TAP_HISTORY = 30;
 export const MAX_COUNT = 9999;
+/** Skeins of one color the stash stepper will count up to. */
+export const MAX_SKEINS = 48;
+/** Stills kept per project so a story reel stays a row-by-row timelapse. */
+export const MAX_PROGRESS_PHOTOS = 24;
+const MAX_PHOTO_URI = 500_000;
 /** Caps a corrupted timestamp that landed in the seconds field (~11 years). */
 const MAX_ACCUMULATED_SECONDS = 100_000 * 60 * 60;
 export const EMPTY_SLOT_COLOR = '#2A2A2D';
@@ -51,6 +56,26 @@ export type YarnStashItem = {
   yarnWeight: YarnWeight;
   hookSize: string;
   remainingPercent: number;
+  /** How many skeins of this color are on the shelf. */
+  skeinCount: number;
+};
+
+/**
+ * One still in a project's Snapchat-style progress reel.
+ * The sticker fields are frozen at capture time so later rows don't rewrite the past.
+ */
+export type ProgressPhoto = {
+  id: string;
+  projectId: string;
+  /** Compressed data URL, or a device file URI when that is all the picker returned. */
+  uri: string;
+  projectName: string;
+  row: number;
+  totalRows: number;
+  percent: number;
+  elapsedSeconds: number;
+  hookSize: string;
+  createdAt: number;
 };
 
 export type AmsYarnSlot = {
@@ -92,6 +117,9 @@ export type CrochetProject = {
   stitchesPerRow: number;
   currentRow: number;
   totalRows: number;
+  /** Millimeter hook on this make, e.g. `4.0 mm`. Copied from the pattern when the project is created. */
+  hookSize: string;
+  yarnWeight: YarnWeight;
   /** Epoch ms when the current running segment began. Null while paused. */
   timerStartedAt: number | null;
   /** Seconds already banked from earlier segments. Does not include the live one. */
@@ -112,6 +140,7 @@ export type CrochetData = {
   projects: CrochetProject[];
   activeProjectId: string | null;
   yarnStash: YarnStashItem[];
+  progressPhotos: ProgressPhoto[];
   tapHistory: Record<string, CounterSnapshot[]>;
 };
 
@@ -120,6 +149,7 @@ export type CrochetPersistedSlice = {
   projects: CrochetProject[];
   activeProjectId: string | null;
   yarnStash: YarnStashItem[];
+  progressPhotos: ProgressPhoto[];
 };
 
 export type NewPatternInput = {
@@ -146,6 +176,19 @@ export type NewYarnInput = {
   yarnWeight: YarnWeight;
   hookSize?: string;
   remainingPercent?: number;
+  skeinCount?: number;
+};
+
+export type NewProgressPhotoInput = {
+  projectId: string;
+  uri: string;
+  projectName: string;
+  row: number;
+  totalRows: number;
+  percent: number;
+  elapsedSeconds: number;
+  hookSize: string;
+  createdAt?: number;
 };
 
 export type YarnStashPatch = Partial<Omit<YarnStashItem, 'id'>>;
@@ -273,12 +316,24 @@ export function isTimerRunning(project: CrochetProject): boolean {
   return project.timerStartedAt != null && Number.isFinite(project.timerStartedAt);
 }
 
+/** Stitches already made: full rows behind the hook, plus the current row. */
+export function stitchesDone(project: Pick<CrochetProject, 'currentRow' | 'currentStitch' | 'stitchesPerRow'>): number {
+  const done = (project.currentRow - 1) * project.stitchesPerRow + project.currentStitch;
+  if (!Number.isFinite(done) || done <= 0) return 0;
+  return Math.min(MAX_COUNT * MAX_COUNT, Math.trunc(done));
+}
+
+/** Headline percent used on the dashboard and the progress sticker. 28 of 40 is 70. */
+export function rowPercent(project: Pick<CrochetProject, 'currentRow' | 'totalRows'>): number {
+  if (project.totalRows <= 0) return 0;
+  return clampPercent((project.currentRow / project.totalRows) * 100);
+}
+
 /** Fraction of the project's stitch grid that is already done, from 0 to 1. */
 export function projectProgress(project: CrochetProject): number {
   const total = project.totalRows * project.stitchesPerRow;
   if (total <= 0) return 0;
-  const done = (project.currentRow - 1) * project.stitchesPerRow + project.currentStitch;
-  return Math.min(1, Math.max(0, done / total));
+  return Math.min(1, Math.max(0, stitchesDone(project) / total));
 }
 
 /**
@@ -455,6 +510,25 @@ export function applySetStitchesPerRow(data: CrochetData, value: number, now: nu
   };
 }
 
+export function applySetHookAndYarn(
+  data: CrochetData,
+  patch: { hookSize?: string; yarnWeight?: YarnWeight },
+  now: number,
+): CrochetData | null {
+  const project = activeProject(data);
+  if (!project) return null;
+  let next = project;
+  if (patch.hookSize !== undefined) {
+    const hookSize = sanitizeHook(patch.hookSize);
+    if (hookSize !== next.hookSize) next = { ...next, hookSize };
+  }
+  if (patch.yarnWeight !== undefined && isYarnWeight(patch.yarnWeight) && patch.yarnWeight !== next.yarnWeight) {
+    next = { ...next, yarnWeight: patch.yarnWeight };
+  }
+  if (next === project) return null;
+  return replaceProject(data, { ...next, updatedAt: now });
+}
+
 export function applySetTotalRows(data: CrochetData, value: number, now: number): CrochetData | null {
   const project = activeProject(data);
   if (!project || !Number.isFinite(value)) return null;
@@ -482,6 +556,8 @@ export function applyCreateProject(
     currentRow: 1,
     stitchesPerRow: pattern?.stitchesPerRow ?? 10,
     totalRows: pattern?.totalRows ?? 10,
+    hookSize: pattern?.hookSize ?? '',
+    yarnWeight: pattern?.yarnWeight ?? 'worsted',
     timerStartedAt: null,
     accumulatedSeconds: 0,
     slots: emptyAmsSlots(),
@@ -545,11 +621,12 @@ export function applyDeleteProject(data: CrochetData, projectId: string): Croche
   const projects = data.projects.filter((project) => project.id !== projectId);
   const tapHistory = { ...data.tapHistory };
   delete tapHistory[projectId];
+  const progressPhotos = data.progressPhotos.filter((photo) => photo.projectId !== projectId);
   const activeProjectId =
     data.activeProjectId === projectId
       ? (projects.find((project) => project.status === 'in-progress')?.id ?? projects[0]?.id ?? null)
       : data.activeProjectId;
-  return { ...data, projects, tapHistory, activeProjectId };
+  return { ...data, projects, tapHistory, progressPhotos, activeProjectId };
 }
 
 export function applyAddPattern(data: CrochetData, id: string, input: NewPatternInput): CrochetData | null {
@@ -707,6 +784,48 @@ export function buildStashItem(id: string, input: NewYarnInput): YarnStashItem |
     yarnWeight: input.yarnWeight,
     hookSize: sanitizeHook(input.hookSize ?? ''),
     remainingPercent: clampPercent(input.remainingPercent ?? 100),
+    skeinCount: clampInt(input.skeinCount ?? 1, 0, MAX_SKEINS),
+  };
+}
+
+export function applyAddProgressPhoto(
+  data: CrochetData,
+  id: string,
+  input: NewProgressPhotoInput,
+  now = Date.now(),
+): CrochetData | null {
+  if (!data.projects.some((project) => project.id === input.projectId)) return null;
+  const photo = buildProgressPhoto(id, input, now);
+  if (!photo) return null;
+  const others = data.progressPhotos.filter((item) => item.projectId !== photo.projectId);
+  const mine = sortPhotos([...data.progressPhotos.filter((item) => item.projectId === photo.projectId), photo]).slice(
+    -MAX_PROGRESS_PHOTOS,
+  );
+  return { ...data, progressPhotos: sortPhotos([...others, ...mine]) };
+}
+
+export function applyRemoveProgressPhoto(data: CrochetData, photoId: string): CrochetData | null {
+  if (!data.progressPhotos.some((photo) => photo.id === photoId)) return null;
+  return { ...data, progressPhotos: data.progressPhotos.filter((photo) => photo.id !== photoId) };
+}
+
+export function buildProgressPhoto(id: string, input: NewProgressPhotoInput, now = Date.now()): ProgressPhoto | null {
+  if (!isSafeId(id) || !isSafeId(input.projectId) || !isProgressPhotoUri(input.uri)) return null;
+  const projectName = sanitizeText(input.projectName, 80);
+  if (!projectName) return null;
+  const totalRows = clampInt(input.totalRows, 1, MAX_COUNT);
+  const row = clampInt(input.row, 1, totalRows);
+  return {
+    id,
+    projectId: input.projectId,
+    uri: input.uri,
+    projectName,
+    row,
+    totalRows,
+    percent: clampPercent(input.percent),
+    elapsedSeconds: bankSeconds(input.elapsedSeconds),
+    hookSize: sanitizeHook(input.hookSize),
+    createdAt: finiteTimestamp(input.createdAt, now),
   };
 }
 
@@ -735,11 +854,10 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
       .map((item) => repairStashItem(item))
       .filter((item): item is YarnStashItem => item != null),
   );
-  const patternIds = new Set(patterns.map((pattern) => pattern.id));
   const stashById = new Map(yarnStash.map((item) => [item.id, item]));
   const projects = dedupeById(
     readArray(input.projects)
-      .map((item) => repairProject(item, patternIds, stashById, now))
+      .map((item) => repairProject(item, patterns, stashById, now))
       .filter((item): item is CrochetProject => item != null),
   );
 
@@ -750,7 +868,50 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
     activeProjectId = projects.find((project) => project.status === 'in-progress')?.id ?? projects[0]?.id ?? null;
   }
 
-  return { patterns, projects, activeProjectId, yarnStash };
+  const progressPhotos = sortPhotos(
+    dedupeById(
+      readArray(input.progressPhotos)
+        .map((item) => repairProgressPhoto(item))
+        .filter((item): item is ProgressPhoto => item != null),
+    ),
+  ).slice(-MAX_PROGRESS_PHOTOS * 8);
+
+  return { patterns, projects, activeProjectId, yarnStash, progressPhotos };
+}
+
+function repairProgressPhoto(input: unknown): ProgressPhoto | null {
+  if (!isRecord(input) || !isSafeId(input.id) || !isSafeId(input.projectId)) return null;
+  if (typeof input.uri !== 'string' || !isProgressPhotoUri(input.uri)) return null;
+  const projectName = typeof input.projectName === 'string' ? sanitizeText(input.projectName, 80) : null;
+  if (!projectName) return null;
+  const totalRows = clampInt(numberOr(input.totalRows, 1), 1, MAX_COUNT);
+  return {
+    id: input.id,
+    projectId: input.projectId,
+    uri: input.uri,
+    projectName,
+    row: clampInt(numberOr(input.row, 1), 1, totalRows),
+    totalRows,
+    percent: clampPercent(numberOr(input.percent, 0)),
+    elapsedSeconds: bankSeconds(numberOr(input.elapsedSeconds, 0)),
+    hookSize: typeof input.hookSize === 'string' ? sanitizeHook(input.hookSize) : '',
+    createdAt: finiteTimestamp(input.createdAt, 1),
+  };
+}
+
+function sortPhotos(photos: ProgressPhoto[]): ProgressPhoto[] {
+  return [...photos].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+}
+
+function isProgressPhotoUri(uri: string): boolean {
+  if (uri.length === 0 || uri.length > MAX_PHOTO_URI) return false;
+  return (
+    uri.startsWith('data:image/') ||
+    uri.startsWith('file://') ||
+    uri.startsWith('content://') ||
+    uri.startsWith('ph://') ||
+    uri.startsWith('assets-library://')
+  );
 }
 
 function commitCounter(
@@ -841,6 +1002,10 @@ function applyStashPatch(item: YarnStashItem, patch: YarnStashPatch): YarnStashI
     const remainingPercent = clampPercent(patch.remainingPercent);
     if (remainingPercent !== next.remainingPercent) next = { ...next, remainingPercent };
   }
+  if (patch.skeinCount !== undefined && Number.isFinite(patch.skeinCount)) {
+    const skeinCount = clampInt(patch.skeinCount, 0, MAX_SKEINS);
+    if (skeinCount !== next.skeinCount) next = { ...next, skeinCount };
+  }
   return next === item ? null : next;
 }
 
@@ -907,7 +1072,8 @@ function sameStash(a: YarnStashItem, b: YarnStashItem): boolean {
     a.colorName === b.colorName &&
     a.yarnWeight === b.yarnWeight &&
     a.hookSize === b.hookSize &&
-    a.remainingPercent === b.remainingPercent
+    a.remainingPercent === b.remainingPercent &&
+    a.skeinCount === b.skeinCount
   );
 }
 
@@ -950,12 +1116,13 @@ function repairStashItem(input: unknown): YarnStashItem | null {
     yarnWeight: input.yarnWeight,
     hookSize: typeof input.hookSize === 'string' ? sanitizeHook(input.hookSize) : '',
     remainingPercent: clampPercent(numberOr(input.remainingPercent, 100)),
+    skeinCount: clampInt(numberOr(input.skeinCount, 1), 0, MAX_SKEINS),
   };
 }
 
 function repairProject(
   input: unknown,
-  patternIds: Set<string>,
+  patterns: CrochetPattern[],
   stashById: Map<string, YarnStashItem>,
   now: number,
 ): CrochetProject | null {
@@ -967,16 +1134,44 @@ function repairProject(
   // progress should be thrown away. Lift the goal up to the row we're on.
   const currentRow = clampInt(numberOr(input.currentRow, 1), 1, MAX_COUNT);
   const totalRows = Math.max(clampInt(numberOr(input.totalRows, 1), 1, MAX_COUNT), currentRow);
-  const patternId = typeof input.patternId === 'string' && patternIds.has(input.patternId) ? input.patternId : null;
+  const patternIds = new Set(patterns.map((pattern) => pattern.id));
+  let patternId = typeof input.patternId === 'string' && patternIds.has(input.patternId) ? input.patternId : null;
+  // The first sample project pointed at a tutorial that is no longer in the library.
+  if (patternId == null && input.patternId === 'pattern-little-fawn') {
+    const linked = patterns.find((item) => item.id === 'pattern-super-easy-crochet-pattern-for-beginners-lovely-');
+    if (linked) patternId = linked.id;
+  }
+  const pattern = patternId ? (patterns.find((item) => item.id === patternId) ?? null) : null;
+  // The untouched first-launch sample is the Active dashboard's 4.0 mm / #4 make.
+  // Anything the user has already counted is left alone.
+  const legacySample =
+    input.id === 'project-bambi' &&
+    input.patternId === 'pattern-little-fawn' &&
+    !('hookSize' in input) &&
+    numberOr(input.currentStitch, -1) === 17 &&
+    numberOr(input.stitchesPerRow, -1) === 36 &&
+    numberOr(input.currentRow, -1) === 28 &&
+    numberOr(input.totalRows, -1) === 40;
+  const resolvedStitchesPerRow = legacySample ? 60 : stitchesPerRow;
+  const resolvedStitch = legacySample ? 14 : clampInt(numberOr(input.currentStitch, 0), 0, resolvedStitchesPerRow);
+  // Projects saved before hook and yarn lived on the make inherit them from the pattern.
+  const hookSize = legacySample
+    ? '4.0 mm'
+    : typeof input.hookSize === 'string'
+      ? sanitizeHook(input.hookSize)
+      : (pattern?.hookSize ?? '');
+  const yarnWeight = legacySample ? 'worsted' : isYarnWeight(input.yarnWeight) ? input.yarnWeight : (pattern?.yarnWeight ?? 'worsted');
   const draft: CrochetProject = {
     id: input.id,
     name,
     patternId,
     status: input.status === 'finished' ? 'finished' : 'in-progress',
-    currentStitch: clampInt(numberOr(input.currentStitch, 0), 0, stitchesPerRow),
-    stitchesPerRow,
+    currentStitch: resolvedStitch,
+    stitchesPerRow: resolvedStitchesPerRow,
     currentRow,
     totalRows,
+    hookSize,
+    yarnWeight,
     timerStartedAt: typeof input.timerStartedAt === 'number' && Number.isFinite(input.timerStartedAt) ? input.timerStartedAt : null,
     accumulatedSeconds: bankSeconds(numberOr(input.accumulatedSeconds, 0)),
     slots: repairSlots(input.slots, stashById),

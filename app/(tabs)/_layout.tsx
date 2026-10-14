@@ -35,7 +35,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="project"
+        name="active"
         options={{
           title: 'Active Project',
           tabBarIcon: ({ focused, color, size }) => <ProjectIcon focused={focused} color={color} size={size} />,

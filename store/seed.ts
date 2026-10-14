@@ -59,6 +59,7 @@ const softFudge: YarnStashItem = {
   yarnWeight: 'dk',
   hookSize: '2.5 mm',
   remainingPercent: 58,
+  skeinCount: 2,
 };
 
 const champagne: YarnStashItem = {
@@ -69,6 +70,7 @@ const champagne: YarnStashItem = {
   yarnWeight: 'dk',
   hookSize: '2.5 mm',
   remainingPercent: 76,
+  skeinCount: 1,
 };
 
 const coffeeBean: YarnStashItem = {
@@ -79,6 +81,7 @@ const coffeeBean: YarnStashItem = {
   yarnWeight: 'dk',
   hookSize: '2.5 mm',
   remainingPercent: 91,
+  skeinCount: 3,
 };
 
 const blushPink: YarnStashItem = {
@@ -89,6 +92,7 @@ const blushPink: YarnStashItem = {
   yarnWeight: 'dk',
   hookSize: '2.5 mm',
   remainingPercent: 97,
+  skeinCount: 1,
 };
 
 const mustard: YarnStashItem = {
@@ -99,6 +103,7 @@ const mustard: YarnStashItem = {
   yarnWeight: 'worsted',
   hookSize: '5.5 mm',
   remainingPercent: 100,
+  skeinCount: 2,
 };
 
 const sage: YarnStashItem = {
@@ -109,6 +114,7 @@ const sage: YarnStashItem = {
   yarnWeight: 'bulky',
   hookSize: '6.0 mm',
   remainingPercent: 64,
+  skeinCount: 1,
 };
 
 function patternFromSeed(entry: SeedPattern): CrochetPattern {
@@ -302,12 +308,14 @@ export function createSeedData(): CrochetPersistedSlice {
   const bambi: CrochetProject = {
     id: 'project-bambi',
     name: 'Bambi Amigurumi Plush',
-    patternId: 'pattern-little-fawn',
+    patternId: 'pattern-super-easy-crochet-pattern-for-beginners-lovely-',
     status: 'in-progress',
-    currentStitch: 17,
-    stitchesPerRow: 36,
+    currentStitch: 14,
+    stitchesPerRow: 60,
     currentRow: 28,
     totalRows: 40,
+    hookSize: '4.0 mm',
+    yarnWeight: 'worsted',
     timerStartedAt: null,
     accumulatedSeconds: SEED_BANKED_SECONDS,
     slots,
@@ -320,5 +328,6 @@ export function createSeedData(): CrochetPersistedSlice {
     projects: [bambi],
     activeProjectId: bambi.id,
     yarnStash: [softFudge, champagne, coffeeBean, blushPink, mustard, sage],
+    progressPhotos: [],
   };
 }

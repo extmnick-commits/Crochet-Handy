@@ -6,6 +6,7 @@ import { parseYouTubeUrl } from '../utils/youtube';
 import {
   activeProject,
   applyAddPattern,
+  applyAddProgressPhoto,
   applyAssignStashToSlot,
   applyCreateProject,
   applyDecrementRow,
@@ -18,6 +19,7 @@ import {
   applyRemoveStashItem,
   applyResetTimer,
   applySetActiveProject,
+  applySetHookAndYarn,
   applySetStitchesPerRow,
   applySetTotalRows,
   applyStartTimer,
@@ -85,12 +87,19 @@ assert(parseYouTubeUrl('') == null, 'empty');
 assert(parseYouTubeUrl('not a url') == null, 'garbage');
 
 const seed = createSeedData();
-equal(seed.patterns.length, 6, 'six patterns');
+equal(seed.patterns.length, 5, 'five patterns');
 equal(seed.projects.length, 1, 'one project');
 equal(seed.projects[0]?.name, 'Bambi Amigurumi Plush', 'project name');
 equal(seed.projects[0]?.currentRow, 28, 'bambi row');
 equal(seed.projects[0]?.totalRows, 40, 'bambi total');
-equal(seed.projects[0]?.currentStitch, 17, 'bambi stitch');
+equal(seed.projects[0]?.currentStitch, 14, 'bambi stitch');
+equal(seed.projects[0]?.stitchesPerRow, 60, 'bambi stitches per row');
+equal(seed.projects[0]?.hookSize, '4.0 mm', 'bambi hook');
+equal(seed.projects[0]?.yarnWeight, 'worsted', 'bambi yarn');
+assert(
+  seed.patterns.some((pattern) => pattern.id === seed.projects[0]?.patternId),
+  'active project links a real pattern',
+);
 equal(seed.projects[0]?.timerStartedAt, null, 'bambi timer paused');
 equal(formatElapsed(seed.projects[0]?.accumulatedSeconds ?? 0), '04:18:00', 'banked time');
 equal(seed.projects[0]?.slots.length, 4, 'four AMS slots');
@@ -156,6 +165,8 @@ function projectFixture(overrides: Partial<CrochetProject> = {}): CrochetData {
     stitchesPerRow: 3,
     currentRow: 1,
     totalRows: 2,
+    hookSize: '4.0 mm',
+    yarnWeight: 'worsted',
     timerStartedAt: null,
     accumulatedSeconds: 0,
     slots: emptyAmsSlots(),
@@ -163,7 +174,7 @@ function projectFixture(overrides: Partial<CrochetProject> = {}): CrochetData {
     updatedAt: 1,
     ...overrides,
   };
-  return { patterns: [], projects: [project], activeProjectId: 'p', yarnStash: [], tapHistory: {} };
+  return { patterns: [], projects: [project], activeProjectId: 'p', yarnStash: [], progressPhotos: [], tapHistory: {} };
 }
 
 function tap(times: number, source = projectFixture(), autoAdvance?: boolean) {
@@ -301,7 +312,7 @@ equal(repaired.projects.length, 1, 'duplicate id dropped');
 equal(repaired.activeProjectId, 'project-bambi', 'stale active id falls back');
 equal(repaired.projects[0]?.currentRow, 50, 'row kept');
 equal(repaired.projects[0]?.totalRows, 50, 'goal lifted to the current row');
-equal(repaired.projects[0]?.currentStitch, 36, 'stitch clamped');
+equal(repaired.projects[0]?.currentStitch, 60, 'stitch clamped');
 equal(repaired.projects[0]?.accumulatedSeconds, 0, 'negative time dropped');
 equal(repaired.projects[0]?.timerStartedAt, t0, 'future anchor rebased');
 equal(repaired.projects[0]?.slots.length, 4, 'slots repaired to four');
@@ -311,10 +322,81 @@ equal(repaired.projects[0]?.slots[1]?.id, 'A2', 'missing slots are empty');
 assert(repairPersisted({ nope: true }) == null, 'foreign blob is rejected');
 assert(repairPersisted(null) == null, 'null blob is rejected');
 
+const legacy = repairPersisted(
+  {
+    patterns: seed.patterns,
+    yarnStash: seed.yarnStash,
+    activeProjectId: 'project-bambi',
+    projects: [
+      {
+        id: 'project-bambi',
+        name: 'Bambi Amigurumi Plush',
+        patternId: 'pattern-little-fawn',
+        status: 'in-progress',
+        currentStitch: 17,
+        stitchesPerRow: 36,
+        currentRow: 28,
+        totalRows: 40,
+        timerStartedAt: null,
+        accumulatedSeconds: 0,
+        slots: seed.projects[0]?.slots,
+      },
+    ],
+  },
+  t0,
+);
+equal(legacy?.projects[0]?.patternId, seed.projects[0]?.patternId, 'legacy sample links a real tutorial');
+equal(legacy?.projects[0]?.currentStitch, 14, 'legacy sample stitch');
+equal(legacy?.projects[0]?.stitchesPerRow, 60, 'legacy sample row length');
+equal(legacy?.projects[0]?.hookSize, '4.0 mm', 'legacy sample hook');
+equal(legacy?.projects[0]?.yarnWeight, 'worsted', 'legacy sample yarn');
+equal(legacy?.projects[0]?.slots[0]?.colorName, 'Soft Fudge', 'legacy slots kept');
+
+const tooled = applySetHookAndYarn(dataFrom(seed), { hookSize: '5.0 mm', yarnWeight: 'bulky' }, t0);
+assert(tooled, 'tooling');
+equal(activeProject(tooled)?.hookSize, '5.0 mm', 'hook updated');
+equal(activeProject(tooled)?.yarnWeight, 'bulky', 'yarn updated');
+assert(applySetHookAndYarn(tooled, { hookSize: '5.0 mm' }, t0) == null, 'same hook is a no-op');
+
 const duplicate = applyAddPattern(dataFrom(seed), 'pattern-copy', {
   title: 'Another fawn',
-  youtubeUrl: 'https://youtu.be/o_ge08T0-lA',
+  youtubeUrl: 'https://youtu.be/YED4ZOWimsE',
 });
 assert(duplicate == null, 'duplicate video is rejected');
+
+const skeinUp = applyUpdateStashItem(dataFrom(seed), 'yarn-soft-fudge', { skeinCount: 4 }, t0);
+equal(skeinUp?.yarnStash.find((item) => item.id === 'yarn-soft-fudge')?.skeinCount, 4, 'skein count updates');
+assert(applyUpdateStashItem(skeinUp!, 'yarn-soft-fudge', { skeinCount: 4 }, t0) == null, 'same skein count is a no-op');
+
+const shot = applyAddProgressPhoto(
+  dataFrom(seed),
+  'photo-1',
+  {
+    projectId: 'project-bambi',
+    uri: 'data:image/jpeg;base64,aaaa',
+    projectName: 'Bambi Amigurumi Plush',
+    row: 28,
+    totalRows: 40,
+    percent: 70,
+    elapsedSeconds: 4 * 3600 + 18 * 60,
+    hookSize: '4.0 mm',
+    createdAt: t0,
+  },
+  t0,
+);
+equal(shot?.progressPhotos.length, 1, 'progress photo stored');
+equal(shot?.progressPhotos[0]?.percent, 70, 'sticker percent frozen');
+assert(applyAddProgressPhoto(dataFrom(seed), 'photo-x', { ...shot!.progressPhotos[0]!, projectId: 'missing', uri: 'data:image/jpeg;base64,aaaa' }, t0) == null, 'photo needs a project');
+
+const legacyStash = repairPersisted(
+  {
+    yarnStash: [{ id: 'yarn-old', hexColor: '#abc', brand: 'Old', colorName: 'Blue', yarnWeight: 'lace' }],
+    patterns: [],
+    projects: [],
+  },
+  t0,
+);
+equal(legacyStash?.yarnStash[0]?.skeinCount, 1, 'missing skein count repairs to 1');
+equal(legacyStash?.progressPhotos.length, 0, 'missing photo log repairs empty');
 
 console.log('crochet machine checks passed');

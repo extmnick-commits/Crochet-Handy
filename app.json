@@ -18,7 +18,10 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -29,8 +32,41 @@
     },
     "plugins": [
       "expo-router",
-      "expo-status-bar",
-      "expo-system-ui"
+      [
+        "expo-status-bar",
+        {
+          "style": "light"
+        }
+      ],
+      "expo-system-ui",
+      [
+        "expo-navigation-bar",
+        {
+          "style": "light",
+          "enforceContrast": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Crochet Handy uses your photos to keep a progress log of each make.",
+          "cameraPermission": "Crochet Handy uses the camera to snap progress photos of your crochet.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#121212",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#121212"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

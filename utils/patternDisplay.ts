@@ -79,6 +79,51 @@ export function formatHookSize(hook: string): string {
   return `${value.toFixed(1)}mm`;
 }
 
+/** US letter sizes for the millimeter hooks people actually buy. `4` mm is a G-6. */
+export const HOOK_SIZE_OPTIONS = [
+  { millimeters: 2.25, letter: 'B-1' },
+  { millimeters: 2.75, letter: 'C-2' },
+  { millimeters: 3.25, letter: 'D-3' },
+  { millimeters: 3.5, letter: 'E-4' },
+  { millimeters: 3.75, letter: 'F-5' },
+  { millimeters: 4, letter: 'G-6' },
+  { millimeters: 4.5, letter: '7' },
+  { millimeters: 5, letter: 'H-8' },
+  { millimeters: 5.5, letter: 'I-9' },
+  { millimeters: 6, letter: 'J-10' },
+  { millimeters: 6.5, letter: 'K-10.5' },
+  { millimeters: 8, letter: 'L-11' },
+  { millimeters: 9, letter: 'M/N-13' },
+  { millimeters: 10, letter: 'N/P-15' },
+] as const;
+
+export function parseHookMillimeters(hook: string): number | null {
+  const match = hook.trim().match(/(\d+(?:\.\d+)?)\s*mm/i);
+  if (!match?.[1]) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** `4` → `4.0 mm`, `3.25` → `3.25 mm`. */
+export function formatMillimeterHook(millimeters: number): string {
+  const decimals = Number.isInteger(millimeters * 2) ? 1 : 2;
+  return `${millimeters.toFixed(decimals)} mm`;
+}
+
+/** Spaced form for the device card (`4.0 mm`). Labels that aren't millimeters pass through. */
+export function formatHookMillimeters(hook: string): string {
+  const value = parseHookMillimeters(hook);
+  if (value == null) return formatHookSize(hook);
+  return formatMillimeterHook(value);
+}
+
+export function hookLetterSize(hook: string): string | null {
+  const value = parseHookMillimeters(hook);
+  if (value == null) return null;
+  const found = HOOK_SIZE_OPTIONS.find((item) => Math.abs(item.millimeters - value) < 0.02);
+  return found?.letter ?? null;
+}
+
 /** Top-left card badge: `4.0mm · #4`. */
 export function formatSpecBadge(pattern: CrochetPattern): string {
   const hook = formatHookSize(pattern.hookSize);

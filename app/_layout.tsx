@@ -1,4 +1,5 @@
 import { DarkTheme, Stack, ThemeProvider, type Theme } from 'expo-router';
+import { NavigationBar } from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { Platform } from 'react-native';
@@ -35,6 +36,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={NavigationTheme}>
       <StatusBar style="light" />
+      {Platform.OS === 'android' && <NavigationBar style="light" />}
       <Stack
         screenOptions={{
           headerShown: false,

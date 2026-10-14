@@ -58,7 +58,7 @@ export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetPro
     const id = createProject({ name: pattern.title, patternId: pattern.id });
     if (!id) return;
     onClose();
-    router.navigate('/project');
+    router.navigate('/active');
   };
 
   return (

@@ -46,6 +46,11 @@ export function youtubeThumbnailUrl(videoId: string, quality: YouTubeThumbnailQu
   return `https://i.ytimg.com/vi/${videoId}/${THUMBNAIL_FILES[quality]}`;
 }
 
+/** Privacy-enhanced embed. `playsinline` keeps the player inside the 16:9 card on iOS. */
+export function youtubeEmbedUrl(videoId: string): string {
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?rel=0&modestbranding=1&playsinline=1&controls=1`;
+}
+
 export function parseYouTubeUrl(input: string): ParsedYouTube | null {
   return parseYouTube(input, 0);
 }
