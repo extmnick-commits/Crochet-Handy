@@ -14,10 +14,10 @@ import { crochetStateStorage, CROCHET_STORAGE_KEY, CROCHET_STORAGE_VERSION, enab
 import { parseYouTubeUrl } from '@/utils/youtube';
 import {
   activeProject,
+  applyAddCheckpoint,
   applyAddPattern,
+  applyAddProjectYarnColor,
   applyAddStashItem,
-  applyAssignStashToSlot,
-  applyClearSlot,
   applyCreateProject,
   applyDecrementRow,
   applyDecrementStitch,
@@ -33,6 +33,7 @@ import {
   applyReopenProject,
   applyResetTimer,
   applySetActiveProject,
+  applySetPatternBookmarks,
   applySetHookAndYarn,
   applySetStitchesPerRow,
   applySetTotalRows,
@@ -40,23 +41,27 @@ import {
   applyToggleTimer,
   applyUndoLastTap,
   applyAddProgressPhoto,
+  applyRemoveCheckpoint,
   applyRemoveProgressPhoto,
-  applyUnlinkSlot,
-  applyUpdateSlot,
+  applyRemoveProjectYarnColor,
+  applySetRowNote,
+  applyUpdateProjectYarnColor,
   applyUpdateStashItem,
   createId,
   elapsedSeconds,
   repairPersisted,
-  type AmsSlotId,
   type CreateProjectInput,
   type CrochetData,
   type CrochetPattern,
   type CrochetPersistedSlice,
   type CrochetProject,
   type NewPatternInput,
+  type VideoBookmark,
   type NewProgressPhotoInput,
+  type NewProjectYarnColorInput,
+  type NewVideoCheckpointInput,
   type NewYarnInput,
-  type YarnSlotPatch,
+  type ProjectYarnColorPatch,
   type YarnStashItem,
   type YarnStashPatch,
   type YarnWeight,
@@ -64,28 +69,29 @@ import {
 import { createSeedData } from './seed';
 
 export type {
-  AmsSlotId,
-  AmsSlots,
-  AmsYarnSlot,
   CounterSnapshot,
   CrochetPattern,
   CrochetProject,
   PatternDifficulty,
   ProjectStatus,
   ProgressPhoto,
+  ProjectYarnColor,
+  VideoBookmark,
+  VideoCheckpoint,
   YarnStashItem,
   YarnWeight,
 } from './machine';
 
 export {
-  AMS_SLOT_IDS,
   elapsedSeconds,
   elapsedWholeSeconds,
+  formatCheckpointTime,
   formatElapsed,
-  isSlotEmpty,
   isTimerRunning,
   MAX_COUNT,
+  MAX_PROJECT_YARN_COLORS,
   MAX_SKEINS,
+  MAX_VIDEO_CHECKPOINTS,
   projectProgress,
   rowPercent,
   stitchesDone,
@@ -117,14 +123,18 @@ type CrochetActions = {
   deleteProject: (projectId: string) => void;
   /** Returns the new id, or the existing pattern id when that video is already saved. */
   addPatternFromYouTube: (input: NewPatternInput) => string | null;
+  /** Replace a pattern's bookmarks when YouTube chapters are found. */
+  setPatternBookmarks: (patternId: string, bookmarks: VideoBookmark[]) => void;
   removePattern: (patternId: string) => void;
   addStashItem: (input: NewYarnInput) => string | null;
   updateStashItem: (stashItemId: string, patch: YarnStashPatch) => void;
   removeStashItem: (stashItemId: string) => void;
-  assignStashToSlot: (slotId: AmsSlotId, stashItemId: string) => void;
-  updateSlot: (slotId: AmsSlotId, patch: YarnSlotPatch) => void;
-  unlinkSlot: (slotId: AmsSlotId) => void;
-  clearSlot: (slotId: AmsSlotId) => void;
+  setRowNote: (note: string) => void;
+  addProjectYarnColor: (input: NewProjectYarnColorInput) => string | null;
+  updateProjectYarnColor: (colorId: string, patch: ProjectYarnColorPatch) => void;
+  removeProjectYarnColor: (colorId: string) => void;
+  addCheckpoint: (input: NewVideoCheckpointInput) => string | null;
+  removeCheckpoint: (checkpointId: string) => void;
   /** Returns the new photo id, or null when the still can't be stored. */
   addProgressPhoto: (input: NewProgressPhotoInput) => string | null;
   removeProgressPhoto: (photoId: string) => void;
@@ -214,6 +224,8 @@ export const useCrochetStore = create<CrochetStore>()(
           if (next) set(next);
         },
 
+        setPatternBookmarks: (patternId, bookmarks) =>
+          commit((data) => applySetPatternBookmarks(data, patternId, bookmarks)),
         addPatternFromYouTube: (input) => {
           const id = createId('pattern');
           const next = applyAddPattern(readData(get()), id, input);
@@ -237,11 +249,25 @@ export const useCrochetStore = create<CrochetStore>()(
         updateStashItem: (stashItemId, patch) =>
           commit((data, now) => applyUpdateStashItem(data, stashItemId, patch, now)),
         removeStashItem: (stashItemId) => commit((data, now) => applyRemoveStashItem(data, stashItemId, now)),
-        assignStashToSlot: (slotId, stashItemId) =>
-          commit((data, now) => applyAssignStashToSlot(data, slotId, stashItemId, now)),
-        updateSlot: (slotId, patch) => commit((data, now) => applyUpdateSlot(data, slotId, patch, now)),
-        unlinkSlot: (slotId) => commit((data, now) => applyUnlinkSlot(data, slotId, now)),
-        clearSlot: (slotId) => commit((data, now) => applyClearSlot(data, slotId, now)),
+        setRowNote: (note) => commit((data, now) => applySetRowNote(data, note, now)),
+        addProjectYarnColor: (input) => {
+          const id = createId('color');
+          const next = applyAddProjectYarnColor(readData(get()), id, input, Date.now());
+          if (!next) return null;
+          set(next);
+          return id;
+        },
+        updateProjectYarnColor: (colorId, patch) =>
+          commit((data, now) => applyUpdateProjectYarnColor(data, colorId, patch, now)),
+        removeProjectYarnColor: (colorId) => commit((data, now) => applyRemoveProjectYarnColor(data, colorId, now)),
+        addCheckpoint: (input) => {
+          const id = createId('cp');
+          const next = applyAddCheckpoint(readData(get()), id, input, Date.now());
+          if (!next) return null;
+          set(next);
+          return id;
+        },
+        removeCheckpoint: (checkpointId) => commit((data, now) => applyRemoveCheckpoint(data, checkpointId, now)),
 
         addProgressPhoto: (input) => {
           const id = createId('photo');

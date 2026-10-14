@@ -2,12 +2,14 @@
  * Edge-case checks for the crochet state machine and YouTube parser.
  * Run with: npx tsx scripts/check-crochet-machine.ts
  */
+import { extractVideoBookmarks, formatBookmarkTime, isEstimatedBookmarkSet, sanitizeVideoBookmarks } from '../utils/chapters';
 import { parseYouTubeUrl } from '../utils/youtube';
 import {
   activeProject,
+  applyAddCheckpoint,
   applyAddPattern,
   applyAddProgressPhoto,
-  applyAssignStashToSlot,
+  applyAddProjectYarnColor,
   applyCreateProject,
   applyDecrementRow,
   applyDecrementStitch,
@@ -16,19 +18,22 @@ import {
   applyIncrementStitch,
   applyPauseTimer,
   applyReconcileTimers,
+  applyRemoveCheckpoint,
+  applyRemoveProjectYarnColor,
   applyRemoveStashItem,
   applyResetTimer,
   applySetActiveProject,
+  applySetPatternBookmarks,
   applySetHookAndYarn,
+  applySetRowNote,
   applySetStitchesPerRow,
   applySetTotalRows,
   applyStartTimer,
   applyToggleTimer,
   applyUndoLastTap,
-  applyUpdateSlot,
   applyUpdateStashItem,
   elapsedSeconds,
-  emptyAmsSlots,
+  formatCheckpointTime,
   formatElapsed,
   projectProgress,
   repairPersisted,
@@ -67,9 +72,9 @@ expectVideo('https://www.youtube-nocookie.com/embed/o_ge08T0-lA?start=10', 'embe
 expectVideo('https://www.youtube.com/shorts/o_ge08T0-lA?feature=share', 'short');
 expectVideo('https://www.youtube.com/live/o_ge08T0-lA/', 'live');
 expectVideo('https://www.youtube.com/v/o_ge08T0-lA', 'watch');
-expectVideo('https://youtu.be/o_ge08T0-lA?t=43', 'share');
 expectVideo('youtu.be/o_ge08T0-lA', 'share');
-expectVideo('https://youtu.be/o_ge08T0-lA&feature=share', 'share');
+expectVideo('youtu.be/o_ge08T0-lA', 'share');
+expectVideo('https://youtu.be/o_ge08T0-lA&t=43', 'share');
 expectVideo(`  \u200Bhttps://youtu.be/${FAWN}.  `, 'share');
 expectVideo(FAWN, 'id');
 expectVideo(
@@ -85,6 +90,22 @@ assert(parseYouTubeUrl('https://www.youtube.com/watch?v=') == null, 'empty v');
 assert(parseYouTubeUrl('javascript:alert(1)') == null, 'bad protocol');
 assert(parseYouTubeUrl('') == null, 'empty');
 assert(parseYouTubeUrl('not a url') == null, 'garbage');
+
+const chapterText = [
+  '0:00 Materials & Hook',
+  '02:15 Row 1: Foundation',
+  'Finishing & Border — 1:02:15',
+].join('\n');
+const extracted = extractVideoBookmarks(chapterText);
+equal(extracted.length, 3, 'three extracted chapters');
+equal(extracted[0]?.seconds, 0, 'first chapter at 0');
+equal(extracted[0]?.label, 'Materials & Hook', 'materials label');
+equal(extracted[1]?.seconds, 135, 'row chapter seconds');
+equal(extracted[1]?.rowHint, 1, 'row hint from label');
+equal(extracted[1]?.label, 'Row 1: Foundation', 'row label');
+equal(extracted[2]?.seconds, 3735, 'hour timestamp');
+equal(formatBookmarkTime(75), '01:15', 'bookmark time format');
+equal(formatBookmarkTime(3735), '1:02:15', 'hour bookmark format');
 
 const seed = createSeedData();
 equal(seed.patterns.length, 8, 'eight patterns');
@@ -102,13 +123,37 @@ assert(
 );
 equal(seed.projects[0]?.timerStartedAt, null, 'bambi timer paused');
 equal(formatElapsed(seed.projects[0]?.accumulatedSeconds ?? 0), '04:18:00', 'banked time');
-equal(seed.projects[0]?.slots.length, 4, 'four AMS slots');
-equal(seed.projects[0]?.slots.map((slot) => slot.id).join(','), 'A1,A2,A3,A4', 'slot ids');
+equal(seed.projects[0]?.yarnColors.length, 4, 'four palette colors');
+equal(seed.projects[0]?.yarnColors[0]?.label, 'Soft Fudge', 'first palette label');
+equal(seed.projects[0]?.checkpoints[0]?.label, 'Beginning', 'first bookmark');
+equal(seed.projects[0]?.checkpoints.length, 3, 'three bookmarks');
+equal(formatCheckpointTime(75), '01:15', 'checkpoint time format');
 equal(seed.yarnStash.length, 6, 'stash size');
 assert(seed.patterns.every((pattern) => pattern.videoId.length === 11), 'parsed ids');
+equal(sanitizeVideoBookmarks(undefined).length, 0, 'no placeholder bookmarks');
+assert(!isEstimatedBookmarkSet(extracted), 'real chapters are not estimates');
+const withRealChapters = applySetPatternBookmarks(dataFrom(createSeedData()), seed.patterns[0]!.id, extracted);
+assert(withRealChapters, 'youtube chapters can be saved');
+equal(
+  withRealChapters?.patterns.find((pattern) => pattern.id === seed.patterns[0]?.id)?.bookmarks[1]?.label,
+  'Row 1: Foundation',
+  'saved chapter label',
+);
+const clearedBookmarks = applySetPatternBookmarks(withRealChapters!, seed.patterns[0]!.id, []);
+assert(
+  clearedBookmarks &&
+    clearedBookmarks.patterns.find((pattern) => pattern.id === seed.patterns[0]?.id)?.bookmarks.length === 0,
+  'clear bookmarks',
+);
+assert(
+  applySetPatternBookmarks(
+    clearedBookmarks!,
+    seed.patterns[0]!.id,
+    clearedBookmarks!.patterns.find((pattern) => pattern.id === seed.patterns[0]?.id)?.bookmarks ?? [],
+  ) == null,
+  'same chapters are a no-op',
+);
 assert(seed.patterns.every((pattern) => pattern.thumbnailUrl.includes('maxresdefault')), 'thumbs');
-equal(seed.projects[0]?.slots[0]?.stashItemId, 'yarn-soft-fudge', 'A1 linked');
-equal(seed.projects[0]?.slots[0]?.colorName, 'Soft Fudge', 'A1 name');
 const progress = projectProgress(seed.projects[0]!);
 assert(progress > 0.68 && progress < 0.69, `progress ${progress}`);
 
@@ -169,7 +214,9 @@ function projectFixture(overrides: Partial<CrochetProject> = {}): CrochetData {
     yarnWeight: 'worsted',
     timerStartedAt: null,
     accumulatedSeconds: 0,
-    slots: emptyAmsSlots(),
+    yarnColors: [],
+    rowNote: '',
+    checkpoints: [],
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -259,33 +306,30 @@ equal(bambi?.accumulatedSeconds, banked + 4, 'banked the open four seconds');
 assert(applySetActiveProject(nextMake, 'nope', t0) == null, 'unknown project');
 
 let yarn = dataFrom(seed);
-const fudge = applyUpdateStashItem(yarn, 'yarn-soft-fudge', { remainingPercent: 150 }, 5);
-assert(fudge, 'update stash');
-equal(fudge.yarnStash.find((item) => item.id === 'yarn-soft-fudge')?.remainingPercent, 100, 'percent ceiling');
-equal(activeProject(fudge)?.slots[0]?.remainingPercent, 100, 'linked slot follows the skein');
-assert(applyUpdateStashItem(fudge, 'missing', { brand: 'Nope' }, 6) == null, 'missing skein');
-assert(applyUpdateSlot(fudge, 'A1', { hexColor: 'not-a-color' }, 7) == null, 'bad hex is ignored');
-const recolored = applyUpdateSlot(fudge, 'A1', { hexColor: '#abc' }, 8);
-assert(recolored, 'short hex');
-equal(recolored.yarnStash.find((item) => item.id === 'yarn-soft-fudge')?.hexColor, '#AABBCC', 'hex normalized onto the skein');
-const second = applyCreateProject(recolored, { name: 'Second Bambi' }, 'project-two', 9)!;
-const assigned = applyAssignStashToSlot(
-  { ...second, activeProjectId: 'project-bambi' },
-  'A2',
-  'yarn-soft-fudge',
-  10,
+const recolored = applyUpdateStashItem(yarn, 'yarn-soft-fudge', { hexColor: '#abc' }, 8);
+assert(recolored, 'stash hex update');
+equal(recolored.yarnStash.find((item) => item.id === 'yarn-soft-fudge')?.hexColor, '#AABBCC', 'hex normalized');
+assert(applyUpdateStashItem(recolored, 'missing', { brand: 'Nope' }, 6) == null, 'missing skein');
+
+const noted = applySetRowNote(recolored, '  sc x 12  ', 9)!;
+equal(activeProject(noted)?.rowNote, 'sc x 12', 'row note trimmed');
+assert(applyAddProjectYarnColor(noted, 'color-test', { hexColor: '#ff00aa', label: 'Pop' }, 10) == null, 'palette capped at four');
+const withRoom = applyRemoveProjectYarnColor(noted, 'color-blush', 11)!;
+const withColor = applyAddProjectYarnColor(withRoom, 'color-new', { hexColor: '#112233', label: 'Navy' }, 12)!;
+assert(withColor, 'add palette color');
+equal(activeProject(withColor)?.yarnColors.some((item) => item.label === 'Navy'), true, 'navy saved');
+const checkpointed = applyAddCheckpoint(withColor, 'cp-test', { label: 'Body', timestampSeconds: 90 }, 13)!;
+equal(
+  activeProject(checkpointed)?.checkpoints.some((item) => item.id === 'cp-test' && item.label === 'Body'),
+  true,
+  'checkpoint stored',
 );
-assert(assigned, 'second slot shares the skein');
-const shared = applyUpdateStashItem(assigned, 'yarn-soft-fudge', { remainingPercent: 40 }, 11)!;
-const shares = shared.projects.flatMap((project) => project.slots).filter((slot) => slot.stashItemId === 'yarn-soft-fudge');
-assert(shares.length >= 2, 'two slots linked');
-assert(shares.every((slot) => slot.remainingPercent === 40), 'shared skein stays in sync');
-const removed = applyRemoveStashItem(shared, 'yarn-soft-fudge', 12)!;
+const cleared = applyRemoveCheckpoint(checkpointed, 'cp-beginning', 14)!;
+assert(!cleared.projects[0]?.checkpoints.some((item) => item.id === 'cp-beginning'), 'bookmark removed');
+
+const removed = applyRemoveStashItem(cleared, 'yarn-soft-fudge', 15)!;
 assert(!removed.yarnStash.some((item) => item.id === 'yarn-soft-fudge'), 'skein deleted');
-const orphan = removed.projects.flatMap((project) => project.slots).find((slot) => slot.colorName === 'Soft Fudge');
-assert(orphan, 'snapshot kept');
-equal(orphan?.stashItemId, null, 'deleted skein unlinks');
-assert(applyAssignStashToSlot(removed, 'A1', 'yarn-soft-fudge', 13) == null, 'cannot load a missing skein');
+equal(activeProject(removed)?.yarnColors.some((item) => item.label === 'Soft Fudge'), true, 'palette independent of stash');
 
 const repaired = repairPersisted(
   {
@@ -300,7 +344,8 @@ const repaired = repairPersisted(
         currentStitch: 99999,
         accumulatedSeconds: -12,
         timerStartedAt: 9_000_000_000_000_000,
-        slots: [{ stashItemId: 'yarn-deleted', brand: 'Leftover', colorName: 'Blue', hexColor: '#00f' }],
+        yarnColors: [],
+        slots: [{ id: 'A1', colorName: 'Blue', hexColor: '#00f' }],
       },
       { id: 'project-bambi', name: 'duplicate dropped' },
     ],
@@ -315,10 +360,7 @@ equal(repaired.projects[0]?.totalRows, 50, 'goal lifted to the current row');
 equal(repaired.projects[0]?.currentStitch, 60, 'stitch clamped');
 equal(repaired.projects[0]?.accumulatedSeconds, 0, 'negative time dropped');
 equal(repaired.projects[0]?.timerStartedAt, t0, 'future anchor rebased');
-equal(repaired.projects[0]?.slots.length, 4, 'slots repaired to four');
-equal(repaired.projects[0]?.slots[0]?.stashItemId, null, 'dangling skein unlinked');
-equal(repaired.projects[0]?.slots[0]?.colorName, 'Blue', 'dangling snapshot kept');
-equal(repaired.projects[0]?.slots[1]?.id, 'A2', 'missing slots are empty');
+equal(repaired.projects[0]?.yarnColors[0]?.label, 'Blue', 'legacy slot migrated to palette');
 assert(repairPersisted({ nope: true }) == null, 'foreign blob is rejected');
 assert(repairPersisted(null) == null, 'null blob is rejected');
 
@@ -339,7 +381,7 @@ const legacy = repairPersisted(
         totalRows: 40,
         timerStartedAt: null,
         accumulatedSeconds: 0,
-        slots: seed.projects[0]?.slots,
+        slots: [{ id: 'A1', stashItemId: 'yarn-soft-fudge', colorName: 'Soft Fudge', hexColor: '#C6A36E' }],
       },
     ],
   },
@@ -350,7 +392,7 @@ equal(legacy?.projects[0]?.currentStitch, 14, 'legacy sample stitch');
 equal(legacy?.projects[0]?.stitchesPerRow, 60, 'legacy sample row length');
 equal(legacy?.projects[0]?.hookSize, '4.0 mm', 'legacy sample hook');
 equal(legacy?.projects[0]?.yarnWeight, 'worsted', 'legacy sample yarn');
-equal(legacy?.projects[0]?.slots[0]?.colorName, 'Soft Fudge', 'legacy slots kept');
+equal(legacy?.projects[0]?.yarnColors[0]?.label, 'Soft Fudge', 'legacy slots lifted to palette');
 
 const tooled = applySetHookAndYarn(dataFrom(seed), { hookSize: '5.0 mm', yarnWeight: 'bulky' }, t0);
 assert(tooled, 'tooling');

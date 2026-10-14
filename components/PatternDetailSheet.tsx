@@ -13,7 +13,6 @@ import Svg, { Path } from 'react-native-svg';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
-  isSlotEmpty,
   useCrochetStore,
   type CrochetPattern,
   type CrochetProject,
@@ -27,6 +26,7 @@ import {
   formatSpecBadge,
   yarnSizeLabel,
 } from '@/utils/patternDisplay';
+import { formatBookmarkTime } from '@/utils/chapters';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
 
 type PatternDetailSheetProps = {
@@ -136,6 +136,26 @@ export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetPro
             )}
           </View>
 
+          {pattern.bookmarks.length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Tutorial chapters</Text>
+              <View style={styles.chapterWrap}>
+                {pattern.bookmarks.map((bookmark) => (
+                  <View
+                    key={bookmark.id}
+                    style={styles.chapterChip}
+                    accessibilityLabel={`${formatBookmarkTime(bookmark.seconds)} ${bookmark.label}`}
+                  >
+                    <Text style={styles.chapterTime}>{formatBookmarkTime(bookmark.seconds)}</Text>
+                    <Text numberOfLines={1} style={styles.chapterLabel}>
+                      {bookmark.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.specs}>
             <Spec label="Yarn size" value={yarnSizeLabel(pattern.yarnWeight)} />
             <Spec label="Hook size" value={formatHookSize(pattern.hookSize)} />
@@ -183,9 +203,8 @@ function collectSwatches(pattern: CrochetPattern, projects: CrochetProject[], st
 
   for (const project of projects) {
     if (project.patternId !== pattern.id) continue;
-    for (const slot of project.slots) {
-      if (isSlotEmpty(slot)) continue;
-      push(slot.hexColor, slot.colorName);
+    for (const color of project.yarnColors) {
+      push(color.hexColor, color.label);
     }
   }
 
@@ -320,6 +339,40 @@ const styles = StyleSheet.create({
   emptySwatches: {
     ...Typography.callout,
     color: Colors.textSecondary,
+  },
+  chapterWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  chapterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    maxWidth: '100%',
+    paddingLeft: Spacing.xxs,
+    paddingRight: Spacing.sm,
+    paddingVertical: Spacing.xxs,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.elevatedControl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  chapterTime: {
+    ...Typography.caption,
+    color: Colors.onAccent,
+    fontWeight: FontWeight.bold,
+    backgroundColor: Colors.accentPrimary,
+    overflow: 'hidden',
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xxs,
+  },
+  chapterLabel: {
+    ...Typography.caption,
+    flexShrink: 1,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.medium,
   },
   specs: {
     marginHorizontal: Layout.screenGutter,

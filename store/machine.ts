@@ -14,21 +14,26 @@
  * one. The last row stays full (36/36) instead of opening a row past
  * `totalRows`. Turn auto-advance off to stop at the end of the row.
  */
+import { formatBookmarkTime, isEstimatedBookmarkSet, sanitizeVideoBookmarks, type VideoBookmark } from '../utils/chapters';
 import { parseYouTubeUrl } from '../utils/youtube';
 
-export const AMS_SLOT_IDS = ['A1', 'A2', 'A3', 'A4'] as const;
+export type { VideoBookmark } from '../utils/chapters';
+
 export const MAX_TAP_HISTORY = 30;
 export const MAX_COUNT = 9999;
 /** Skeins of one color the stash stepper will count up to. */
 export const MAX_SKEINS = 48;
+/** Color swatches saved on a project (palette under the counter). */
+export const MAX_PROJECT_YARN_COLORS = 4;
+/** Saved tutorial seek points per project. */
+export const MAX_VIDEO_CHECKPOINTS = 24;
 /** Stills kept per project so a story reel stays a row-by-row timelapse. */
 export const MAX_PROGRESS_PHOTOS = 24;
 const MAX_PHOTO_URI = 500_000;
+const MAX_ROW_NOTE_CHARS = 240;
+const MAX_CHECKPOINT_LABEL_CHARS = 48;
 /** Caps a corrupted timestamp that landed in the seconds field (~11 years). */
 const MAX_ACCUMULATED_SECONDS = 100_000 * 60 * 60;
-export const EMPTY_SLOT_COLOR = '#2A2A2D';
-
-export type AmsSlotId = (typeof AMS_SLOT_IDS)[number];
 
 export const YARN_WEIGHTS = [
   'lace',
@@ -55,9 +60,20 @@ export type YarnStashItem = {
   colorName: string;
   yarnWeight: YarnWeight;
   hookSize: string;
-  remainingPercent: number;
   /** How many skeins of this color are on the shelf. */
   skeinCount: number;
+};
+
+export type ProjectYarnColor = {
+  id: string;
+  hexColor: string;
+  label: string;
+};
+
+export type VideoCheckpoint = {
+  id: string;
+  label: string;
+  timestampSeconds: number;
 };
 
 /**
@@ -80,21 +96,6 @@ export type ProgressPhoto = {
   caption?: string;
 };
 
-export type AmsYarnSlot = {
-  id: AmsSlotId;
-  /** Global stash row this spool is drawn from. Null for an untracked scrap. */
-  stashItemId: string | null;
-  hexColor: string;
-  brand: string;
-  colorName: string;
-  yarnWeight: YarnWeight | null;
-  hookSize: string;
-  remainingPercent: number;
-};
-
-/** AMS-A is the first four-slot yarn unit, always present and always in order. */
-export type AmsSlots = [AmsYarnSlot, AmsYarnSlot, AmsYarnSlot, AmsYarnSlot];
-
 export type CrochetPattern = {
   id: string;
   title: string;
@@ -108,6 +109,8 @@ export type CrochetPattern = {
   totalRows: number;
   stitchesPerRow: number;
   tags: string[];
+  /** Seek points parsed from the tutorial description or generated for the pattern. */
+  bookmarks: VideoBookmark[];
 };
 
 export type CrochetProject = {
@@ -126,7 +129,12 @@ export type CrochetProject = {
   timerStartedAt: number | null;
   /** Seconds already banked from earlier segments. Does not include the live one. */
   accumulatedSeconds: number;
-  slots: AmsSlots;
+  /** Up to four palette swatches for this make (not tied to stash inventory). */
+  yarnColors: ProjectYarnColor[];
+  /** Stitch repeat or row formula visible under the counter. */
+  rowNote: string;
+  /** Tappable moments in the linked tutorial video. */
+  checkpoints: VideoCheckpoint[];
   createdAt: number;
   updatedAt: number;
 };
@@ -164,6 +172,7 @@ export type NewPatternInput = {
   totalRows?: number;
   stitchesPerRow?: number;
   tags?: string[];
+  bookmarks?: VideoBookmark[];
 };
 
 export type CreateProjectInput = {
@@ -177,8 +186,19 @@ export type NewYarnInput = {
   colorName: string;
   yarnWeight: YarnWeight;
   hookSize?: string;
-  remainingPercent?: number;
   skeinCount?: number;
+};
+
+export type NewProjectYarnColorInput = {
+  hexColor: string;
+  label: string;
+};
+
+export type ProjectYarnColorPatch = Partial<Omit<ProjectYarnColor, 'id'>>;
+
+export type NewVideoCheckpointInput = {
+  label: string;
+  timestampSeconds: number;
 };
 
 export type NewProgressPhotoInput = {
@@ -196,25 +216,12 @@ export type NewProgressPhotoInput = {
 
 export type YarnStashPatch = Partial<Omit<YarnStashItem, 'id'>>;
 
-export type YarnSlotPatch = {
-  hexColor?: string;
-  brand?: string;
-  colorName?: string;
-  yarnWeight?: YarnWeight | null;
-  hookSize?: string;
-  remainingPercent?: number;
-};
-
 const YARN_WEIGHT_SET: ReadonlySet<string> = new Set(YARN_WEIGHTS);
 const DIFFICULTIES: ReadonlySet<string> = new Set(['beginner', 'easy', 'intermediate', 'advanced']);
 const EMPTY_HISTORY: CounterSnapshot[] = [];
 
 export function isYarnWeight(value: unknown): value is YarnWeight {
   return typeof value === 'string' && YARN_WEIGHT_SET.has(value);
-}
-
-export function isAmsSlotId(value: unknown): value is AmsSlotId {
-  return typeof value === 'string' && (AMS_SLOT_IDS as readonly string[]).includes(value);
 }
 
 export function createId(prefix: string): string {
@@ -248,38 +255,9 @@ export function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
-export function emptySlot(id: AmsSlotId): AmsYarnSlot {
-  return {
-    id,
-    stashItemId: null,
-    hexColor: EMPTY_SLOT_COLOR,
-    brand: '',
-    colorName: '',
-    yarnWeight: null,
-    hookSize: '',
-    remainingPercent: 0,
-  };
-}
-
-export function emptyAmsSlots(): AmsSlots {
-  return [emptySlot('A1'), emptySlot('A2'), emptySlot('A3'), emptySlot('A4')];
-}
-
-export function slotFromStash(id: AmsSlotId, item: YarnStashItem): AmsYarnSlot {
-  return {
-    id,
-    stashItemId: item.id,
-    hexColor: item.hexColor,
-    brand: item.brand,
-    colorName: item.colorName,
-    yarnWeight: item.yarnWeight,
-    hookSize: item.hookSize,
-    remainingPercent: item.remainingPercent,
-  };
-}
-
-export function isSlotEmpty(slot: AmsYarnSlot): boolean {
-  return slot.stashItemId == null && slot.brand === '' && slot.colorName === '' && slot.remainingPercent === 0;
+/** `MM:SS` / `H:MM:SS` for checkpoint pills (e.g. `01:15`). */
+export function formatCheckpointTime(totalSeconds: number): string {
+  return formatBookmarkTime(totalSeconds);
 }
 
 export function activeProject(data: CrochetData): CrochetProject | null {
@@ -563,7 +541,9 @@ export function applyCreateProject(
     yarnWeight: pattern?.yarnWeight ?? 'worsted',
     timerStartedAt: null,
     accumulatedSeconds: 0,
-    slots: emptyAmsSlots(),
+    yarnColors: [],
+    rowNote: '',
+    checkpoints: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -639,6 +619,31 @@ export function applyAddPattern(data: CrochetData, id: string, input: NewPattern
   return { ...data, patterns: [...data.patterns, pattern] };
 }
 
+export function applySetPatternBookmarks(
+  data: CrochetData,
+  patternId: string,
+  bookmarks: VideoBookmark[],
+): CrochetData | null {
+  const pattern = data.patterns.find((item) => item.id === patternId);
+  if (!pattern) return null;
+  const nextBookmarks = sanitizeVideoBookmarks(bookmarks);
+  if (sameBookmarks(pattern.bookmarks, nextBookmarks)) return null;
+  return {
+    ...data,
+    patterns: data.patterns.map((item) => (item.id === patternId ? { ...item, bookmarks: nextBookmarks } : item)),
+  };
+}
+
+function sameBookmarks(current: VideoBookmark[], next: VideoBookmark[]): boolean {
+  if (current.length !== next.length) return false;
+  return current.every(
+    (item, index) =>
+      item.seconds === next[index]?.seconds &&
+      item.label === next[index]?.label &&
+      item.rowHint === next[index]?.rowHint,
+  );
+}
+
 export function applyRemovePattern(data: CrochetData, patternId: string, now: number): CrochetData | null {
   if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
   return {
@@ -667,85 +672,95 @@ export function applyUpdateStashItem(
   const nextItem = applyStashPatch(current, patch);
   if (!nextItem) return null;
   const yarnStash = data.yarnStash.map((item) => (item.id === nextItem.id ? nextItem : item));
-  const projects = fanOutStash(data.projects, nextItem, now);
-  const projectsChanged = projects.some((project, index) => project !== data.projects[index]);
-  return { ...data, yarnStash, projects: projectsChanged ? projects : data.projects };
+  return { ...data, yarnStash };
 }
 
-export function applyRemoveStashItem(data: CrochetData, stashItemId: string, now: number): CrochetData | null {
+export function applyRemoveStashItem(data: CrochetData, stashItemId: string, _now: number): CrochetData | null {
   if (!data.yarnStash.some((item) => item.id === stashItemId)) return null;
   return {
     ...data,
     yarnStash: data.yarnStash.filter((item) => item.id !== stashItemId),
-    // Keep the slot's color snapshot so the project still shows what was on the hook.
-    projects: data.projects.map((project) => unlinkStashFromProject(project, stashItemId, now)),
   };
 }
 
-export function applyAssignStashToSlot(
+export function applySetRowNote(data: CrochetData, note: string, now: number): CrochetData | null {
+  const project = activeProject(data);
+  if (!project) return null;
+  const rowNote = sanitizeRowNote(note);
+  if (rowNote === project.rowNote) return null;
+  return replaceProject(data, { ...project, rowNote, updatedAt: now });
+}
+
+export function applyAddProjectYarnColor(
   data: CrochetData,
-  slotId: AmsSlotId,
-  stashItemId: string,
+  id: string,
+  input: NewProjectYarnColorInput,
   now: number,
 ): CrochetData | null {
   const project = activeProject(data);
-  const item = data.yarnStash.find((yarn) => yarn.id === stashItemId);
-  if (!project || !item) return null;
-  const current = slotById(project, slotId);
-  if (!current) return null;
-  const next = slotFromStash(slotId, item);
-  if (sameSlot(current, next)) return null;
-  return replaceProject(data, replaceSlot(project, next, now));
+  if (!project || project.yarnColors.length >= MAX_PROJECT_YARN_COLORS) return null;
+  const color = buildProjectYarnColor(id, input);
+  if (!color) return null;
+  if (project.yarnColors.some((item) => item.id === color.id)) return null;
+  return replaceProject(data, {
+    ...project,
+    yarnColors: [...project.yarnColors, color],
+    updatedAt: now,
+  });
 }
 
-export function applyUpdateSlot(
+export function applyUpdateProjectYarnColor(
   data: CrochetData,
-  slotId: AmsSlotId,
-  patch: YarnSlotPatch,
+  colorId: string,
+  patch: ProjectYarnColorPatch,
   now: number,
 ): CrochetData | null {
   const project = activeProject(data);
   if (!project) return null;
-  const slot = slotById(project, slotId);
-  if (!slot) return null;
-  const patched = applySlotPatch(slot, patch);
-  if (!patched) return null;
-
-  if (!patched.stashItemId) {
-    return replaceProject(data, replaceSlot(project, patched, now));
-  }
-
-  const item = data.yarnStash.find((yarn) => yarn.id === patched.stashItemId);
-  if (!item) {
-    return replaceProject(data, replaceSlot(project, { ...patched, stashItemId: null }, now));
-  }
-
-  const nextItem = stashFromSlot(item, patched);
-  // A linked slot writes through to the skein. If the skein didn't change, the
-  // edit wasn't something a shared spool can store (for example a blank name).
-  if (nextItem === item) return null;
-
-  const yarnStash = data.yarnStash.map((yarn) => (yarn.id === nextItem.id ? nextItem : yarn));
-  const projects = fanOutStash(data.projects, nextItem, now);
-  return { ...data, yarnStash, projects };
+  const index = project.yarnColors.findIndex((item) => item.id === colorId);
+  if (index < 0) return null;
+  const next = applyProjectYarnColorPatch(project.yarnColors[index], patch);
+  if (!next) return null;
+  const yarnColors = [...project.yarnColors];
+  yarnColors[index] = next;
+  return replaceProject(data, { ...project, yarnColors, updatedAt: now });
 }
 
-export function applyUnlinkSlot(data: CrochetData, slotId: AmsSlotId, now: number): CrochetData | null {
+export function applyRemoveProjectYarnColor(data: CrochetData, colorId: string, now: number): CrochetData | null {
   const project = activeProject(data);
   if (!project) return null;
-  const slot = slotById(project, slotId);
-  if (!slot?.stashItemId) return null;
-  return replaceProject(data, replaceSlot(project, { ...slot, stashItemId: null }, now));
+  if (!project.yarnColors.some((item) => item.id === colorId)) return null;
+  return replaceProject(data, {
+    ...project,
+    yarnColors: project.yarnColors.filter((item) => item.id !== colorId),
+    updatedAt: now,
+  });
 }
 
-export function applyClearSlot(data: CrochetData, slotId: AmsSlotId, now: number): CrochetData | null {
+export function applyAddCheckpoint(
+  data: CrochetData,
+  id: string,
+  input: NewVideoCheckpointInput,
+  now: number,
+): CrochetData | null {
+  const project = activeProject(data);
+  if (!project || project.checkpoints.length >= MAX_VIDEO_CHECKPOINTS) return null;
+  const checkpoint = buildVideoCheckpoint(id, input);
+  if (!checkpoint) return null;
+  if (project.checkpoints.some((item) => item.id === checkpoint.id)) return null;
+  const checkpoints = sortCheckpoints([...project.checkpoints, checkpoint]);
+  return replaceProject(data, { ...project, checkpoints, updatedAt: now });
+}
+
+export function applyRemoveCheckpoint(data: CrochetData, checkpointId: string, now: number): CrochetData | null {
   const project = activeProject(data);
   if (!project) return null;
-  const slot = slotById(project, slotId);
-  if (!slot) return null;
-  const cleared = emptySlot(slotId);
-  if (sameSlot(slot, cleared)) return null;
-  return replaceProject(data, replaceSlot(project, cleared, now));
+  if (!project.checkpoints.some((item) => item.id === checkpointId)) return null;
+  return replaceProject(data, {
+    ...project,
+    checkpoints: project.checkpoints.filter((item) => item.id !== checkpointId),
+    updatedAt: now,
+  });
 }
 
 export function buildPattern(id: string, input: NewPatternInput): CrochetPattern | null {
@@ -757,6 +772,8 @@ export function buildPattern(id: string, input: NewPatternInput): CrochetPattern
     .map((tag) => sanitizeText(tag, 24))
     .filter((tag): tag is string => Boolean(tag))
     .slice(0, 8);
+  const totalRows = clampInt(input.totalRows ?? 10, 1, MAX_COUNT);
+  const bookmarks = sanitizeVideoBookmarks(input.bookmarks);
   return {
     id,
     title,
@@ -767,9 +784,10 @@ export function buildPattern(id: string, input: NewPatternInput): CrochetPattern
     difficulty: input.difficulty && DIFFICULTIES.has(input.difficulty) ? input.difficulty : 'easy',
     yarnWeight: isYarnWeight(input.yarnWeight) ? input.yarnWeight : 'worsted',
     hookSize: sanitizeHook(input.hookSize ?? ''),
-    totalRows: clampInt(input.totalRows ?? 10, 1, MAX_COUNT),
+    totalRows,
     stitchesPerRow: clampInt(input.stitchesPerRow ?? 10, 1, MAX_COUNT),
     tags,
+    bookmarks,
   };
 }
 
@@ -786,9 +804,24 @@ export function buildStashItem(id: string, input: NewYarnInput): YarnStashItem |
     colorName,
     yarnWeight: input.yarnWeight,
     hookSize: sanitizeHook(input.hookSize ?? ''),
-    remainingPercent: clampPercent(input.remainingPercent ?? 100),
     skeinCount: clampInt(input.skeinCount ?? 1, 0, MAX_SKEINS),
   };
+}
+
+export function buildProjectYarnColor(id: string, input: NewProjectYarnColorInput): ProjectYarnColor | null {
+  if (!isSafeId(id)) return null;
+  const hexColor = normalizeHex(input.hexColor);
+  const label = sanitizeText(input.label, 40);
+  if (!hexColor || !label) return null;
+  return { id, hexColor, label };
+}
+
+export function buildVideoCheckpoint(id: string, input: NewVideoCheckpointInput): VideoCheckpoint | null {
+  if (!isSafeId(id)) return null;
+  const label = sanitizeText(input.label, MAX_CHECKPOINT_LABEL_CHARS);
+  if (!label) return null;
+  const timestampSeconds = clampInt(input.timestampSeconds, 0, 99_999);
+  return { id, label, timestampSeconds };
 }
 
 export function applyAddProgressPhoto(
@@ -859,10 +892,9 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
       .map((item) => repairStashItem(item))
       .filter((item): item is YarnStashItem => item != null),
   );
-  const stashById = new Map(yarnStash.map((item) => [item.id, item]));
   const projects = dedupeById(
     readArray(input.projects)
-      .map((item) => repairProject(item, patterns, stashById, now))
+      .map((item) => repairProject(item, patterns, now))
       .filter((item): item is CrochetProject => item != null),
   );
 
@@ -948,42 +980,6 @@ function replaceProject(data: CrochetData, project: CrochetProject): CrochetData
   };
 }
 
-function replaceSlot(project: CrochetProject, slot: AmsYarnSlot, now: number): CrochetProject {
-  return {
-    ...project,
-    slots: project.slots.map((item) => (item.id === slot.id ? slot : item)) as AmsSlots,
-    updatedAt: now,
-  };
-}
-
-function slotById(project: CrochetProject, slotId: AmsSlotId): AmsYarnSlot | null {
-  return project.slots.find((slot) => slot.id === slotId) ?? null;
-}
-
-function fanOutStash(projects: CrochetProject[], item: YarnStashItem, now: number): CrochetProject[] {
-  return projects.map((project) => {
-    let changed = false;
-    const slots = project.slots.map((slot) => {
-      if (slot.stashItemId !== item.id) return slot;
-      const next = slotFromStash(slot.id, item);
-      if (sameSlot(slot, next)) return slot;
-      changed = true;
-      return next;
-    }) as AmsSlots;
-    return changed ? { ...project, slots, updatedAt: now } : project;
-  });
-}
-
-function unlinkStashFromProject(project: CrochetProject, stashItemId: string, now: number): CrochetProject {
-  let changed = false;
-  const slots = project.slots.map((slot) => {
-    if (slot.stashItemId !== stashItemId) return slot;
-    changed = true;
-    return { ...slot, stashItemId: null };
-  }) as AmsSlots;
-  return changed ? { ...project, slots, updatedAt: now } : project;
-}
-
 function applyStashPatch(item: YarnStashItem, patch: YarnStashPatch): YarnStashItem | null {
   let next = item;
   if (patch.hexColor !== undefined) {
@@ -1005,10 +1001,6 @@ function applyStashPatch(item: YarnStashItem, patch: YarnStashPatch): YarnStashI
     const hookSize = sanitizeHook(patch.hookSize);
     if (hookSize !== next.hookSize) next = { ...next, hookSize };
   }
-  if (patch.remainingPercent !== undefined && Number.isFinite(patch.remainingPercent)) {
-    const remainingPercent = clampPercent(patch.remainingPercent);
-    if (remainingPercent !== next.remainingPercent) next = { ...next, remainingPercent };
-  }
   if (patch.skeinCount !== undefined && Number.isFinite(patch.skeinCount)) {
     const skeinCount = clampInt(patch.skeinCount, 0, MAX_SKEINS);
     if (skeinCount !== next.skeinCount) next = { ...next, skeinCount };
@@ -1016,72 +1008,21 @@ function applyStashPatch(item: YarnStashItem, patch: YarnStashPatch): YarnStashI
   return next === item ? null : next;
 }
 
-function applySlotPatch(slot: AmsYarnSlot, patch: YarnSlotPatch): AmsYarnSlot | null {
-  let next = slot;
+function applyProjectYarnColorPatch(color: ProjectYarnColor, patch: ProjectYarnColorPatch): ProjectYarnColor | null {
+  let next = color;
   if (patch.hexColor !== undefined) {
     const hexColor = normalizeHex(patch.hexColor);
     if (hexColor && hexColor !== next.hexColor) next = { ...next, hexColor };
   }
-  if (patch.brand !== undefined) {
-    const brand = sanitizeText(patch.brand, 60) ?? '';
-    if (brand !== next.brand) next = { ...next, brand };
+  if (patch.label !== undefined) {
+    const label = sanitizeText(patch.label, 40);
+    if (label && label !== next.label) next = { ...next, label };
   }
-  if (patch.colorName !== undefined) {
-    const colorName = sanitizeText(patch.colorName, 60) ?? '';
-    if (colorName !== next.colorName) next = { ...next, colorName };
-  }
-  if (patch.yarnWeight !== undefined) {
-    const yarnWeight = patch.yarnWeight == null ? null : isYarnWeight(patch.yarnWeight) ? patch.yarnWeight : next.yarnWeight;
-    if (yarnWeight !== next.yarnWeight) next = { ...next, yarnWeight };
-  }
-  if (patch.hookSize !== undefined) {
-    const hookSize = sanitizeHook(patch.hookSize);
-    if (hookSize !== next.hookSize) next = { ...next, hookSize };
-  }
-  if (patch.remainingPercent !== undefined && Number.isFinite(patch.remainingPercent)) {
-    const remainingPercent = clampPercent(patch.remainingPercent);
-    if (remainingPercent !== next.remainingPercent) next = { ...next, remainingPercent };
-  }
-  return next === slot ? null : next;
+  return next === color ? null : next;
 }
 
-function stashFromSlot(item: YarnStashItem, slot: AmsYarnSlot): YarnStashItem {
-  const next: YarnStashItem = {
-    ...item,
-    hexColor: slot.hexColor,
-    brand: slot.brand || item.brand,
-    colorName: slot.colorName || item.colorName,
-    yarnWeight: slot.yarnWeight ?? item.yarnWeight,
-    hookSize: slot.hookSize,
-    remainingPercent: slot.remainingPercent,
-  };
-  return sameStash(item, next) ? item : next;
-}
-
-function sameSlot(a: AmsYarnSlot, b: AmsYarnSlot): boolean {
-  return (
-    a.id === b.id &&
-    a.stashItemId === b.stashItemId &&
-    a.hexColor === b.hexColor &&
-    a.brand === b.brand &&
-    a.colorName === b.colorName &&
-    a.yarnWeight === b.yarnWeight &&
-    a.hookSize === b.hookSize &&
-    a.remainingPercent === b.remainingPercent
-  );
-}
-
-function sameStash(a: YarnStashItem, b: YarnStashItem): boolean {
-  return (
-    a.id === b.id &&
-    a.hexColor === b.hexColor &&
-    a.brand === b.brand &&
-    a.colorName === b.colorName &&
-    a.yarnWeight === b.yarnWeight &&
-    a.hookSize === b.hookSize &&
-    a.remainingPercent === b.remainingPercent &&
-    a.skeinCount === b.skeinCount
-  );
+function sortCheckpoints(checkpoints: VideoCheckpoint[]): VideoCheckpoint[] {
+  return [...checkpoints].sort((a, b) => a.timestampSeconds - b.timestampSeconds || a.id.localeCompare(b.id));
 }
 
 function repairPattern(input: unknown): CrochetPattern | null {
@@ -1093,6 +1034,23 @@ function repairPattern(input: unknown): CrochetPattern | null {
   const tags = Array.isArray(input.tags)
     ? input.tags.map((tag) => (typeof tag === 'string' ? sanitizeText(tag, 24) : null)).filter(isPresent).slice(0, 8)
     : [];
+  const totalRows = clampInt(numberOr(input.totalRows, 10), 1, MAX_COUNT);
+  const rawBookmarks = Array.isArray(input.bookmarks)
+    ? input.bookmarks
+        .map((item) => {
+          if (!isRecord(item) || typeof item.label !== 'string') return null;
+          const label = sanitizeText(item.label, MAX_CHECKPOINT_LABEL_CHARS);
+          if (!label) return null;
+          const seconds = clampInt(numberOr(item.seconds, 0), 0, 99_999);
+          const rowHint =
+            item.rowHint != null ? clampInt(numberOr(item.rowHint, 0), 1, MAX_COUNT) : undefined;
+          const id = typeof item.id === 'string' && isSafeId(item.id) ? item.id : `bm-${seconds}`;
+          return { id, label, seconds, ...(rowHint != null ? { rowHint } : {}) };
+        })
+        .filter(isPresent)
+    : undefined;
+  let bookmarks = sanitizeVideoBookmarks(rawBookmarks);
+  if (isEstimatedBookmarkSet(bookmarks)) bookmarks = [];
   return {
     id: input.id,
     title,
@@ -1103,9 +1061,10 @@ function repairPattern(input: unknown): CrochetPattern | null {
     difficulty: typeof input.difficulty === 'string' && DIFFICULTIES.has(input.difficulty) ? (input.difficulty as PatternDifficulty) : 'easy',
     yarnWeight: isYarnWeight(input.yarnWeight) ? input.yarnWeight : 'worsted',
     hookSize: typeof input.hookSize === 'string' ? sanitizeHook(input.hookSize) : '',
-    totalRows: clampInt(numberOr(input.totalRows, 10), 1, MAX_COUNT),
+    totalRows,
     stitchesPerRow: clampInt(numberOr(input.stitchesPerRow, 10), 1, MAX_COUNT),
     tags,
+    bookmarks,
   };
 }
 
@@ -1122,17 +1081,11 @@ function repairStashItem(input: unknown): YarnStashItem | null {
     colorName,
     yarnWeight: input.yarnWeight,
     hookSize: typeof input.hookSize === 'string' ? sanitizeHook(input.hookSize) : '',
-    remainingPercent: clampPercent(numberOr(input.remainingPercent, 100)),
     skeinCount: clampInt(numberOr(input.skeinCount, 1), 0, MAX_SKEINS),
   };
 }
 
-function repairProject(
-  input: unknown,
-  patterns: CrochetPattern[],
-  stashById: Map<string, YarnStashItem>,
-  now: number,
-): CrochetProject | null {
+function repairProject(input: unknown, patterns: CrochetPattern[], now: number): CrochetProject | null {
   if (!isRecord(input) || !isSafeId(input.id)) return null;
   const name = typeof input.name === 'string' ? sanitizeName(input.name) : null;
   if (!name) return null;
@@ -1181,39 +1134,73 @@ function repairProject(
     yarnWeight,
     timerStartedAt: typeof input.timerStartedAt === 'number' && Number.isFinite(input.timerStartedAt) ? input.timerStartedAt : null,
     accumulatedSeconds: bankSeconds(numberOr(input.accumulatedSeconds, 0)),
-    slots: repairSlots(input.slots, stashById),
+    yarnColors: repairYarnColors(input),
+    rowNote: typeof input.rowNote === 'string' ? sanitizeRowNote(input.rowNote) : '',
+    checkpoints: repairCheckpoints(input.checkpoints),
     createdAt: finiteTimestamp(input.createdAt, now),
     updatedAt: finiteTimestamp(input.updatedAt, now),
   };
   return reconcileProjectClock(draft, now);
 }
 
-function repairSlots(input: unknown, stashById: Map<string, YarnStashItem>): AmsSlots {
-  const raw = Array.isArray(input) ? input : [];
-  return AMS_SLOT_IDS.map((id, index) => {
-    const tagged = raw.find((slot) => isRecord(slot) && slot.id === id);
-    const positional = isRecord(raw[index]) ? raw[index] : undefined;
-    const source = tagged ?? positional;
-    const repaired = source ? repairSlot(id, source) : emptySlot(id);
-    if (!repaired.stashItemId) return repaired;
-    const item = stashById.get(repaired.stashItemId);
-    // Live link: the skein wins over a stale slot copy. A missing skein keeps the snapshot.
-    return item ? slotFromStash(id, item) : { ...repaired, stashItemId: null };
-  }) as AmsSlots;
+function repairYarnColors(input: Record<string, unknown>): ProjectYarnColor[] {
+  if (Array.isArray(input.yarnColors)) {
+    const colors = readArray(input.yarnColors)
+      .map((item) => repairProjectYarnColor(item))
+      .filter((item): item is ProjectYarnColor => item != null)
+      .slice(0, MAX_PROJECT_YARN_COLORS);
+    if (colors.length > 0) return dedupeById(colors);
+  }
+  return migrateLegacySlots(input.slots).slice(0, MAX_PROJECT_YARN_COLORS);
 }
 
-function repairSlot(id: AmsSlotId, input: Record<string, unknown>): AmsYarnSlot {
+function repairProjectYarnColor(input: unknown): ProjectYarnColor | null {
+  if (!isRecord(input) || !isSafeId(input.id)) return null;
   const hexColor = typeof input.hexColor === 'string' ? normalizeHex(input.hexColor) : null;
+  const label = typeof input.label === 'string' ? sanitizeText(input.label, 40) : null;
+  if (!hexColor || !label) return null;
+  return { id: input.id, hexColor, label };
+}
+
+/** Older saves used AMS slots; lift non-empty swatches into the project palette. */
+function migrateLegacySlots(input: unknown): ProjectYarnColor[] {
+  const raw = Array.isArray(input) ? input : [];
+  const result: ProjectYarnColor[] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry) || result.length >= MAX_PROJECT_YARN_COLORS) break;
+    const hexColor = typeof entry.hexColor === 'string' ? normalizeHex(entry.hexColor) : null;
+    const colorName = typeof entry.colorName === 'string' ? sanitizeText(entry.colorName, 40) : null;
+    const brand = typeof entry.brand === 'string' ? sanitizeText(entry.brand, 40) : null;
+    const label = colorName ?? brand;
+    if (!hexColor || !label) continue;
+    const id =
+      typeof entry.id === 'string' && isSafeId(entry.id) ? `color-${entry.id}` : createId('color');
+    result.push({ id, hexColor, label });
+  }
+  return dedupeById(result);
+}
+
+function repairCheckpoints(input: unknown): VideoCheckpoint[] {
+  if (!Array.isArray(input)) return [];
+  const checkpoints = readArray(input)
+    .map((item) => repairCheckpoint(item))
+    .filter((item): item is VideoCheckpoint => item != null);
+  return sortCheckpoints(dedupeById(checkpoints)).slice(0, MAX_VIDEO_CHECKPOINTS);
+}
+
+function repairCheckpoint(input: unknown): VideoCheckpoint | null {
+  if (!isRecord(input) || !isSafeId(input.id)) return null;
+  const label = typeof input.label === 'string' ? sanitizeText(input.label, MAX_CHECKPOINT_LABEL_CHARS) : null;
+  if (!label) return null;
   return {
-    id,
-    stashItemId: typeof input.stashItemId === 'string' && isSafeId(input.stashItemId) ? input.stashItemId : null,
-    hexColor: hexColor ?? EMPTY_SLOT_COLOR,
-    brand: typeof input.brand === 'string' ? (sanitizeText(input.brand, 60) ?? '') : '',
-    colorName: typeof input.colorName === 'string' ? (sanitizeText(input.colorName, 60) ?? '') : '',
-    yarnWeight: isYarnWeight(input.yarnWeight) ? input.yarnWeight : null,
-    hookSize: typeof input.hookSize === 'string' ? sanitizeHook(input.hookSize) : '',
-    remainingPercent: clampPercent(numberOr(input.remainingPercent, 0)),
+    id: input.id,
+    label,
+    timestampSeconds: clampInt(numberOr(input.timestampSeconds, 0), 0, 99_999),
   };
+}
+
+function sanitizeRowNote(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, MAX_ROW_NOTE_CHARS);
 }
 
 function dedupeById<T extends { id: string }>(items: T[]): T[] {

@@ -26,20 +26,18 @@ import { ProjectIcon } from '@/components/navigation/TabIcons';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { EmptyStateCard } from '@/components/ui/ScreenScaffold';
-import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { Colors, Elevation, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useProjectTimer } from '@/hooks/useProjectTimer';
 import {
-  isSlotEmpty,
   MAX_COUNT,
   selectActiveProject,
   selectCanUndo,
   useCrochetStore,
   YARN_WEIGHTS,
-  type AmsSlotId,
-  type AmsYarnSlot,
   type CrochetPattern,
   type CrochetProject,
 } from '@/store/useCrochetStore';
+import { formatBookmarkTime, type VideoBookmark } from '@/utils/chapters';
 import {
   formatHookMillimeters,
   formatHookSize,
@@ -68,10 +66,6 @@ export default function ActiveProjectScreen() {
   const undoLastTap = useCrochetStore((state) => state.undoLastTap);
   const setActiveProject = useCrochetStore((state) => state.setActiveProject);
   const setHookAndYarn = useCrochetStore((state) => state.setHookAndYarn);
-  const yarnStash = useCrochetStore((state) => state.yarnStash);
-  const assignStashToSlot = useCrochetStore((state) => state.assignStashToSlot);
-  const updateSlot = useCrochetStore((state) => state.updateSlot);
-  const clearSlot = useCrochetStore((state) => state.clearSlot);
   const createProject = useCrochetStore((state) => state.createProject);
   const renameProject = useCrochetStore((state) => state.renameProject);
   const finishProject = useCrochetStore((state) => state.finishProject);
@@ -81,7 +75,8 @@ export default function ActiveProjectScreen() {
   const setStitchesPerRow = useCrochetStore((state) => state.setStitchesPerRow);
 
   const [autoAdvance, setAutoAdvance] = useState(true);
-  const [selectedSlot, setSelectedSlot] = useState<AmsSlotId>('A1');
+  const [seekRequest, setSeekRequest] = useState<{ seconds: number; nonce: number } | null>(null);
+  const [activeBookmarkId, setActiveBookmarkId] = useState<string | null>(null);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [toolingOpen, setToolingOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
@@ -89,14 +84,12 @@ export default function ActiveProjectScreen() {
   const [draftUri, setDraftUri] = useState<string | null>(null);
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
-  const [stashOpen, setStashOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
 
   const live = project?.status === 'in-progress';
   const statusLabel = project == null ? 'Idle' : live ? 'Active' : 'Finished';
   const videoId = pattern?.videoId ?? null;
-  const slot = project?.slots.find((item) => item.id === selectedSlot) ?? project?.slots[0] ?? null;
 
   const onSnapshot = async () => {
     if (!project) return;
@@ -172,6 +165,7 @@ export default function ActiveProjectScreen() {
             <PlayerCard
               pattern={pattern}
               videoId={videoId}
+              seekRequest={seekRequest}
               fullscreen={fullscreen}
               onOpenLog={() => {
                 setDraftUri(null);
@@ -259,51 +253,16 @@ export default function ActiveProjectScreen() {
             </View>
 
             <View style={styles.section}>
-              <Text role="heading" aria-level={2} style={styles.sectionTitle}>
-                Yarn Palette (AMS-A)
-              </Text>
-              <View style={styles.ams}>
-                <View style={styles.swatchRow}>
-                  {project.slots.map((item) => {
-                    const selected = item.id === (slot?.id ?? selectedSlot);
-                    return (
-                      <Pressable
-                        key={item.id}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected }}
-                        accessibilityLabel={`${item.id}${item.colorName ? `, ${item.colorName}` : ', empty'}`}
-                        testID={`yarn-slot-${item.id}`}
-                        onPress={() => {
-                          tick();
-                          setSelectedSlot(item.id);
-                        }}
-                        style={({ pressed }) => [styles.swatch, { backgroundColor: item.hexColor }, selected && styles.swatchSelected, pressed && styles.pressed, webCursor]}
-                      >
-                        <View style={styles.swatchLabelBar}>
-                          <Text style={styles.swatchLabel}>{item.id}</Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                {slot ? (
-                  <SlotDetail
-                    slot={slot}
-                    onLoad={() => {
-                      tick();
-                      setStashOpen(true);
-                    }}
-                    onStep={(delta) => {
-                      tick('impact');
-                      updateSlot(slot.id, { remainingPercent: clampPercent(slot.remainingPercent + delta) });
-                    }}
-                    onUnload={() => {
-                      tick('impact');
-                      clearSlot(slot.id);
-                    }}
-                  />
-                ) : null}
-              </View>
+              <VideoBookmarksYarnCard
+                pattern={pattern}
+                project={project}
+                activeBookmarkId={activeBookmarkId}
+                onSelectBookmark={(bookmark) => {
+                  tick('impact');
+                  setActiveBookmarkId(bookmark.id);
+                  setSeekRequest({ seconds: bookmark.seconds, nonce: Date.now() });
+                }}
+              />
             </View>
           </>
         ) : (
@@ -395,65 +354,6 @@ export default function ActiveProjectScreen() {
                 }}
               />
             ))
-          )}
-        </View>
-      </BottomSheet>
-
-      <BottomSheet
-        visible={stashOpen && project != null && slot != null}
-        onClose={() => setStashOpen(false)}
-        header={<Text style={styles.sheetTitle}>Load {slot?.id ?? selectedSlot} from Stash</Text>}
-      >
-        <View style={styles.sheetBody}>
-          {yarnStash.length === 0 ? (
-            <Text style={styles.sheetEmpty}>Your stash is empty. Add a skein on the Me tab first.</Text>
-          ) : (
-            yarnStash.map((item) => {
-              const meta = yarnWeightMeta(item.yarnWeight);
-              const loadedHere = slot?.stashItemId === item.id;
-              const loadedElsewhere = project?.slots.find((other) => other.id !== slot?.id && other.stashItemId === item.id)?.id;
-              return (
-                <Pressable
-                  key={item.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: loadedHere }}
-                  accessibilityLabel={`Load ${item.brand} ${item.colorName} into ${slot?.id ?? selectedSlot}`}
-                  testID={`stash-option-${item.id}`}
-                  onPress={() => {
-                    if (!slot) return;
-                    tick('impact');
-                    assignStashToSlot(slot.id, item.id);
-                    setStashOpen(false);
-                  }}
-                  style={({ pressed }) => [styles.stashRow, loadedHere && styles.stashRowSelected, pressed && styles.pressed, webCursor]}
-                >
-                  <View style={[styles.stashSwatch, { backgroundColor: item.hexColor }]} />
-                  <View style={styles.stashCopy}>
-                    <Text numberOfLines={1} style={styles.yarnBrand}>
-                      {item.brand}
-                    </Text>
-                    <Text numberOfLines={1} style={styles.projectName}>
-                      {item.colorName}
-                    </Text>
-                    <View style={styles.stashMetaRow}>
-                      <View style={styles.weightBadge}>
-                        <Text style={styles.weightBadgeText}>
-                          {meta.label} {meta.number}
-                        </Text>
-                      </View>
-                      <Text style={styles.projectMeta}>
-                        {item.skeinCount} {item.skeinCount === 1 ? 'skein' : 'skeins'}
-                      </Text>
-                    </View>
-                  </View>
-                  {loadedHere ? (
-                    <Text style={styles.stashTagLive}>Loaded</Text>
-                  ) : loadedElsewhere ? (
-                    <Text style={styles.stashTag}>In {loadedElsewhere}</Text>
-                  ) : null}
-                </Pressable>
-              );
-            })
           )}
         </View>
       </BottomSheet>
@@ -562,7 +462,9 @@ export default function ActiveProjectScreen() {
           >
             <Text style={styles.fullscreenCloseText}>Close</Text>
           </Pressable>
-          <View style={styles.fullscreenPlayer}>{videoId ? <YouTubeEmbed videoId={videoId} /> : null}</View>
+          <View style={styles.fullscreenPlayer}>
+            {videoId ? <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} /> : null}
+          </View>
         </View>
       </Modal>
     </View>
@@ -572,6 +474,7 @@ export default function ActiveProjectScreen() {
 function PlayerCard({
   pattern,
   videoId,
+  seekRequest,
   fullscreen,
   onOpenLog,
   onSnapshot,
@@ -579,6 +482,7 @@ function PlayerCard({
 }: {
   pattern: CrochetPattern | null;
   videoId: string | null;
+  seekRequest?: { seconds: number; nonce: number } | null;
   fullscreen: boolean;
   onOpenLog: () => void;
   onSnapshot: () => void;
@@ -588,7 +492,7 @@ function PlayerCard({
   return (
     <View style={styles.player} testID="youtube-player">
       {poster ? <Image accessible={false} source={{ uri: poster }} style={styles.playerPoster} /> : null}
-      {videoId && !fullscreen ? <YouTubeEmbed videoId={videoId} /> : null}
+      {videoId && !fullscreen ? <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} /> : null}
       {!videoId ? (
         <View style={styles.playerEmpty} pointerEvents="none">
           <Text style={styles.playerEmptyText}>No tutorial linked</Text>
@@ -686,7 +590,7 @@ function ProgressCard({
         {poster ? (
           <Image accessible={false} source={{ uri: poster }} style={styles.thumb} />
         ) : (
-          <View style={[styles.thumb, { backgroundColor: project.slots[0]?.hexColor ?? Colors.elevatedControl }]} />
+          <View style={[styles.thumb, { backgroundColor: Colors.elevatedControl }]} />
         )}
         <View style={styles.progressCopy}>
           <Text numberOfLines={2} style={styles.patternTitle}>
@@ -1118,92 +1022,87 @@ function ProjectTimerCard() {
   );
 }
 
-function SlotDetail({
-  slot,
-  onLoad,
-  onStep,
-  onUnload,
+function VideoBookmarksYarnCard({
+  pattern,
+  project,
+  activeBookmarkId,
+  onSelectBookmark,
 }: {
-  slot: AmsYarnSlot;
-  onLoad: () => void;
-  onStep: (delta: number) => void;
-  onUnload: () => void;
+  pattern: CrochetPattern | null;
+  project: CrochetProject;
+  activeBookmarkId: string | null;
+  onSelectBookmark: (bookmark: VideoBookmark) => void;
 }) {
-  const loadPill = (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Load ${slot.id} from stash`}
-      testID="slot-load"
-      onPress={onLoad}
-      style={({ pressed }) => [styles.slotPill, styles.slotPillPrimary, pressed && styles.pressed, webCursor]}
-    >
-      <Text style={[styles.slotPillText, styles.slotPillTextPrimary]}>Load from Stash</Text>
-    </Pressable>
-  );
-
-  if (isSlotEmpty(slot)) {
-    return (
-      <View testID="yarn-slot-detail" style={styles.slotDetail}>
-        <Text style={styles.yarnBrand}>{slot.id}</Text>
-        <Text style={styles.yarnName}>Empty slot</Text>
-        <View style={styles.slotActions}>{loadPill}</View>
-      </View>
-    );
-  }
-
-  const size = slot.yarnWeight ? `${yarnWeightMeta(slot.yarnWeight).label} · ${yarnWeightMeta(slot.yarnWeight).number}` : 'Size —';
-  const atMin = slot.remainingPercent <= 0;
-  const atMax = slot.remainingPercent >= 100;
+  const bookmarks = pattern?.bookmarks ?? [];
+  const canSeek = Boolean(pattern?.videoId);
 
   return (
-    <View testID="yarn-slot-detail" style={styles.slotDetail}>
-      <Text style={styles.yarnBrand}>{slot.brand}</Text>
-      <Text style={styles.yarnName}>{slot.colorName}</Text>
-      <Text style={styles.yarnMeta}>{size}</Text>
-      <Text style={styles.yarnMeta}>{slot.remainingPercent}% remaining</Text>
-      <View style={styles.miniTrack}>
-        <View style={[styles.miniFill, { width: `${slot.remainingPercent}%`, backgroundColor: slot.hexColor }]} />
-      </View>
-      <View style={styles.slotActions}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Decrease ${slot.id} remaining by 10 percent`}
-          accessibilityState={{ disabled: atMin }}
-          disabled={atMin}
-          testID="slot-step-down"
-          onPress={() => onStep(-10)}
-          style={({ pressed }) => [styles.slotPill, atMin && styles.pillDisabled, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.slotPillText}>-10%</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Increase ${slot.id} remaining by 10 percent`}
-          accessibilityState={{ disabled: atMax }}
-          disabled={atMax}
-          testID="slot-step-up"
-          onPress={() => onStep(10)}
-          style={({ pressed }) => [styles.slotPill, atMax && styles.pillDisabled, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.slotPillText}>+10%</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Unload ${slot.id}`}
-          testID="slot-unload"
-          onPress={onUnload}
-          style={({ pressed }) => [styles.slotPill, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={[styles.slotPillText, styles.slotPillTextDanger]}>Unload</Text>
-        </Pressable>
-      </View>
-      <View style={styles.slotActions}>{loadPill}</View>
+    <View style={styles.bookmarksCard} testID="video-bookmarks-yarn">
+      <Text role="heading" aria-level={2} style={styles.bookmarksTitle}>
+        Video Bookmarks & Yarn
+      </Text>
+
+      {bookmarks.length > 0 ? (
+        <>
+          <Text style={styles.bookmarksKicker}>Auto Video Bookmarks</Text>
+          <View style={styles.bookmarkWrap}>
+          {bookmarks.map((bookmark) => {
+            const matchesRow = bookmark.rowHint != null && bookmark.rowHint === project.currentRow;
+            const time = formatBookmarkTime(bookmark.seconds);
+            return (
+              <Pressable
+                key={bookmark.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Jump to ${time}, ${bookmark.label}`}
+                accessibilityState={{ selected: matchesRow || activeBookmarkId === bookmark.id, disabled: !canSeek }}
+                disabled={!canSeek}
+                testID={`bookmark-${bookmark.id}`}
+                onPress={() => onSelectBookmark(bookmark)}
+                style={({ pressed }) => [
+                  styles.bookmarkPill,
+                  matchesRow && styles.bookmarkPillLive,
+                  !canSeek && styles.pillDisabled,
+                  pressed && styles.pressed,
+                  webCursor,
+                ]}
+              >
+                <View style={[styles.timeBadge, matchesRow && styles.timeBadgeLive]}>
+                  <Text style={styles.timeBadgeText}>{time}</Text>
+                </View>
+                <Text numberOfLines={1} style={[styles.bookmarkLabel, matchesRow && styles.bookmarkLabelLive]}>
+                  {bookmark.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+          </View>
+        </>
+      ) : (
+        <Text style={styles.bookmarkEmpty}>
+          {pattern
+            ? 'This tutorial has no chapter timestamps yet.'
+            : 'Link a pattern with a YouTube tutorial to use bookmarks.'}
+        </Text>
+      )}
+
+      {project.yarnColors.length > 0 ? <View style={styles.bookmarksDivider} /> : null}
+
+      {project.yarnColors.length > 0 ? (
+        <View style={styles.yarnStrip} accessibilityLabel="Yarn colors">
+          {project.yarnColors.map((color) => (
+            <View key={color.id} style={styles.yarnChip} accessibilityLabel={color.label}>
+              <View style={[styles.yarnDot, { backgroundColor: color.hexColor }]} />
+              <Text numberOfLines={1} style={styles.yarnChipLabel}>
+                {color.label}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={styles.bookmarkEmpty}>No yarn colors on this project yet.</Text>
+      )}
     </View>
   );
-}
-
-function clampPercent(value: number): number {
-  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function PillSwitch({ on }: { on: boolean }) {
@@ -1706,44 +1605,163 @@ const styles = StyleSheet.create({
   switchKnobOn: {
     alignSelf: 'flex-end',
   },
-  ams: {
+  stickyCard: {
     borderWidth: 1.5,
-    borderColor: '#00E676',
+    borderColor: Colors.accentPrimary,
     borderRadius: Radius.lg,
     backgroundColor: Colors.cardSurface,
     padding: Spacing.md,
-    gap: Spacing.md,
-  },
-  swatchRow: {
-    flexDirection: 'row',
     gap: Spacing.sm,
   },
-  swatch: {
-    flex: 1,
-    height: 72,
-    borderRadius: Radius.md,
-    borderWidth: 2,
-    borderColor: Colors.transparent,
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
+  bookmarksCard: {
+    borderWidth: 1.5,
+    borderColor: Colors.accentPrimary,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.cardSurface,
+    padding: Spacing.md,
+    gap: Spacing.sm,
   },
-  swatchSelected: {
-    borderColor: '#00E676',
-  },
-  swatchLabelBar: {
-    alignItems: 'center',
-    paddingVertical: 3,
-    backgroundColor: 'rgba(0, 0, 0, 0.38)',
-  },
-  swatchLabel: {
-    fontFamily: FontFamily.medium,
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: FontWeight.bold,
+  bookmarksTitle: {
+    ...Typography.subhead,
     color: Colors.textPrimary,
   },
-  slotDetail: {
-    gap: 2,
+  bookmarksKicker: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.semibold,
+  },
+  bookmarkWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  bookmarkPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    maxWidth: '100%',
+    paddingLeft: Spacing.xxs,
+    paddingRight: Spacing.sm,
+    paddingVertical: Spacing.xxs,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.elevatedControl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  bookmarkPillLive: {
+    backgroundColor: Colors.accentMuted,
+    borderColor: Colors.accentPrimary,
+    ...Elevation.accentGlow,
+  },
+  timeBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xxs,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentPrimary,
+  },
+  timeBadgeLive: {
+    backgroundColor: Colors.accentPrimary,
+  },
+  timeBadgeText: {
+    ...Typography.caption,
+    color: Colors.onAccent,
+    fontFamily: FontFamily.mono,
+    fontWeight: FontWeight.bold,
+    fontVariant: ['tabular-nums'],
+  },
+  bookmarkLabel: {
+    ...Typography.caption,
+    flexShrink: 1,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.medium,
+  },
+  bookmarkLabelLive: {
+    color: Colors.accentPrimary,
+  },
+  bookmarkEmpty: {
+    ...Typography.callout,
+    color: Colors.textSecondary,
+  },
+  bookmarksDivider: {
+    height: Layout.hairline,
+    backgroundColor: Colors.border,
+    marginVertical: Spacing.xs,
+  },
+  yarnStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  yarnChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    maxWidth: '100%',
+    paddingRight: Spacing.xs,
+  },
+  yarnDot: {
+    width: 14,
+    height: 14,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  yarnChipLabel: {
+    ...Typography.caption,
+    flexShrink: 1,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.medium,
+  },
+  bookmarkHint: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  presetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  presetPill: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.elevatedControl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  presetPillText: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.medium,
+  },
+  checkpointRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    alignItems: 'center',
+  },
+  checkpointPill: {
+    maxWidth: 220,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.elevatedControl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  checkpointAdd: {
+    borderColor: Colors.accentPrimary,
+  },
+  checkpointText: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.medium,
+  },
+  checkpointAddText: {
+    ...Typography.caption,
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.bold,
   },
   yarnBrand: {
     ...Typography.caption,

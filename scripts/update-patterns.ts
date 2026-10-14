@@ -12,6 +12,11 @@ import * as path from 'node:path';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 
+import {
+  extractVideoBookmarks,
+  type VideoBookmark,
+} from '../utils/chapters';
+
 type PatternDifficulty = 'beginner' | 'easy' | 'intermediate' | 'advanced';
 
 type YarnWeight =
@@ -66,6 +71,7 @@ type SeedPattern = {
   totalRows: number;
   stitchesPerRow: number;
   tags: string[];
+  bookmarks: VideoBookmark[];
 };
 
 const ROOT = path.resolve(__dirname, '..');
@@ -123,6 +129,7 @@ type AiPatternPayload = {
   totalRows?: number;
   stitchesPerRow?: number;
   tags?: string[];
+  chapters?: { label?: string; time?: string; seconds?: number }[];
 };
 
 type AiBatchPatternPayload = AiPatternPayload & {
@@ -317,7 +324,8 @@ export async function extractBatchPatterns(
           'Each item must include videoIndex (0-based, matching Video N in the user message),',
           'difficulty (Beginner|Easy|Intermediate|Advanced), estimatedTimeMinutes, description,',
           'materials [{ name, weight, yardage }], tools [{ type, size }], keyStitches [string],',
-          'tags [string] (include relevant category tags such as amigurumi, wearables, halloween, blanket, bag alongside key stitches).',
+          'tags [string] (include relevant category tags such as amigurumi, wearables, halloween, blanket, bag alongside key stitches),',
+          'chapters [{ label, time }] when the description lists timestamps (time as M:SS or H:MM:SS).',
           `Include exactly ${videos.length} entries with videoIndex 0 through ${videos.length - 1}.`,
           'Infer reasonable values when a video omits them.',
         ].join(' '),
@@ -350,6 +358,45 @@ export function mapBatchPatternsToSeed(
   }
 
   return videos.map((video, index) => mergePattern(video, byIndex.get(index) ?? {}));
+}
+
+function bookmarksFromAiChapters(chapters: AiPatternPayload['chapters']): VideoBookmark[] {
+  if (!chapters?.length) return [];
+  const out: VideoBookmark[] = [];
+  for (const chapter of chapters) {
+    const label = String(chapter.label ?? '').trim();
+    if (!label) continue;
+    const fromTime = chapter.time ? extractVideoBookmarks(`${chapter.time} ${label}`)[0] : undefined;
+    const seconds =
+      fromTime?.seconds ??
+      (typeof chapter.seconds === 'number' && Number.isFinite(chapter.seconds)
+        ? Math.max(0, Math.trunc(chapter.seconds))
+        : 0);
+    out.push({
+      id: `bm-${seconds}-${label.slice(0, 12).replace(/\s+/g, '-').toLowerCase()}`,
+      label,
+      seconds,
+    });
+  }
+  return out.sort((a, b) => a.seconds - b.seconds);
+}
+
+function resolvePatternBookmarks(
+  video: YouTubeVideoItem,
+  ai: AiPatternPayload,
+  totalRows: number,
+  keyStitches: string[],
+  durationSeconds: number,
+): VideoBookmark[] {
+  const description = video.snippet?.description ?? '';
+  let bookmarks = extractVideoBookmarks(description);
+  if (bookmarks.length === 0) {
+    bookmarks = extractVideoBookmarks(ai.description ?? '');
+  }
+  if (bookmarks.length === 0) {
+    bookmarks = bookmarksFromAiChapters(ai.chapters);
+  }
+  return bookmarks;
 }
 
 export function mergePattern(
@@ -429,6 +476,16 @@ export function mergePattern(
     }
   }
 
+  const totalRows = clampInt(ai.totalRows ?? Math.round(estimatedMinutes / 12), 1, 9999);
+  const stitchesPerRow = clampInt(ai.stitchesPerRow ?? 36, 1, 9999);
+  const bookmarks = resolvePatternBookmarks(
+    video,
+    ai,
+    totalRows,
+    keyStitches,
+    estimatedMinutes * 60,
+  );
+
   return {
     id: slugifyId(title, videoId),
     videoId,
@@ -444,9 +501,10 @@ export function mergePattern(
     keyStitches,
     yarnWeight: normalizeYarnWeight(ai.yarnWeight ?? yarnFromMaterials),
     hookSize: hookFromTools,
-    totalRows: clampInt(ai.totalRows ?? Math.round(estimatedMinutes / 12), 1, 9999),
-    stitchesPerRow: clampInt(ai.stitchesPerRow ?? 36, 1, 9999),
+    totalRows,
+    stitchesPerRow,
     tags: tags.slice(0, 8),
+    bookmarks,
   };
 }
 
@@ -469,6 +527,16 @@ function formatMaterials(
     (item) =>
       `${indent}  { name: '${escapeString(item.name)}', weight: '${escapeString(item.weight)}', yardage: '${escapeString(item.yardage)}' },`,
   );
+  return `[\n${lines.join('\n')}\n${indent}]`;
+}
+
+function formatBookmarks(bookmarks: VideoBookmark[], indent: string): string {
+  if (bookmarks.length === 0) return '[]';
+  const lines = bookmarks.map((item) => {
+    const rowHint =
+      item.rowHint != null ? `, rowHint: ${item.rowHint}` : '';
+    return `${indent}  { id: '${escapeString(item.id)}', label: '${escapeString(item.label)}', seconds: ${item.seconds}${rowHint} },`;
+  });
   return `[\n${lines.join('\n')}\n${indent}]`;
 }
 
@@ -503,6 +571,7 @@ ${indent}  hookSize: '${escapeString(pattern.hookSize)}',
 ${indent}  totalRows: ${pattern.totalRows},
 ${indent}  stitchesPerRow: ${pattern.stitchesPerRow},
 ${indent}  tags: ${formatStringArray(pattern.tags, `${indent}  `)},
+${indent}  bookmarks: ${formatBookmarks(pattern.bookmarks, `${indent}  `)},
 ${indent}},`;
     })
     .join('\n');

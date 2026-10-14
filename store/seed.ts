@@ -3,10 +3,9 @@
  * The active make is paused on purpose: a running seed timestamp would keep
  * counting for days after install and look like a stuck timer.
  */
+import type { VideoBookmark } from '../utils/chapters';
 import {
   buildPattern,
-  slotFromStash,
-  type AmsSlots,
   type CrochetPattern,
   type CrochetPersistedSlice,
   type CrochetProject,
@@ -44,6 +43,8 @@ export type SeedPattern = {
   totalRows: number;
   stitchesPerRow: number;
   tags: string[];
+  /** Optional override; otherwise generated from duration and row count. */
+  bookmarks?: VideoBookmark[];
 };
 
 const SEED_STARTED = Date.UTC(2026, 9, 4, 17, 30, 0);
@@ -58,7 +59,6 @@ const softFudge: YarnStashItem = {
   colorName: 'Soft Fudge',
   yarnWeight: 'dk',
   hookSize: '2.5 mm',
-  remainingPercent: 58,
   skeinCount: 2,
 };
 
@@ -69,7 +69,6 @@ const champagne: YarnStashItem = {
   colorName: 'Champagne White',
   yarnWeight: 'dk',
   hookSize: '2.5 mm',
-  remainingPercent: 76,
   skeinCount: 1,
 };
 
@@ -80,7 +79,6 @@ const coffeeBean: YarnStashItem = {
   colorName: 'Coffee Bean',
   yarnWeight: 'dk',
   hookSize: '2.5 mm',
-  remainingPercent: 91,
   skeinCount: 3,
 };
 
@@ -91,7 +89,6 @@ const blushPink: YarnStashItem = {
   colorName: 'Blush Pink',
   yarnWeight: 'dk',
   hookSize: '2.5 mm',
-  remainingPercent: 97,
   skeinCount: 1,
 };
 
@@ -102,7 +99,6 @@ const mustard: YarnStashItem = {
   colorName: 'Mustard',
   yarnWeight: 'worsted',
   hookSize: '5.5 mm',
-  remainingPercent: 100,
   skeinCount: 2,
 };
 
@@ -113,11 +109,11 @@ const sage: YarnStashItem = {
   colorName: 'Sage',
   yarnWeight: 'bulky',
   hookSize: '6.0 mm',
-  remainingPercent: 64,
   skeinCount: 1,
 };
 
 function patternFromSeed(entry: SeedPattern): CrochetPattern {
+  const bookmarks = entry.bookmarks ?? [];
   const pattern = buildPattern(entry.id, {
     title: entry.title,
     creator: entry.author,
@@ -128,6 +124,7 @@ function patternFromSeed(entry: SeedPattern): CrochetPattern {
     totalRows: entry.totalRows,
     stitchesPerRow: entry.stitchesPerRow,
     tags: entry.tags,
+    bookmarks,
   });
   if (!pattern) {
     throw new Error(`Seed pattern "${entry.title}" could not be built from its YouTube URL.`);
@@ -404,13 +401,6 @@ export const SEED_PATTERNS: SeedPattern[] = [
 export function createSeedData(): CrochetPersistedSlice {
   const patterns: CrochetPattern[] = SEED_PATTERNS.map(patternFromSeed);
 
-  const slots: AmsSlots = [
-    slotFromStash('A1', softFudge),
-    slotFromStash('A2', champagne),
-    slotFromStash('A3', coffeeBean),
-    slotFromStash('A4', blushPink),
-  ];
-
   const bambi: CrochetProject = {
     id: 'project-bambi',
     name: 'Bambi Amigurumi Plush',
@@ -424,7 +414,18 @@ export function createSeedData(): CrochetPersistedSlice {
     yarnWeight: 'worsted',
     timerStartedAt: null,
     accumulatedSeconds: SEED_BANKED_SECONDS,
-    slots,
+    yarnColors: [
+      { id: 'color-soft-fudge', hexColor: softFudge.hexColor, label: 'Soft Fudge' },
+      { id: 'color-champagne', hexColor: champagne.hexColor, label: 'Champagne' },
+      { id: 'color-coffee-bean', hexColor: coffeeBean.hexColor, label: 'Coffee Bean' },
+      { id: 'color-blush', hexColor: blushPink.hexColor, label: 'Blush Pink' },
+    ],
+    rowNote: '',
+    checkpoints: [
+      { id: 'cp-beginning', label: 'Beginning', timestampSeconds: 0 },
+      { id: 'cp-materials', label: 'Materials', timestampSeconds: 60 },
+      { id: 'cp-main-pattern', label: 'Main pattern', timestampSeconds: 300 },
+    ],
     createdAt: SEED_STARTED,
     updatedAt: SEED_UPDATED,
   };

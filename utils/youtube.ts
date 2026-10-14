@@ -47,8 +47,12 @@ export function youtubeThumbnailUrl(videoId: string, quality: YouTubeThumbnailQu
 }
 
 /** Privacy-enhanced embed. `playsinline` keeps the player inside the 16:9 card on iOS. */
-export function youtubeEmbedUrl(videoId: string): string {
-  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?rel=0&modestbranding=1&playsinline=1&controls=1`;
+export function youtubeEmbedUrl(videoId: string, startSeconds?: number): string {
+  const start =
+    startSeconds != null && Number.isFinite(startSeconds) && startSeconds > 0
+      ? `&start=${Math.floor(startSeconds)}`
+      : '';
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1&controls=1${start}`;
 }
 
 export function parseYouTubeUrl(input: string): ParsedYouTube | null {

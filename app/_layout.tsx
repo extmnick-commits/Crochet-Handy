@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { Platform } from 'react-native';
 
+import { YouTubeBookmarkSync } from '@/components/YouTubeBookmarkSync';
 import { Colors } from '@/constants/BambuTheme';
 
 // Surface Expo Router's error screen instead of a blank app on render errors.
@@ -37,6 +38,7 @@ export default function RootLayout() {
     <ThemeProvider value={NavigationTheme}>
       <StatusBar style="light" />
       {Platform.OS === 'android' && <NavigationBar style="light" />}
+      <YouTubeBookmarkSync />
       <Stack
         screenOptions={{
           headerShown: false,

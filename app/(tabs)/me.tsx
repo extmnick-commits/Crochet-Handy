@@ -1,5 +1,5 @@
 /**
- * Me — profile stats, the AMS yarn stash, and saved patterns with story reels.
+ * Me — profile stats, yarn stash, and saved patterns with story reels.
  */
 import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useState } from 'react';
@@ -13,9 +13,7 @@ import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
   elapsedSeconds,
-  isSlotEmpty,
   MAX_SKEINS,
-  selectActiveProject,
   stitchesDone,
   useCrochetStore,
   type YarnStashItem,
@@ -33,15 +31,10 @@ export default function MeScreen() {
   const progressPhotos = useCrochetStore((state) => state.progressPhotos);
   const updateStashItem = useCrochetStore((state) => state.updateStashItem);
   const removeStashItem = useCrochetStore((state) => state.removeStashItem);
-  const activeProject = useCrochetStore(selectActiveProject);
-  const assignStashToSlot = useCrochetStore((state) => state.assignStashToSlot);
-
   const [tab, setTab] = useState<LibraryTab>('stash');
   const [addOpen, setAddOpen] = useState(false);
   const [patternId, setPatternId] = useState<string | null>(null);
   const [storyProjectId, setStoryProjectId] = useState<string | null>(null);
-  const [loadItemId, setLoadItemId] = useState<string | null>(null);
-  const loadItem = loadItemId ? yarnStash.find((item) => item.id === loadItemId) ?? null : null;
   const running = projects.some((project) => project.timerStartedAt != null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -101,7 +94,7 @@ export default function MeScreen() {
         <View accessibilityRole="tablist" style={styles.segment}>
           <Segment
             testID="yarn-stash-tab"
-            label="Yarn Stash (AMS Inventory)"
+            label="Yarn Stash"
             selected={tab === 'stash'}
             onPress={() => {
               tick();
@@ -134,18 +127,13 @@ export default function MeScreen() {
               <Text style={styles.addButtonText}>+ Add Yarn to Stash</Text>
             </Pressable>
             {yarnStash.length === 0 ? (
-              <Text style={styles.empty}>Your stash is empty. Add a skein to start the AMS inventory.</Text>
+              <Text style={styles.empty}>Your stash is empty. Add a skein to start tracking colors.</Text>
             ) : (
               yarnStash.map((item) => (
                 <YarnCard
                   key={item.id}
                   item={item}
-                  canLoad={activeProject != null}
                   onChange={(skeinCount) => updateStashItem(item.id, { skeinCount })}
-                  onLoad={() => {
-                    tick();
-                    setLoadItemId(item.id);
-                  }}
                   onRemove={() => {
                     tick();
                     removeStashItem(item.id);
@@ -231,54 +219,6 @@ export default function MeScreen() {
 
       <AddYarnModal visible={addOpen} onClose={() => setAddOpen(false)} />
       <PatternDetailSheet patternId={patternId} onClose={() => setPatternId(null)} />
-      <BottomSheet
-        visible={loadItem != null && activeProject != null}
-        onClose={() => setLoadItemId(null)}
-        header={
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Load into AMS-A</Text>
-            <Text numberOfLines={1} style={styles.sheetSubtitle}>
-              {loadItem ? `${loadItem.brand} ${loadItem.colorName}` : ''} → {activeProject?.name ?? ''}
-            </Text>
-          </View>
-        }
-      >
-        <View style={styles.sheetBody}>
-          {activeProject?.slots.map((slot) => {
-            const empty = isSlotEmpty(slot);
-            const current = loadItem != null && slot.stashItemId === loadItem.id;
-            return (
-              <Pressable
-                key={slot.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: current }}
-                accessibilityLabel={`Load into ${slot.id}${empty ? ', empty' : `, replaces ${slot.colorName}`}`}
-                testID={`load-slot-${slot.id}`}
-                onPress={() => {
-                  if (!loadItem) return;
-                  tick('impact');
-                  assignStashToSlot(slot.id, loadItem.id);
-                  setLoadItemId(null);
-                }}
-                style={({ pressed }) => [styles.slotRow, current && styles.slotRowSelected, pressed && styles.pressed, webCursor]}
-              >
-                <View style={[styles.slotSwatch, { backgroundColor: slot.hexColor }]}>
-                  <Text style={[styles.slotSwatchLabel, { color: inkOn(slot.hexColor) }]}>{slot.id}</Text>
-                </View>
-                <View style={styles.patternCopy}>
-                  <Text numberOfLines={1} style={styles.patternTitle}>
-                    {empty ? 'Empty slot' : slot.colorName}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.patternMeta}>
-                    {empty ? 'Ready to load' : `${slot.brand} · ${slot.remainingPercent}% remaining`}
-                  </Text>
-                </View>
-                <Text style={current ? styles.watchLabel : styles.slotAction}>{current ? 'Loaded' : empty ? 'Load' : 'Replace'}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </BottomSheet>
       <PhotoProgressModal
         visible={storyProjectId != null}
         projectId={storyProjectId}
@@ -324,15 +264,11 @@ function Segment({
 
 function YarnCard({
   item,
-  canLoad,
   onChange,
-  onLoad,
   onRemove,
 }: {
   item: YarnStashItem;
-  canLoad: boolean;
   onChange: (skeinCount: number) => void;
-  onLoad: () => void;
   onRemove: () => void;
 }) {
   const meta = yarnWeightMeta(item.yarnWeight);
@@ -391,17 +327,6 @@ function YarnCard({
           </Pressable>
         </View>
         <View style={styles.cardActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={canLoad ? `Load ${item.colorName} into the active AMS` : 'Start a project to load yarn into the AMS'}
-            accessibilityState={{ disabled: !canLoad }}
-            disabled={!canLoad}
-            testID={`load-ams-${item.id}`}
-            onPress={onLoad}
-            style={({ pressed }) => [styles.loadPill, !canLoad && styles.stepDisabled, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.loadPillText}>Load into AMS</Text>
-          </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Remove ${item.colorName} from stash`}

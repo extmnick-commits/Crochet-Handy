@@ -43,7 +43,7 @@ export function AddYarnModal({ visible, onClose }: AddYarnModalProps) {
               <Text role="heading" aria-level={2} style={styles.title}>
                 Add yarn to stash
               </Text>
-              <Text style={styles.subtitle}>A skein in the AMS inventory</Text>
+              <Text style={styles.subtitle}>Track brand, color, and skeins on your shelf</Text>
             </View>
             <Pressable
               accessibilityRole="button"
