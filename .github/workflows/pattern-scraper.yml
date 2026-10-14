@@ -2,8 +2,25 @@ name: Pattern scraper
 
 on:
   schedule:
+    # Weekly default refresh: 10 trending patterns (inputs are unset on cron).
     - cron: '0 0 * * 0'
   workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Pattern Niche / Topic'
+        required: true
+        default: 'trending'
+        type: choice
+        options:
+          - 'trending'
+          - 'amigurumi'
+          - 'wearables'
+          - 'blankets'
+      count:
+        description: 'Number of new patterns to add'
+        required: true
+        default: '10'
+        type: string
 
 permissions:
   contents: write
@@ -46,6 +63,8 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          SEARCH_TOPIC: ${{ inputs.topic || 'trending' }}
+          SCRAPE_COUNT: ${{ inputs.count || '10' }}
         run: npm run update-patterns
 
       - name: Commit and push seed updates

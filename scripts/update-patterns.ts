@@ -1,10 +1,13 @@
 /**
- * Fetches trending crochet tutorials from YouTube, enriches them with Gemini,
- * and rewrites `SEED_PATTERNS` in store/seed.ts.
+ * Fetches crochet tutorials from YouTube, enriches them with Gemini,
+ * and appends new `SEED_PATTERNS` entries in store/seed.ts.
  *
  * Run: npx ts-node --project tsconfig.scripts.json scripts/update-patterns.ts
  * Or:  npm run update-patterns
  * Local LM Studio: npm run update-patterns -- --local
+ *
+ * Batch size: SCRAPE_COUNT or --count (default 10)
+ * Topic: SEARCH_TOPIC or --topic (trending | amigurumi | wearables | blankets)
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -77,10 +80,6 @@ type SeedPattern = {
 const ROOT = path.resolve(__dirname, '..');
 const SEED_FILE = path.join(ROOT, 'store', 'seed.ts');
 
-/** Long-form project tutorials only; API params also block Shorts and non-embeddable videos. */
-const YOUTUBE_SEARCH_QUERY =
-  '("crochet tutorial" | "crochet pattern") ("step by step" | "full project" | "pattern") -shorts -short';
-const YOUTUBE_SEARCH_MAX_RESULTS = 10;
 /** YouTube category 26 = Howto & Style */
 const YOUTUBE_VIDEO_CATEGORY_HOWTO = '26';
 const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
@@ -94,6 +93,42 @@ const SEED_PATTERNS_START = '// <seed-patterns-start>';
 const SEED_PATTERNS_END = '// <seed-patterns-end>';
 
 dotenv.config({ path: path.join(ROOT, '.env') });
+
+function readArgValue(flag: string): string | undefined {
+  const eq = `--${flag}=`;
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === `--${flag}`) {
+      const next = argv[i + 1];
+      if (next && !next.startsWith('--')) return next;
+    }
+    if (arg.startsWith(eq)) return arg.slice(eq.length);
+  }
+  return undefined;
+}
+
+const cliCount = readArgValue('count');
+const cliTopic = readArgValue('topic');
+if (cliCount) process.env.SCRAPE_COUNT = cliCount;
+if (cliTopic) process.env.SEARCH_TOPIC = cliTopic;
+
+const BATCH_SIZE = parseInt(process.env.SCRAPE_COUNT || '10', 10);
+const SEARCH_TOPIC = process.env.SEARCH_TOPIC || 'trending';
+
+/** Long-form project tutorials only; API params also block Shorts and non-embeddable videos. */
+function searchQueryForTopic(topic: string): string {
+  if (topic === 'amigurumi') {
+    return '("crochet amigurumi" | "crochet plushie") ("tutorial" | "pattern") -shorts';
+  }
+  if (topic === 'wearables') {
+    return '("crochet sweater" | "crochet cardigan" | "crochet top") ("tutorial" | "pattern") -shorts';
+  }
+  if (topic === 'blankets') {
+    return '("crochet blanket" | "crochet granny square") ("tutorial" | "pattern") -shorts';
+  }
+  return '("crochet tutorial" | "crochet pattern") ("step by step" | "full project" | "pattern") -shorts';
+}
 
 type YouTubeSearchItem = {
   id?: { videoId?: string };
@@ -140,7 +175,7 @@ type AiBatchPatternsResponse = {
   patterns?: AiBatchPatternPayload[];
 };
 
-const BATCH_DESCRIPTION_MAX_CHARS = 450;
+const BATCH_DESCRIPTION_MAX_CHARS = 400;
 
 export function isLocalAiMode(): boolean {
   return process.argv.includes('--local');
@@ -240,25 +275,29 @@ async function fetchJson<T>(url: string, params: Record<string, string>): Promis
 }
 
 /** Fetches embeddable, syndicated, medium-length crochet tutorials (no Shorts). */
-export async function getTrendingVideos(apiKey: string, limit = 5): Promise<YouTubeVideoItem[]> {
+export async function getTrendingVideos(
+  apiKey: string,
+  existingVideoIds: ReadonlySet<string> = new Set(),
+): Promise<YouTubeVideoItem[]> {
   const search = await fetchJson<{ items?: YouTubeSearchItem[] }>(YOUTUBE_SEARCH_URL, {
     part: 'snippet',
     type: 'video',
-    q: YOUTUBE_SEARCH_QUERY,
+    q: searchQueryForTopic(SEARCH_TOPIC),
     videoCategoryId: YOUTUBE_VIDEO_CATEGORY_HOWTO,
     videoDuration: 'medium',
     videoEmbeddable: 'true',
     videoSyndicated: 'true',
     order: 'viewCount',
     publishedAfter: publishedAfterIso(7),
-    maxResults: String(YOUTUBE_SEARCH_MAX_RESULTS),
+    maxResults: '25',
     key: apiKey,
   });
 
   const ids = (search.items ?? [])
     .filter((item) => !isShortFormTitle(item.snippet?.title ?? ''))
     .map((item) => item.id?.videoId)
-    .filter((id): id is string => Boolean(id));
+    .filter((id): id is string => Boolean(id))
+    .filter((id) => !existingVideoIds.has(id));
 
   if (ids.length === 0) {
     return [];
@@ -270,11 +309,16 @@ export async function getTrendingVideos(apiKey: string, limit = 5): Promise<YouT
     key: apiKey,
   });
 
+  const batchSize = Number.isFinite(BATCH_SIZE) && BATCH_SIZE > 0 ? BATCH_SIZE : 10;
   return (details.items ?? [])
     .filter((item) => !isShortFormTitle(item.snippet?.title ?? ''))
+    .filter((item) => {
+      const videoId = item.id ?? '';
+      return videoId.length > 0 && !existingVideoIds.has(videoId);
+    })
     .slice()
     .sort((a, b) => Number(b.statistics?.viewCount ?? 0) - Number(a.statistics?.viewCount ?? 0))
-    .slice(0, limit);
+    .slice(0, batchSize);
 }
 
 type AiClientConfig = {
@@ -320,10 +364,12 @@ export async function extractBatchPatterns(
         role: 'system',
         content: [
           `Analyze these ${videos.length} crochet YouTube videos and extract project details for each.`,
-          'Return strict JSON only with a top-level "patterns" array.',
+          'Return strict JSON only: { "patterns": [ ... ] }.',
           'Each item must include videoIndex (0-based, matching Video N in the user message),',
           'difficulty (Beginner|Easy|Intermediate|Advanced), estimatedTimeMinutes, description,',
           'materials [{ name, weight, yardage }], tools [{ type, size }], keyStitches [string],',
+          'yarnWeight (lace|fingering|sport|dk|worsted|aran|bulky|super-bulky|jumbo), hookSize,',
+          'totalRows, stitchesPerRow,',
           'tags [string] (include relevant category tags such as amigurumi, wearables, halloween, blanket, bag alongside key stitches),',
           'chapters [{ label, time }] when the description lists timestamps (time as M:SS or H:MM:SS).',
           `Include exactly ${videos.length} entries with videoIndex 0 through ${videos.length - 1}.`,
@@ -549,8 +595,8 @@ function formatTools(tools: SeedPattern['tools'], indent: string): string {
   return `[\n${lines.join('\n')}\n${indent}]`;
 }
 
-export function formatSeedPatternsExport(patterns: SeedPattern[]): string {
-  const body = patterns
+function formatPatternEntries(patterns: SeedPattern[]): string {
+  return patterns
     .map((pattern) => {
       const indent = '  ';
       return `${indent}{
@@ -575,12 +621,79 @@ ${indent}  bookmarks: ${formatBookmarks(pattern.bookmarks, `${indent}  `)},
 ${indent}},`;
     })
     .join('\n');
+}
+
+export function formatSeedPatternsExport(patterns: SeedPattern[]): string {
+  const body = formatPatternEntries(patterns);
 
   return `${SEED_PATTERNS_START}
 export const SEED_PATTERNS: SeedPattern[] = [
 ${body}
 ];
 ${SEED_PATTERNS_END}`;
+}
+
+function seedPatternsBlock(seedSource: string): string {
+  const start = seedSource.indexOf(SEED_PATTERNS_START);
+  const end = seedSource.indexOf(SEED_PATTERNS_END);
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error(
+      `Could not find ${SEED_PATTERNS_START} / ${SEED_PATTERNS_END} markers in store/seed.ts`,
+    );
+  }
+  return seedSource.slice(start, end);
+}
+
+/** Video ids already exported in the SEED_PATTERNS array. */
+export function readExistingVideoIds(seedSource: string): Set<string> {
+  const block = seedPatternsBlock(seedSource);
+  const ids = new Set<string>();
+  for (const match of block.matchAll(/videoId:\s*'([^']+)'/g)) {
+    ids.add(match[1]);
+  }
+  return ids;
+}
+
+function readExistingPatternIds(seedSource: string): Set<string> {
+  const block = seedPatternsBlock(seedSource);
+  const ids = new Set<string>();
+  for (const match of block.matchAll(/^\s{4}id:\s*'([^']+)'/gm)) {
+    ids.add(match[1]);
+  }
+  return ids;
+}
+
+function withUniquePatternIds(patterns: SeedPattern[], seedSource: string): SeedPattern[] {
+  const taken = readExistingPatternIds(seedSource);
+  return patterns.map((pattern) => {
+    let id = pattern.id;
+    if (taken.has(id)) {
+      id = `pattern-${pattern.videoId}`.slice(0, 64);
+    }
+    taken.add(id);
+    return id === pattern.id ? pattern : { ...pattern, id };
+  });
+}
+
+/** Inserts new pattern objects before the SEED_PATTERNS closing bracket. */
+export function appendSeedPatterns(seedSource: string, patterns: SeedPattern[]): string {
+  if (patterns.length === 0) return seedSource;
+  const start = seedSource.indexOf(SEED_PATTERNS_START);
+  const end = seedSource.indexOf(SEED_PATTERNS_END);
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error(
+      `Could not find ${SEED_PATTERNS_START} / ${SEED_PATTERNS_END} markers in store/seed.ts`,
+    );
+  }
+  const block = seedSource.slice(start, end);
+  const close = block.lastIndexOf('];');
+  if (close === -1) {
+    throw new Error('Could not find the SEED_PATTERNS array terminator in store/seed.ts');
+  }
+  const newline = seedSource.includes('\r\n') ? '\r\n' : '\n';
+  const formatted = formatPatternEntries(patterns).replace(/\n/g, newline);
+  const absolute = start + close;
+  return `${seedSource.slice(0, absolute)}${formatted}${newline}${seedSource.slice(absolute)}`;
 }
 
 export function replaceSeedPatternsBlock(seedSource: string, block: string): string {
@@ -599,13 +712,20 @@ export async function main(): Promise<void> {
   try {
     const isLocal = isLocalAiMode();
     const youtubeKey = requireEnv('YOUTUBE_API_KEY');
+    const seedSource = fs.readFileSync(SEED_FILE, 'utf8');
+    const existingIds = readExistingVideoIds(seedSource);
 
-    logTimestamp('YouTube fetch starting…');
-    const videos = await getTrendingVideos(youtubeKey, 5);
+    logTimestamp(
+      `YouTube fetch starting (topic: ${SEARCH_TOPIC}, batch: ${BATCH_SIZE}, catalog: ${existingIds.size})…`,
+    );
+    const videos = await getTrendingVideos(youtubeKey, existingIds);
     if (videos.length === 0) {
-      throw new Error('No crochet tutorial videos found for the last 7 days');
+      logTimestamp(
+        `Added 0 new patterns. Catalog now has total of ${existingIds.size} patterns.`,
+      );
+      return;
     }
-    logTimestamp(`YouTube fetch finished (${videos.length} videos)`);
+    logTimestamp(`YouTube fetch finished (${videos.length} new videos)`);
 
     const { client, model } = buildAiClient(isLocal);
 
@@ -617,13 +737,21 @@ export async function main(): Promise<void> {
       `AI batch extraction finished in ${aiElapsedSeconds}s (${batch.length} pattern objects)`,
     );
 
-    const patterns = mapBatchPatternsToSeed(videos, batch);
+    const seen = new Set(existingIds);
+    const patterns = withUniquePatternIds(
+      mapBatchPatternsToSeed(videos, batch).filter((pattern) => {
+        if (!pattern.videoId || seen.has(pattern.videoId)) return false;
+        seen.add(pattern.videoId);
+        return true;
+      }),
+      seedSource,
+    );
 
-    logTimestamp('Writing store/seed.ts…');
-    const seedSource = fs.readFileSync(SEED_FILE, 'utf8');
-    const nextSource = replaceSeedPatternsBlock(seedSource, formatSeedPatternsExport(patterns));
+    logTimestamp('Appending new patterns to store/seed.ts…');
+    const nextSource = appendSeedPatterns(seedSource, patterns);
     fs.writeFileSync(SEED_FILE, nextSource, 'utf8');
-    logTimestamp(`Saved ${patterns.length} patterns to store/seed.ts`);
+    const total = existingIds.size + patterns.length;
+    logTimestamp(`Added ${patterns.length} new patterns. Catalog now has total of ${total} patterns.`);
 
     for (const pattern of patterns) {
       console.log(`  • ${pattern.title} (${pattern.youtubeUrl})`);
