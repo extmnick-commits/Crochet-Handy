@@ -181,8 +181,11 @@ export const useCrochetStore = create<CrochetStore>()(
 
       markHydrated = () => {
         enablePersistWrites();
-        const reconciled = applyReconcileTimers(readData(get()), Date.now());
-        set(reconciled ? { ...reconciled, hydrated: true } : { hydrated: true });
+        const data = readData(get());
+        const patterns = mergeCatalogPatternsFromSeed(data.patterns, createSeedData().patterns);
+        const withCatalog = patterns.length !== data.patterns.length ? { ...data, patterns } : data;
+        const reconciled = applyReconcileTimers(withCatalog, Date.now());
+        set(reconciled ? { ...reconciled, hydrated: true } : { ...withCatalog, hydrated: true });
       };
 
       return {

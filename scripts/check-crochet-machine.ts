@@ -109,7 +109,7 @@ equal(formatBookmarkTime(75), '01:15', 'bookmark time format');
 equal(formatBookmarkTime(3735), '1:02:15', 'hour bookmark format');
 
 const seed = createSeedData();
-equal(seed.patterns.length, 15, 'fifteen catalog patterns');
+equal(seed.patterns.length, 20, 'twenty catalog patterns');
 equal(seed.projects.length, 1, 'one project');
 equal(seed.projects[0]?.name, 'Bambi Amigurumi Plush', 'project name');
 equal(seed.projects[0]?.currentRow, 28, 'bambi row');
