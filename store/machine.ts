@@ -120,7 +120,14 @@ export type IdeaFolder = {
   patternIds: string[];
   createdAt: number;
   updatedAt: number;
+  /** Instant-save target; at most one folder should be marked default. */
+  isDefault?: boolean;
+  /** Private collections show a lock in the picker. */
+  isPrivate?: boolean;
 };
+
+export const DEFAULT_COLLECTION_FOLDER_ID = 'folder-default';
+export const DEFAULT_COLLECTION_NAME = 'Default Collection';
 
 export type CrochetPattern = {
   id: string;
@@ -847,7 +854,7 @@ export function applyToggleFollowCreator(data: CrochetData, creator: string): Cr
 export function applyCreateCollectionFolder(
   data: CrochetData,
   id: string,
-  input: { name: string; description?: string },
+  input: { name: string; description?: string; isPrivate?: boolean },
   now: number,
 ): CrochetData | null {
   if (!isSafeId(id) || data.collectionFolders.length >= MAX_IDEA_FOLDERS) return null;
@@ -862,8 +869,103 @@ export function applyCreateCollectionFolder(
     patternIds: [],
     createdAt: now,
     updatedAt: now,
+    isPrivate: Boolean(input.isPrivate),
   };
-  return { ...data, collectionFolders: [...data.collectionFolders, folder] };
+  const withFolder = applyEnsureDefaultCollectionFolder(
+    { ...data, collectionFolders: [...data.collectionFolders, folder] },
+    now,
+  );
+  return withFolder;
+}
+
+export function applyEnsureDefaultCollectionFolder(data: CrochetData, now: number): CrochetData {
+  let collectionFolders = data.collectionFolders;
+  const defaultIndex = collectionFolders.findIndex((folder) => folder.isDefault);
+  if (defaultIndex < 0) {
+    if (collectionFolders.length === 0) {
+      const folder: IdeaFolder = {
+        id: DEFAULT_COLLECTION_FOLDER_ID,
+        name: DEFAULT_COLLECTION_NAME,
+        description: '',
+        patternIds: [],
+        createdAt: now,
+        updatedAt: now,
+        isDefault: true,
+        isPrivate: false,
+      };
+      collectionFolders = [folder];
+    } else {
+      collectionFolders = collectionFolders.map((folder, index) =>
+        index === 0 ? { ...folder, isDefault: true } : { ...folder, isDefault: folder.isDefault ?? false },
+      );
+    }
+  } else if (defaultIndex > 0) {
+    collectionFolders = collectionFolders.map((folder, index) => ({
+      ...folder,
+      isDefault: index === defaultIndex,
+    }));
+  }
+  if (collectionFolders === data.collectionFolders) return data;
+  return { ...data, collectionFolders };
+}
+
+export function applySetPatternInFolders(
+  data: CrochetData,
+  patternId: string,
+  folderIds: string[],
+  now: number,
+): CrochetData | null {
+  if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
+  const validIds = new Set(
+    folderIds.filter((id) => data.collectionFolders.some((folder) => folder.id === id)),
+  );
+  let changed = false;
+  const collectionFolders = data.collectionFolders.map((folder) => {
+    const has = folder.patternIds.includes(patternId);
+    const should = validIds.has(folder.id);
+    if (has === should) return folder;
+    changed = true;
+    const patternIds = should
+      ? [...folder.patternIds, patternId]
+      : folder.patternIds.filter((id) => id !== patternId);
+    return { ...folder, patternIds, updatedAt: now };
+  });
+  if (!changed) {
+    const inAny = data.collectionFolders.some((folder) => folder.patternIds.includes(patternId));
+    const shouldBeInAny = validIds.size > 0;
+    if (inAny === shouldBeInAny) return null;
+  }
+  const inAnyFolder = collectionFolders.some((folder) => folder.patternIds.includes(patternId));
+  let collectedPatternIds = data.collectedPatternIds;
+  if (inAnyFolder && !collectedPatternIds.includes(patternId)) {
+    collectedPatternIds = [...collectedPatternIds, patternId];
+  } else if (!inAnyFolder && collectedPatternIds.includes(patternId)) {
+    collectedPatternIds = collectedPatternIds.filter((id) => id !== patternId);
+  }
+  return { ...data, collectionFolders, collectedPatternIds };
+}
+
+export function applyCollectPatternToDefaultFolder(
+  data: CrochetData,
+  patternId: string,
+  now: number,
+): { data: CrochetData; folderName: string } | null {
+  if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
+  const ensured = applyEnsureDefaultCollectionFolder(data, now);
+  const defaultFolder = ensured.collectionFolders.find((folder) => folder.isDefault);
+  if (!defaultFolder) return null;
+  const folderIds = ensured.collectionFolders
+    .filter((folder) => folder.patternIds.includes(patternId))
+    .map((folder) => folder.id);
+  if (!folderIds.includes(defaultFolder.id)) {
+    folderIds.push(defaultFolder.id);
+  }
+  const next = applySetPatternInFolders(ensured, patternId, folderIds, now);
+  if (!next) {
+    if (!ensured.collectionFolders.some((folder) => folder.patternIds.includes(patternId))) return null;
+    return { data: ensured, folderName: defaultFolder.name };
+  }
+  return { data: next, folderName: defaultFolder.name };
 }
 
 /** @deprecated Use `applyCreateCollectionFolder`. */
@@ -1231,14 +1333,43 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
 
   const account = repairAccount(input.account);
   const likedPatternIds = repairLikedPatternIds(input.likedPatternIds, patterns);
-  const collectionFolders = repairIdeaFolders(
+  let collectionFolders = repairIdeaFolders(
     'collectionFolders' in input ? input.collectionFolders : input.ideaFolders,
     patterns,
   );
+  collectionFolders = applyEnsureDefaultCollectionFolder(
+    {
+      patterns,
+      projects,
+      activeProjectId,
+      yarnStash,
+      progressPhotos,
+      account,
+      likedPatternIds,
+      collectedPatternIds: [],
+      collectionFolders,
+      patternComments: [],
+      followedCreators: [],
+      tapHistory: {},
+    },
+    now,
+  ).collectionFolders;
   let collectedPatternIds = repairCollectedPatternIds(input.collectedPatternIds, patterns);
   if (collectedPatternIds.length === 0 && collectionFolders.length > 0) {
     const fromFolders = collectionFolders.flatMap((folder) => folder.patternIds);
     collectedPatternIds = repairCollectedPatternIds(fromFolders, patterns);
+  }
+  const defaultFolder = collectionFolders.find((folder) => folder.isDefault);
+  if (defaultFolder) {
+    const orphans = collectedPatternIds.filter(
+      (id) => !collectionFolders.some((folder) => folder.patternIds.includes(id)),
+    );
+    if (orphans.length > 0) {
+      const patternIds = [...new Set([...defaultFolder.patternIds, ...orphans])];
+      collectionFolders = collectionFolders.map((folder) =>
+        folder.id === defaultFolder.id ? { ...folder, patternIds, updatedAt: now } : folder,
+      );
+    }
   }
 
   const patternComments = repairPatternComments(input.patternComments, patterns);
@@ -1782,5 +1913,7 @@ function repairIdeaFolder(input: unknown, patternIds: Set<string>): IdeaFolder |
         .filter((id): id is string => typeof id === 'string' && patternIds.has(id))
         .filter((id, index, list) => list.indexOf(id) === index)
     : [];
-  return { id: input.id, name, description, patternIds: ids, createdAt, updatedAt };
+  const isDefault = input.isDefault === true;
+  const isPrivate = input.isPrivate === true;
+  return { id: input.id, name, description, patternIds: ids, createdAt, updatedAt, isDefault, isPrivate };
 }

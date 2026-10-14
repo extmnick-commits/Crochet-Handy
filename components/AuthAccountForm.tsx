@@ -18,8 +18,10 @@ import {
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { useBottomSheetScrollRef } from '@/components/ui/BottomSheetScrollContext';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useCrochetStore, type UserAccount } from '@/store/useCrochetStore';
+import { scrollFieldIntoView as scrollFieldIntoViewOnParent } from '@/utils/scrollFieldIntoView';
 import { auth, isFirebaseConfigured } from '@/utils/firebase';
 import { creatorInitials } from '@/utils/patternDisplay';
 
@@ -60,6 +62,7 @@ export function AuthAccountForm({
   const [scrollOffsetY, setScrollOffsetY] = useState(0);
 
   const screenScrollRef = useRef<ScrollView>(null);
+  const sheetScrollRef = useBottomSheetScrollRef();
   const fieldOffsetsRef = useRef<Record<string, number>>({});
 
   const firebaseReady = isFirebaseConfigured();
@@ -71,21 +74,12 @@ export function AuthAccountForm({
 
   const scrollFieldIntoView = useCallback(
     (key: string) => {
-      if (!isScreen) return;
-      const y = fieldOffsetsRef.current[key];
-      if (y == null) return;
+      const scrollRef = isScreen ? screenScrollRef : sheetScrollRef;
+      if (!scrollRef) return;
       const keyboardInset = Keyboard.metrics()?.height ?? 0;
-      const targetY = Math.max(0, y - Spacing.lg);
-      requestAnimationFrame(() => {
-        screenScrollRef.current?.scrollTo({ y: targetY, animated: true });
-        if (keyboardInset > 0) {
-          setTimeout(() => {
-            screenScrollRef.current?.scrollTo({ y: targetY + Spacing.md, animated: true });
-          }, Platform.OS === 'ios' ? 120 : 80);
-        }
-      });
+      scrollFieldIntoViewOnParent(scrollRef, fieldOffsetsRef.current, key, keyboardInset);
     },
-    [isScreen],
+    [isScreen, sheetScrollRef],
   );
 
   const scrollToPrimaryAction = useCallback(() => {
@@ -245,7 +239,7 @@ export function AuthAccountForm({
 
       {mode !== 'edit' && (
         <>
-          <Field label="Email" layout={layout} onLayout={isScreen ? (e) => registerFieldOffset('email', e) : undefined}>
+          <Field label="Email" layout={layout} onLayout={(e) => registerFieldOffset('email', e)}>
             <TextInput
               value={email}
               onChangeText={setEmail}
@@ -262,7 +256,7 @@ export function AuthAccountForm({
               style={[styles.input, isScreen && styles.inputScreen]}
             />
           </Field>
-          <Field label="Password" layout={layout} onLayout={isScreen ? (e) => registerFieldOffset('password', e) : undefined}>
+          <Field label="Password" layout={layout} onLayout={(e) => registerFieldOffset('password', e)}>
             <TextInput
               value={password}
               onChangeText={setPassword}
@@ -281,7 +275,7 @@ export function AuthAccountForm({
 
       {(mode === 'create' || mode === 'edit') && (
         <>
-          <Field label="Display name" layout={layout} onLayout={isScreen ? (e) => registerFieldOffset('displayName', e) : undefined}>
+          <Field label="Display name" layout={layout} onLayout={(e) => registerFieldOffset('displayName', e)}>
             <TextInput
               value={displayName}
               onChangeText={setDisplayName}
@@ -294,7 +288,7 @@ export function AuthAccountForm({
               style={[styles.input, isScreen && styles.inputScreen]}
             />
           </Field>
-          <Field label="Username" layout={layout} onLayout={isScreen ? (e) => registerFieldOffset('username', e) : undefined}>
+          <Field label="Username" layout={layout} onLayout={(e) => registerFieldOffset('username', e)}>
             <TextInput
               value={username}
               onChangeText={setUsername}
@@ -309,7 +303,7 @@ export function AuthAccountForm({
               style={[styles.input, isScreen && styles.inputScreen]}
             />
           </Field>
-          <Field label="Bio" layout={layout} onLayout={isScreen ? (e) => registerFieldOffset('bio', e) : undefined}>
+          <Field label="Bio" layout={layout} onLayout={(e) => registerFieldOffset('bio', e)}>
             <TextInput
               value={bio}
               onChangeText={setBio}
@@ -422,9 +416,7 @@ export function AuthAccountForm({
           </Pressable>
         )}
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
-        {bodyContent}
-      </ScrollView>
+      <View style={styles.body}>{bodyContent}</View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={primaryLabel}

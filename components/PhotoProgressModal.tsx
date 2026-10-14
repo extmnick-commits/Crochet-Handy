@@ -9,6 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -350,7 +351,11 @@ function PreviewStill({
   };
 
   return (
-    <View style={styles.fill}>
+    <KeyboardAvoidingView
+      style={styles.fill}
+      behavior={Platform.OS === 'web' ? undefined : 'padding'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+    >
       <Image accessible={false} source={{ uri }} style={styles.bleed} resizeMode="cover" />
       <View style={[styles.previewTop, { paddingTop: insets.top + Spacing.sm }]} pointerEvents="box-none">
         <Pressable
@@ -402,7 +407,7 @@ function PreviewStill({
         </Pressable>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

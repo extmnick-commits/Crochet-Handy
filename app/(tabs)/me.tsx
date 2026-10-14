@@ -1,5 +1,5 @@
 /**
- * Me — profile, Collections | Likes library, stash, and progress stories.
+ * Me — profile, Collections | Likes library, folders, and progress stories.
  */
 import * as Haptics from 'expo-haptics';
 import { signOut } from 'firebase/auth';
@@ -18,7 +18,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { AddYarnModal } from '@/components/AddYarnModal';
 import { AuthAccountModal } from '@/components/AuthAccountModal';
 import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
@@ -27,13 +26,11 @@ import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
   elapsedSeconds,
-  MAX_SKEINS,
   stitchesDone,
   useCrochetStore,
   type CrochetPattern,
   type IdeaFolder,
   type UserAccount,
-  type YarnStashItem,
 } from '@/store/useCrochetStore';
 import { auth, isFirebaseConfigured } from '@/utils/firebase';
 import {
@@ -41,12 +38,11 @@ import {
   matchesPatternQuery,
   MASONRY_TEXT_BLOCK,
   packMasonryColumns,
-  yarnWeightMeta,
 } from '@/utils/patternDisplay';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
 
 type LibraryPill = 'collections' | 'likes';
-type CollectionSubTab = 'patterns' | 'folders' | 'yarn' | 'stories';
+type CollectionSubTab = 'folders' | 'stories';
 
 export default function MeScreen() {
   const insets = useSafeAreaInsets();
@@ -55,7 +51,6 @@ export default function MeScreen() {
   const patterns = useCrochetStore((state) => state.patterns);
   const progressPhotos = useCrochetStore((state) => state.progressPhotos);
   const account = useCrochetStore((state) => state.account);
-  const yarnStash = useCrochetStore((state) => state.yarnStash);
   const likedPatternIds = useCrochetStore((state) => state.likedPatternIds);
   const collectedPatternIds = useCrochetStore((state) => state.collectedPatternIds);
   const collectionFolders = useCrochetStore((state) => state.collectionFolders);
@@ -66,7 +61,7 @@ export default function MeScreen() {
   const setAccount = useCrochetStore((state) => state.setAccount);
 
   const [libraryPill, setLibraryPill] = useState<LibraryPill>('collections');
-  const [collectionSubTab, setCollectionSubTab] = useState<CollectionSubTab>('patterns');
+  const [collectionSubTab, setCollectionSubTab] = useState<CollectionSubTab>('folders');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [authOpen, setAuthOpen] = useState(false);
@@ -80,8 +75,6 @@ export default function MeScreen() {
   const [addPatternsOpen, setAddPatternsOpen] = useState(false);
   const [patternId, setPatternId] = useState<string | null>(null);
   const [storyProjectId, setStoryProjectId] = useState<string | null>(null);
-  const [yarnModalOpen, setYarnModalOpen] = useState(false);
-
   const running = projects.some((project) => project.timerStartedAt != null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -167,9 +160,8 @@ export default function MeScreen() {
         .filter((item): item is CrochetPattern => item != null);
       return applyQuery(inFolder);
     }
-    if (collectionSubTab === 'patterns') return applyQuery(collectedPatterns);
     return [];
-  }, [libraryPill, likedPatterns, collectedPatterns, collectionSubTab, openFolder, patterns, searchQuery]);
+  }, [libraryPill, likedPatterns, openFolder, patterns, searchQuery]);
 
   const innerWidth = Math.max(0, windowWidth - insets.left - insets.right);
   const columnWidth = Math.floor((innerWidth - Layout.screenGutter * 2 - Layout.cardGap) / 2);
@@ -196,6 +188,8 @@ export default function MeScreen() {
         contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
       >
         <ProfileAccountBar
           account={account}
@@ -258,9 +252,7 @@ export default function MeScreen() {
           >
             {(
               [
-                ['patterns', 'Patterns'],
                 ['folders', 'Folders'],
-                ['yarn', 'Yarn Stash'],
                 ['stories', 'Stories'],
               ] as const
             ).map(([id, label]) => {
@@ -340,24 +332,18 @@ export default function MeScreen() {
           </View>
         ) : null}
 
-        {libraryPill === 'likes' || collectionSubTab === 'patterns' || openFolder ? (
+        {libraryPill === 'likes' || openFolder ? (
           <PatternMasonrySection
             patterns={masonryPatterns}
             columns={columns}
             columnWidth={columnWidth}
             emptyTitle={
-              libraryPill === 'likes'
-                ? 'No liked patterns yet'
-                : openFolder
-                  ? 'No patterns in this folder'
-                  : 'No saved patterns yet'
+              libraryPill === 'likes' ? 'No liked patterns yet' : 'No patterns in this folder'
             }
             emptyBody={
               libraryPill === 'likes'
                 ? 'Tap the heart on any pattern in the feed to save it here.'
-                : openFolder
-                  ? 'Use + Add Patterns to fill this folder from your collection.'
-                  : 'Collect patterns from the feed or save them into folders.'
+                : 'Use + Add Patterns to fill this folder from your collection.'
             }
             forceLikedVisual={libraryPill === 'likes'}
             onOpenPattern={(id) => {
@@ -400,27 +386,6 @@ export default function MeScreen() {
                   />
                 ))}
               </View>
-            )}
-          </View>
-        ) : null}
-
-        {libraryPill === 'collections' && collectionSubTab === 'yarn' ? (
-          <View style={styles.section}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add yarn to stash"
-              onPress={() => {
-                tick();
-                setYarnModalOpen(true);
-              }}
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
-            >
-              <Text style={styles.primaryButtonText}>+ Add Yarn to Stash</Text>
-            </Pressable>
-            {yarnStash.length === 0 ? (
-              <Text style={styles.empty}>Track brand, color, and skein counts for yarn on your shelf.</Text>
-            ) : (
-              yarnStash.map((item) => <YarnCard key={item.id} item={item} />)
             )}
           </View>
         ) : null}
@@ -594,7 +559,6 @@ export default function MeScreen() {
         ) : null}
       </BottomSheet>
 
-      <AddYarnModal visible={yarnModalOpen} onClose={() => setYarnModalOpen(false)} />
       <AuthAccountModal visible={authOpen} initialMode={authMode} onClose={() => setAuthOpen(false)} />
       <PatternDetailSheet
         patternId={patternId}
@@ -812,54 +776,6 @@ function FolderTile({
         {folder.patternIds.length} {folder.patternIds.length === 1 ? 'pattern' : 'patterns'}
       </Text>
     </Pressable>
-  );
-}
-
-function YarnCard({ item }: { item: YarnStashItem }) {
-  const updateStashItem = useCrochetStore((state) => state.updateStashItem);
-  const removeStashItem = useCrochetStore((state) => state.removeStashItem);
-  const meta = yarnWeightMeta(item.yarnWeight);
-
-  return (
-    <View style={styles.yarnCard}>
-      <View style={[styles.yarnSwatch, { backgroundColor: item.hexColor }]} />
-      <View style={styles.yarnCopy}>
-        <Text style={styles.yarnTitle}>{item.colorName}</Text>
-        <Text style={styles.yarnMeta}>
-          {item.brand} · {meta.label} {meta.number} · {item.hookSize}
-        </Text>
-      </View>
-      <View style={styles.stepper}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Fewer skeins"
-          disabled={item.skeinCount <= 1}
-          onPress={() => updateStashItem(item.id, { skeinCount: item.skeinCount - 1 })}
-          style={({ pressed }) => [styles.step, item.skeinCount <= 1 && styles.stepDisabled, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.stepText}>−</Text>
-        </Pressable>
-        <Text style={styles.stepValue}>{item.skeinCount}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="More skeins"
-          disabled={item.skeinCount >= MAX_SKEINS}
-          onPress={() => updateStashItem(item.id, { skeinCount: item.skeinCount + 1 })}
-          style={({ pressed }) => [styles.step, item.skeinCount >= MAX_SKEINS && styles.stepDisabled, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.stepText}>+</Text>
-        </Pressable>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Remove yarn from stash"
-        onPress={() => removeStashItem(item.id)}
-        hitSlop={Layout.hitSlop}
-        style={({ pressed }) => [pressed && styles.pressed, webCursor]}
-      >
-        <Text style={styles.dangerText}>Remove</Text>
-      </Pressable>
-    </View>
   );
 }
 
@@ -1249,63 +1165,6 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.accentPrimary,
     fontWeight: FontWeight.bold,
-  },
-  yarnCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.cardSurface,
-    flexWrap: 'wrap',
-  },
-  yarnSwatch: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  yarnCopy: {
-    flex: 1,
-    minWidth: 120,
-    gap: 2,
-  },
-  yarnTitle: {
-    ...Typography.label,
-    color: Colors.textPrimary,
-  },
-  yarnMeta: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    backgroundColor: Colors.elevatedControl,
-    borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.xs,
-  },
-  step: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepDisabled: {
-    opacity: 0.35,
-  },
-  stepText: {
-    ...Typography.headline,
-    color: Colors.textPrimary,
-    lineHeight: 28,
-  },
-  stepValue: {
-    ...Typography.label,
-    color: Colors.textPrimary,
-    minWidth: 24,
-    textAlign: 'center',
   },
   sheetHeader: {
     gap: 4,

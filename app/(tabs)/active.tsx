@@ -134,6 +134,9 @@ export default function ActiveProjectScreen() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
       >
         <View style={styles.header}>
           <View style={styles.headerText}>

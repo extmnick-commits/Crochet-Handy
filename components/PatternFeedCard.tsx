@@ -4,9 +4,14 @@
 import * as Haptics from 'expo-haptics';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useState } from 'react';
+import Svg, { Path } from 'react-native-svg';
+
 import { HeartIcon } from '@/components/HeartIcon';
+import { SaveToFolderSheet } from '@/components/SaveToFolderSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
-import { selectIsPatternLiked, useCrochetStore, type CrochetPattern } from '@/store/useCrochetStore';
+import { selectIsPatternCollected, selectIsPatternLiked, useCrochetStore, type CrochetPattern } from '@/store/useCrochetStore';
+import { handlePatternCollectPress } from '@/utils/instantCollect';
 import {
   creatorColor,
   creatorInitials,
@@ -25,8 +30,10 @@ type PatternFeedCardProps = {
 
 export function PatternFeedCard({ pattern, imageHeight, onPress, forceLikedVisual }: PatternFeedCardProps) {
   const liked = useCrochetStore((state) => selectIsPatternLiked(state, pattern.id));
+  const collected = useCrochetStore((state) => selectIsPatternCollected(state, pattern.id));
   const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
   const showLiked = forceLikedVisual || liked;
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
 
   return (
     <View style={styles.card} testID={`pattern-card-${pattern.id}`}>
@@ -59,6 +66,18 @@ export function PatternFeedCard({ pattern, imageHeight, onPress, forceLikedVisua
         </Text>
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel={collected ? 'Change collection' : 'Collect pattern'}
+          hitSlop={Layout.hitSlop}
+          onPress={() => {
+            tick();
+            handlePatternCollectPress(pattern.id, () => setFolderPickerOpen(true));
+          }}
+          style={({ pressed }) => [styles.collect, pressed && styles.pressed, webCursor]}
+        >
+          <BookmarkIcon color={collected ? Colors.accentPrimary : Colors.textSecondary} filled={collected} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
           accessibilityLabel={showLiked ? 'Unlike pattern' : 'Like pattern'}
           accessibilityState={{ selected: showLiked }}
           hitSlop={Layout.hitSlop}
@@ -74,7 +93,26 @@ export function PatternFeedCard({ pattern, imageHeight, onPress, forceLikedVisua
           </Text>
         </Pressable>
       </View>
+      <SaveToFolderSheet
+        visible={folderPickerOpen}
+        patternId={pattern.id}
+        onClose={() => setFolderPickerOpen(false)}
+      />
     </View>
+  );
+}
+
+function BookmarkIcon({ color, filled }: { color: string; filled: boolean }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M6 4.5 A2 2 0 0 1 8 2.5 H16 A2 2 0 0 1 18 4.5 V19.5 L12 16 L6 19.5 V4.5 Z"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+        fill={filled ? color : 'none'}
+      />
+    </Svg>
   );
 }
 
@@ -149,6 +187,9 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     flex: 1,
     color: Colors.textSecondary,
+  },
+  collect: {
+    padding: 2,
   },
   likes: {
     flexDirection: 'row',

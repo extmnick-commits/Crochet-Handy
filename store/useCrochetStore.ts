@@ -59,6 +59,10 @@ import {
   applyToggleFollowCreator,
   applyToggleLikePattern,
   applyTogglePatternInFolder,
+  applySetPatternInFolders,
+  applyCollectPatternToDefaultFolder,
+  applyEnsureDefaultCollectionFolder,
+  DEFAULT_COLLECTION_NAME,
   applyUpdateAccountProfile,
   applyUpdateProjectYarnColor,
   applyUpdateStashItem,
@@ -176,11 +180,16 @@ type CrochetActions = {
   addPatternComment: (input: NewPatternCommentInput) => string | null;
   removePatternComment: (commentId: string) => void;
   toggleFollowCreator: (creator: string) => void;
-  createCollectionFolder: (input: { name: string; description?: string }) => string | null;
+  createCollectionFolder: (input: { name: string; description?: string; isPrivate?: boolean }) => string | null;
+  createFolder: (name: string, isPrivate?: boolean) => string | null;
   renameCollectionFolder: (folderId: string, name: string) => void;
   updateCollectionFolder: (folderId: string, patch: { name?: string; description?: string }) => void;
   deleteCollectionFolder: (folderId: string) => void;
   togglePatternInFolder: (folderId: string, patternId: string) => void;
+  /** Set folder membership for a pattern to exactly `folderIds` (multi-select confirm). */
+  togglePatternInFolders: (patternId: string, folderIds: string[]) => void;
+  /** Add pattern to the default collection; returns the folder display name. */
+  collectPatternToDefault: (patternId: string) => string | null;
   hydrateFromCloud: (cloudRaw: unknown) => void;
   setAuthSessionReady: (ready: boolean) => void;
 };
@@ -382,11 +391,14 @@ export const useCrochetStore = create<CrochetStore>()(
         toggleFollowCreator: (creator) => commit((data) => applyToggleFollowCreator(data, creator)),
         createCollectionFolder: (input) => {
           const id = createId('folder');
-          const next = applyCreateCollectionFolder(readData(get()), id, input, Date.now());
+          const now = Date.now();
+          const base = applyEnsureDefaultCollectionFolder(readData(get()), now);
+          const next = applyCreateCollectionFolder(base, id, input, now);
           if (!next) return null;
           set(next);
           return id;
         },
+        createFolder: (name, isPrivate) => get().createCollectionFolder({ name, isPrivate }),
         renameCollectionFolder: (folderId, name) =>
           commit((data, now) => applyRenameCollectionFolder(data, folderId, name, now)),
         updateCollectionFolder: (folderId, patch) =>
@@ -394,6 +406,15 @@ export const useCrochetStore = create<CrochetStore>()(
         deleteCollectionFolder: (folderId) => commit((data) => applyDeleteCollectionFolder(data, folderId)),
         togglePatternInFolder: (folderId, patternId) =>
           commit((data, now) => applyTogglePatternInFolder(data, folderId, patternId, now)),
+        togglePatternInFolders: (patternId, folderIds) =>
+          commit((data, now) => applySetPatternInFolders(data, patternId, folderIds, now)),
+        collectPatternToDefault: (patternId) => {
+          const now = Date.now();
+          const result = applyCollectPatternToDefaultFolder(readData(get()), patternId, now);
+          if (!result) return null;
+          set(result.data);
+          return result.folderName;
+        },
         hydrateFromCloud: (cloudRaw) => {
           const next = applyHydrateCloudSlice(readData(get()), cloudRaw, createSeedData().patterns, Date.now());
           if (next) set(next);
@@ -465,6 +486,12 @@ export function selectPatternComments(state: CrochetStore, patternId: string): P
 export function selectFoldersForPattern(state: CrochetStore, patternId: string): IdeaFolder[] {
   return state.collectionFolders.filter((folder) => folder.patternIds.includes(patternId));
 }
+
+export function selectDefaultCollectionFolder(state: CrochetStore): IdeaFolder | null {
+  return state.collectionFolders.find((folder) => folder.isDefault) ?? state.collectionFolders[0] ?? null;
+}
+
+export { DEFAULT_COLLECTION_NAME };
 
 /** True once storage has been read. On web this is usually true on the first render. */
 export function useCrochetHydrated(): boolean {

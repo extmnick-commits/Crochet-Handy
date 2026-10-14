@@ -2,6 +2,7 @@ import { Redirect } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { Platform, StyleSheet } from 'react-native';
 
+import { CollectToastHost } from '@/components/CollectToast';
 import { LaunchSplash } from '@/components/LaunchSplash';
 import { BambuTabBar } from '@/components/navigation/BambuTabBar';
 import { MeIcon, PatternsIcon, ProjectIcon } from '@/components/navigation/TabIcons';
@@ -31,6 +32,7 @@ export default function TabLayout() {
   }
 
   return (
+    <>
     <Tabs
       tabBar={(props) => <BambuTabBar {...props} />}
       screenOptions={{
@@ -63,6 +65,8 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    <CollectToastHost />
+    </>
   );
 }
 

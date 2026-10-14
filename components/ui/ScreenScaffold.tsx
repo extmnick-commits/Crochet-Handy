@@ -20,6 +20,9 @@ export function ScreenScaffold({ title, subtitle, children }: ScreenScaffoldProp
       contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing.md }]}
       contentInsetAdjustmentBehavior="never"
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      automaticallyAdjustKeyboardInsets
     >
       <View style={styles.header}>
         <Text role="heading" aria-level={1} style={styles.title}>

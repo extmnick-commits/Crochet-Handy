@@ -11,6 +11,8 @@ import {
   applyAddProgressPhoto,
   applyAddProjectYarnColor,
   applyCreateCollectionFolder,
+  applyCollectPatternToDefaultFolder,
+  applySetPatternInFolders,
   applyToggleCollectPattern,
   applyCreateProject,
   applyHydrateCloudSlice,
@@ -534,7 +536,8 @@ const legacyStash = repairPersisted(
 equal(legacyStash?.yarnStash[0]?.skeinCount, 1, 'missing skein count repairs to 1');
 equal(legacyStash?.progressPhotos.length, 0, 'missing photo log repairs empty');
 equal(legacyStash?.likedPatternIds.length, 0, 'legacy stash repairs empty likes');
-equal(legacyStash?.collectionFolders.length, 0, 'legacy stash repairs empty folders');
+equal(legacyStash?.collectionFolders.length, 1, 'legacy stash ensures default collection folder');
+assert(legacyStash?.collectionFolders[0]?.isDefault, 'default collection flagged');
 equal(legacyStash?.collectedPatternIds.length, 0, 'legacy stash repairs empty collection');
 equal(legacyStash?.account, null, 'legacy stash repairs null account');
 
@@ -566,12 +569,26 @@ const uncollected = applyToggleCollectPattern(collected!, patternId);
 assert(uncollected && !uncollected.collectedPatternIds.includes(patternId), 'uncollect pattern');
 
 const foldered = applyCreateCollectionFolder(dataFrom(seed), 'folder-1', { name: 'Weekend makes', description: 'Soft toys' }, t0);
-assert(foldered?.collectionFolders[0]?.name === 'Weekend makes', 'create folder');
-const inFolder = applyTogglePatternInFolder(foldered!, 'folder-1', patternId, t0 + 2);
-assert(inFolder?.collectionFolders[0]?.patternIds.includes(patternId), 'toggle pattern into folder');
+assert(foldered?.collectionFolders.some((folder) => folder.name === 'Weekend makes'), 'create folder');
+assert(foldered?.collectionFolders.some((folder) => folder.isDefault), 'ensure default collection exists');
+const multi = applySetPatternInFolders(foldered!, patternId, ['folder-1', 'folder-default'], t0 + 1);
+assert(
+  multi?.collectionFolders.find((folder) => folder.id === 'folder-1')?.patternIds.includes(patternId),
+  'set pattern in folders adds',
+);
+const defaultCollect = applyCollectPatternToDefaultFolder(dataFrom(seed), patternId, t0 + 2);
+assert(defaultCollect?.data.collectedPatternIds.includes(patternId), 'collect to default folder');
+const inFolder = applyTogglePatternInFolder(foldered!, 'folder-1', patternId, t0 + 4);
+assert(
+  inFolder?.collectionFolders.find((folder) => folder.id === 'folder-1')?.patternIds.includes(patternId),
+  'toggle pattern into folder',
+);
 assert(inFolder?.collectedPatternIds.includes(patternId), 'folder add also collects');
-const outFolder = applyTogglePatternInFolder(inFolder!, 'folder-1', patternId, t0 + 3);
-assert(outFolder && outFolder.collectionFolders[0]?.patternIds.length === 0, 'toggle pattern out of folder');
+const outFolder = applyTogglePatternInFolder(inFolder!, 'folder-1', patternId, t0 + 5);
+assert(
+  outFolder && outFolder.collectionFolders.find((folder) => folder.id === 'folder-1')?.patternIds.length === 0,
+  'toggle pattern out of folder',
+);
 
 const cloudSlice = applyHydrateCloudSlice(
   dataFrom(seed),

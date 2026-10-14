@@ -1710,7 +1710,18 @@ export function createSeedData(): CrochetPersistedSlice {
     account: null,
     likedPatternIds: [],
     collectedPatternIds: [],
-    collectionFolders: [],
+    collectionFolders: [
+      {
+        id: 'folder-default',
+        name: 'Default Collection',
+        description: '',
+        patternIds: [],
+        createdAt: SEED_STARTED,
+        updatedAt: SEED_UPDATED,
+        isDefault: true,
+        isPrivate: false,
+      },
+    ],
     patternComments: patterns.flatMap(seedCommunityReviewsForPattern),
     followedCreators: [],
   };

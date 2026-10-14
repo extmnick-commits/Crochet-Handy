@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Image,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   NativeScrollEvent,
@@ -26,6 +27,7 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { HeartIcon } from '@/components/HeartIcon';
 import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { SaveToFolderSheet } from '@/components/SaveToFolderSheet';
+import { handlePatternCollectPress } from '@/utils/instantCollect';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
   selectIsCreatorFollowed,
@@ -230,7 +232,12 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
       presentationStyle="fullScreen"
     >
       {pattern && meta ? (
-        <View style={styles.screen} testID="pattern-detail-sheet">
+        <KeyboardAvoidingView
+          style={styles.screen}
+          behavior={Platform.OS === 'web' ? undefined : 'padding'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+          testID="pattern-detail-sheet"
+        >
           <View style={[styles.topBar, { paddingTop: insets.top + Spacing.xs }]}>
             <Pressable
               accessibilityRole="button"
@@ -300,6 +307,8 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
             showsVerticalScrollIndicator={false}
             contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 96 }]}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets
           >
             <View
               onLayout={(event) => {
@@ -490,6 +499,12 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
                   placeholderTextColor={Colors.textTertiary}
                   style={styles.composeInput}
                   multiline
+                  onFocus={() => {
+                    const y = sectionOffsets.current.reviews;
+                    if (y != null) {
+                      scrollRef.current?.scrollTo({ y: Math.max(0, y - Spacing.lg), animated: true });
+                    }
+                  }}
                 />
                 <View style={styles.composeActions}>
                   <StarPicker value={draftRating} onChange={setDraftRating} />
@@ -565,7 +580,8 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
               count={formatCollectCount(pattern.id)}
               onPress={() => {
                 tick();
-                setFolderPickerOpen(true);
+                if (!pattern) return;
+                handlePatternCollectPress(pattern.id, () => setFolderPickerOpen(true));
               }}
               icon={<FolderIcon color={collectedPatternIds.includes(pattern.id) ? Colors.accentPrimary : Colors.textSecondary} />}
               active={collectedPatternIds.includes(pattern.id)}
@@ -592,7 +608,7 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
             patternId={pattern.id}
             onClose={() => setFolderPickerOpen(false)}
           />
-        </View>
+        </KeyboardAvoidingView>
       ) : null}
     </Modal>
   );

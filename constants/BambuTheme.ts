@@ -18,12 +18,17 @@ import { Platform, type TextStyle, type ViewStyle } from 'react-native';
 export const Palette = {
   black: '#121212',
   charcoal: '#1C1C1E',
+  /** Bambu Handy "Collect to" sheet surface. */
+  sheetCharcoal: '#1E1E22',
   graphite: '#2A2A2D',
   seam: '#262629',
+  /** Bambu Handy primary CTA green (collect confirm, links). */
+  handyGreen: '#00AE42',
   neonGreen: '#00E676',
   green: '#00C853',
   white: '#FFFFFF',
   gray: '#8E8E93',
+  checkboxBorder: '#48484A',
 } as const;
 
 /** Semantic color roles. */
