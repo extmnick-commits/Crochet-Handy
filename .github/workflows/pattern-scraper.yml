@@ -25,6 +25,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify required secrets
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$YOUTUBE_API_KEY" ]; then
+            echo "::error::Repository secret YOUTUBE_API_KEY is missing or empty"
+            exit 1
+          fi
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error::Repository secret GEMINI_API_KEY is missing or empty"
+            exit 1
+          fi
+
       - name: Scrape and enrich patterns
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}

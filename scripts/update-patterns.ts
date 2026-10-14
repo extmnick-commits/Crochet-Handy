@@ -142,7 +142,9 @@ export function isLocalAiMode(): boolean {
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
-    throw new Error(`Missing ${name} in .env`);
+    throw new Error(
+      `Missing ${name} (set it in .env locally or as a GitHub Actions repository secret)`,
+    );
   }
   return value;
 }
