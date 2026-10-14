@@ -8,6 +8,7 @@
 #   prune-thumbnails-only — Gemini thumbnail vision only
 #
 # Secrets: GitHub Environment ".env" → YOUTUBE_API_KEY, GEMINI_API_KEY, optional GEMINI_MODEL
+# Scrape env (set on scrape step): SCRAPE_SEARCH_MAX_PAGES=20, SCRAPE_LOOKBACK_DAYS=30 — skip known video ids across pages
 
 name: Pattern catalog
 
@@ -117,6 +118,9 @@ jobs:
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           SEARCH_TOPIC: ${{ inputs.topic || 'trending' }}
           SCRAPE_COUNT: ${{ inputs.count || '10' }}
+          # Paginate past videos already in seed/catalog so weekly runs still fill the batch.
+          SCRAPE_SEARCH_MAX_PAGES: '20'
+          SCRAPE_LOOKBACK_DAYS: '30'
           SCRAPE_SKIP_THUMBNAIL_CHECK: ${{ inputs.skip_thumbnail_check && '1' || '' }}
         run: npm run update-patterns
 

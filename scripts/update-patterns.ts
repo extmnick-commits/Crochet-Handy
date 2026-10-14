@@ -10,6 +10,9 @@
  * Topic: SEARCH_TOPIC or --topic (trending | seasonal | amigurumi | wearables | blankets | holiday ids)
  * Seasonal: trending/seasonal auto-target the active holiday window (e.g. halloween in October). Set SCRAPE_SEASONAL=0 to disable.
  * Thumbnail vision: cloud Gemini pass drops foreign on-image text and yarn-only thumbnails. Set SCRAPE_SKIP_THUMBNAIL_CHECK=1 to skip.
+ * Dedup: skips any YouTube video id already in store/seed.ts (and catalog/pattern-catalog.json). Paginates search until enough new candidates or SCRAPE_SEARCH_MAX_PAGES.
+ * Lookback: SCRAPE_LOOKBACK_DAYS (default 30) for publishedAfter on YouTube search.
+ * Transcripts: public captions are fetched for Gemini tagging/difficulty. Set SCRAPE_SKIP_TRANSCRIPT=1 to skip.
  */
 import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -29,7 +32,9 @@ import {
   searchQueryForScrapeTopic,
 } from '../utils/holidayTopics';
 import { isValidEnglishYoutubeSnippet } from '../utils/patternEnglishFilter';
+import { derivePatternSummary } from '../utils/patternSummary';
 import { filterVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
+import { fetchTranscriptsForVideoIds } from '../utils/youtubeTranscript';
 
 type PatternDifficulty = 'beginner' | 'easy' | 'intermediate' | 'advanced';
 
@@ -77,6 +82,7 @@ export type SeedPattern = {
   difficulty: PatternDifficulty;
   estimatedTimeMinutes: number;
   description: string;
+  summary?: string;
   materials: SeedPatternMaterial[];
   tools: SeedPatternTool[];
   keyStitches: string[];
@@ -90,6 +96,7 @@ export type SeedPattern = {
 
 const ROOT = path.resolve(__dirname, '..');
 const SEED_FILE = path.join(ROOT, 'store', 'seed.ts');
+const CATALOG_FILE = path.join(ROOT, 'catalog', 'pattern-catalog.json');
 
 /** YouTube category 26 = Howto & Style */
 const YOUTUBE_VIDEO_CATEGORY_HOWTO = '26';
@@ -132,6 +139,11 @@ const BATCH_SIZE = parseInt(process.env.SCRAPE_COUNT || '10', 10);
 const REQUESTED_TOPIC = process.env.SEARCH_TOPIC || 'trending';
 const SEARCH_TOPIC = resolveScrapeTopic(REQUESTED_TOPIC);
 
+type YouTubeSearchResponse = {
+  items?: YouTubeSearchItem[];
+  nextPageToken?: string;
+};
+
 type YouTubeSearchItem = {
   id?: { videoId?: string };
   snippet?: {
@@ -160,6 +172,7 @@ type AiPatternPayload = {
   difficulty?: string;
   estimatedTimeMinutes?: number;
   description?: string;
+  summary?: string;
   materials?: { name?: string; weight?: string; yardage?: string }[];
   tools?: { type?: string; size?: string }[];
   keyStitches?: string[];
@@ -259,14 +272,27 @@ function publishPatternCatalog(): void {
   execSync('npm run export-pattern-catalog', { cwd: ROOT, stdio: 'inherit' });
 }
 
-function formatVideosForBatchPrompt(videos: YouTubeVideoItem[]): string {
+function formatVideosForBatchPrompt(
+  videos: YouTubeVideoItem[],
+  transcripts: ReadonlyMap<string, string> = new Map(),
+): string {
   return videos
     .map((video, index) => {
       const title = (video.snippet?.title ?? '').trim();
       const description = (video.snippet?.description ?? '').trim();
-      return `Video ${index}:\nTitle: ${title}\nDescription:\n${description}`;
+      const videoId = video.id ?? '';
+      const transcript = transcripts.get(videoId);
+      const transcriptBlock = transcript
+        ? `\nTranscript excerpt (spoken tutorial — prefer for difficulty, stitches, and tags):\n${transcript}`
+        : '\nTranscript: (not available — use title and description only)';
+      return `Video ${index}:\nTitle: ${title}\nDescription:\n${description}${transcriptBlock}`;
     })
     .join('\n\n---\n\n');
+}
+
+export function shouldSkipTranscriptFetch(): boolean {
+  const flag = process.env.SCRAPE_SKIP_TRANSCRIPT?.trim().toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes';
 }
 
 async function fetchJson<T>(url: string, params: Record<string, string>): Promise<T> {
@@ -279,44 +305,113 @@ async function fetchJson<T>(url: string, params: Record<string, string>): Promis
   return (await response.json()) as T;
 }
 
+function scrapeLookbackDays(): number {
+  const parsed = parseInt(process.env.SCRAPE_LOOKBACK_DAYS ?? '30', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+}
+
+function scrapeSearchMaxPages(): number {
+  const parsed = parseInt(process.env.SCRAPE_SEARCH_MAX_PAGES ?? '10', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+}
+
+/** Collects new video ids from paginated YouTube search (skips ids already in the catalog). */
+export async function collectNewSearchVideoIds(
+  apiKey: string,
+  existingVideoIds: ReadonlySet<string>,
+  poolCap: number,
+): Promise<{ ids: string[]; skippedKnown: number; pagesFetched: number }> {
+  const ids: string[] = [];
+  const blocked = new Set(existingVideoIds);
+  let skippedKnown = 0;
+  let pageToken: string | undefined;
+  let pagesFetched = 0;
+  const maxPages = scrapeSearchMaxPages();
+  const publishedAfter = publishedAfterIso(scrapeLookbackDays());
+
+  while (ids.length < poolCap && pagesFetched < maxPages) {
+    const params: Record<string, string> = {
+      part: 'snippet',
+      type: 'video',
+      relevanceLanguage: 'en',
+      q: searchQueryForScrapeTopic(SEARCH_TOPIC),
+      videoCategoryId: YOUTUBE_VIDEO_CATEGORY_HOWTO,
+      videoDuration: 'medium',
+      videoEmbeddable: 'true',
+      videoSyndicated: 'true',
+      order: 'viewCount',
+      publishedAfter,
+      maxResults: '50',
+      key: apiKey,
+    };
+    if (pageToken) params.pageToken = pageToken;
+
+    const search = await fetchJson<YouTubeSearchResponse>(YOUTUBE_SEARCH_URL, params);
+    pagesFetched += 1;
+
+    for (const item of search.items ?? []) {
+      const videoId = item.id?.videoId;
+      if (!videoId) continue;
+      if (blocked.has(videoId)) {
+        skippedKnown += 1;
+        continue;
+      }
+      blocked.add(videoId);
+      ids.push(videoId);
+      if (ids.length >= poolCap) break;
+    }
+
+    pageToken = search.nextPageToken;
+    if (!pageToken) break;
+  }
+
+  return { ids, skippedKnown, pagesFetched };
+}
+
+async function fetchVideoDetailsBatched(
+  apiKey: string,
+  videoIds: readonly string[],
+): Promise<YouTubeVideoItem[]> {
+  const items: YouTubeVideoItem[] = [];
+  for (let offset = 0; offset < videoIds.length; offset += 50) {
+    const chunk = videoIds.slice(offset, offset + 50);
+    const details = await fetchJson<{ items?: YouTubeVideoItem[] }>(YOUTUBE_VIDEOS_URL, {
+      part: 'snippet,contentDetails',
+      id: chunk.join(','),
+      key: apiKey,
+    });
+    items.push(...(details.items ?? []));
+  }
+  return items;
+}
+
 /** Fetches embeddable, syndicated, medium-length crochet tutorials (no Shorts). */
 export async function getTrendingVideos(
   apiKey: string,
   existingVideoIds: ReadonlySet<string> = new Set(),
 ): Promise<YouTubeVideoItem[]> {
-  const search = await fetchJson<{ items?: YouTubeSearchItem[] }>(YOUTUBE_SEARCH_URL, {
-    part: 'snippet',
-    type: 'video',
-    relevanceLanguage: 'en',
-    q: searchQueryForScrapeTopic(SEARCH_TOPIC),
-    videoCategoryId: YOUTUBE_VIDEO_CATEGORY_HOWTO,
-    videoDuration: 'medium',
-    videoEmbeddable: 'true',
-    videoSyndicated: 'true',
-    order: 'viewCount',
-    publishedAfter: publishedAfterIso(7),
-    maxResults: '50',
-    key: apiKey,
-  });
+  const batchSize = Number.isFinite(BATCH_SIZE) && BATCH_SIZE > 0 ? BATCH_SIZE : 10;
+  const poolCap = Math.max(batchSize * THUMBNAIL_POOL_MULTIPLIER, THUMBNAIL_POOL_MIN);
 
-  const ids = (search.items ?? [])
-    .map((item) => item.id?.videoId)
-    .filter((id): id is string => Boolean(id))
-    .filter((id) => !existingVideoIds.has(id));
+  const { ids, skippedKnown, pagesFetched } = await collectNewSearchVideoIds(
+    apiKey,
+    existingVideoIds,
+    poolCap,
+  );
+
+  if (skippedKnown > 0 || pagesFetched > 1) {
+    logTimestamp(
+      `YouTube search: ${pagesFetched} page(s), skipped ${skippedKnown} already in catalog, ${ids.length} new candidate id(s)`,
+    );
+  }
 
   if (ids.length === 0) {
     return [];
   }
 
-  const details = await fetchJson<{ items?: YouTubeVideoItem[] }>(YOUTUBE_VIDEOS_URL, {
-    part: 'snippet,contentDetails',
-    id: ids.join(','),
-    key: apiKey,
-  });
+  const details = await fetchVideoDetailsBatched(apiKey, ids);
 
-  const batchSize = Number.isFinite(BATCH_SIZE) && BATCH_SIZE > 0 ? BATCH_SIZE : 10;
-  const poolCap = Math.max(batchSize * THUMBNAIL_POOL_MULTIPLIER, THUMBNAIL_POOL_MIN);
-  return (details.items ?? [])
+  return details
     .filter((item) => {
       const videoId = item.id ?? '';
       return videoId.length > 0 && !existingVideoIds.has(videoId);
@@ -385,6 +480,7 @@ export async function extractBatchPatterns(
   client: OpenAI,
   model: string,
   videos: YouTubeVideoItem[],
+  transcripts: ReadonlyMap<string, string> = new Map(),
 ): Promise<AiBatchPatternPayload[]> {
   const completion = await client.chat.completions.create({
     model,
@@ -396,19 +492,25 @@ export async function extractBatchPatterns(
           `Analyze these ${videos.length} crochet YouTube videos and extract project details for each.`,
           'Return strict JSON only: { "patterns": [ ... ] }.',
           'Each item must include videoIndex (0-based, matching Video N in the user message),',
-          'difficulty (Beginner|Easy|Intermediate|Advanced), estimatedTimeMinutes, description,',
+          'difficulty (Beginner|Easy|Intermediate|Advanced), estimatedTimeMinutes,',
+          'summary (1–2 sentences, max 160 characters, enticing maker-focused blurb for the detail screen),',
+          'description (longer project overview, 2–4 sentences),',
           'materials [{ name, weight, yardage }], tools [{ type, size }], keyStitches [string],',
           'yarnWeight (lace|fingering|sport|dk|worsted|aran|bulky|super-bulky|jumbo), hookSize,',
           'totalRows, stitchesPerRow,',
           'tags [string] (include relevant category tags such as amigurumi, wearables, halloween, christmas, valentines, thanksgiving, easter, blanket, bag alongside key stitches),',
           'chapters [{ label, time }] when the description lists timestamps (time as M:SS or H:MM:SS).',
+          'When a transcript excerpt is present, use it as the primary signal for difficulty, keyStitches, tags, and time estimate.',
+          'Difficulty rubric: Beginner = magic ring/chaining/SC only, no shaping; Easy = simple repeats and basic increases/decreases;',
+          'Intermediate = colorwork, notable shaping, or many parts to assemble; Advanced = garments, fine lace, complex construction, or many techniques.',
+          'Tags: lowercase, specific (project type + notable stitches + season when relevant), 4–8 items, no duplicates.',
           `Include exactly ${videos.length} entries with videoIndex 0 through ${videos.length - 1}.`,
           'Infer reasonable values when a video omits them.',
         ].join(' '),
       },
       {
         role: 'user',
-        content: formatVideosForBatchPrompt(videos),
+        content: formatVideosForBatchPrompt(videos, transcripts),
       },
     ],
   });
@@ -547,6 +649,9 @@ export function mergePattern(
     difficulty: normalizeDifficulty(ai.difficulty),
     estimatedTimeMinutes: estimatedMinutes,
     description: (ai.description ?? '').trim() || 'Crochet tutorial from YouTube.',
+    summary:
+      (ai.summary ?? '').trim() ||
+      derivePatternSummary((ai.description ?? '').trim() || 'Crochet tutorial from YouTube.'),
     materials,
     tools,
     keyStitches,
@@ -614,6 +719,7 @@ ${indent}  author: '${escapeString(pattern.author)}',
 ${indent}  difficulty: '${pattern.difficulty}',
 ${indent}  estimatedTimeMinutes: ${pattern.estimatedTimeMinutes},
 ${indent}  description: '${escapeString(pattern.description)}',
+${indent}  summary: '${escapeString(pattern.summary ?? derivePatternSummary(pattern.description))}',
 ${indent}  materials: ${formatMaterials(pattern.materials, `${indent}  `)},
 ${indent}  tools: ${formatTools(pattern.tools, `${indent}  `)},
 ${indent}  keyStitches: ${formatStringArray(pattern.keyStitches, `${indent}  `)},
@@ -655,6 +761,32 @@ export function readExistingVideoIds(seedSource: string): Set<string> {
   const ids = new Set<string>();
   for (const match of block.matchAll(/videoId:\s*'([^']+)'/g)) {
     ids.add(match[1]);
+  }
+  return ids;
+}
+
+/** Merges seed file ids with published catalog JSON (same videos, belt-and-suspenders). */
+export function readCatalogVideoIds(): Set<string> {
+  const ids = new Set<string>();
+  if (!fs.existsSync(CATALOG_FILE)) return ids;
+  try {
+    const raw = JSON.parse(fs.readFileSync(CATALOG_FILE, 'utf8')) as {
+      patterns?: { videoId?: string }[];
+    };
+    for (const pattern of raw.patterns ?? []) {
+      const videoId = pattern.videoId?.trim();
+      if (videoId) ids.add(videoId);
+    }
+  } catch {
+    // Non-fatal: seed.ts is the source of truth when catalog is missing or invalid.
+  }
+  return ids;
+}
+
+export function mergeKnownVideoIds(seedSource: string): Set<string> {
+  const ids = readExistingVideoIds(seedSource);
+  for (const id of readCatalogVideoIds()) {
+    ids.add(id);
   }
   return ids;
 }
@@ -718,7 +850,7 @@ export async function main(): Promise<void> {
     const isLocal = isLocalAiMode();
     const youtubeKey = requireEnv('YOUTUBE_API_KEY');
     const seedSource = fs.readFileSync(SEED_FILE, 'utf8');
-    const existingIds = readExistingVideoIds(seedSource);
+    const existingIds = mergeKnownVideoIds(seedSource);
 
     const seasonalNote =
       REQUESTED_TOPIC !== SEARCH_TOPIC
@@ -754,9 +886,23 @@ export async function main(): Promise<void> {
     }
     logTimestamp(`Using ${videos.length} videos for extraction`);
 
+    let transcripts = new Map<string, string>();
+    if (shouldSkipTranscriptFetch()) {
+      logTimestamp('Skipping caption transcript fetch (SCRAPE_SKIP_TRANSCRIPT)');
+    } else {
+      const ids = videos.map((video) => video.id ?? '').filter((id) => id.length > 0);
+      logTimestamp(`Fetching English caption transcripts (${ids.length} videos)…`);
+      const transcriptStartedAt = Date.now();
+      transcripts = await fetchTranscriptsForVideoIds(ids);
+      const transcriptSeconds = ((Date.now() - transcriptStartedAt) / 1000).toFixed(1);
+      logTimestamp(
+        `Transcripts ready in ${transcriptSeconds}s (${transcripts.size}/${ids.length} with captions)`,
+      );
+    }
+
     logTimestamp(`AI batch extraction starting (${videos.length} videos, model: ${model})…`);
     const aiStartedAt = Date.now();
-    const batch = await extractBatchPatterns(client, model, videos);
+    const batch = await extractBatchPatterns(client, model, videos, transcripts);
     const aiElapsedSeconds = ((Date.now() - aiStartedAt) / 1000).toFixed(1);
     logTimestamp(
       `AI batch extraction finished in ${aiElapsedSeconds}s (${batch.length} pattern objects)`,

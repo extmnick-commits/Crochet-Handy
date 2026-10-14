@@ -19,6 +19,7 @@ import {
   isHolidayTopicId,
   type HolidayTopicId,
 } from '@/utils/holidayTopics';
+import { derivePatternSummary } from '@/utils/patternSummary';
 
 export type CorePatternCategoryId = 'following' | 'for-you' | 'trending' | 'amigurumi' | 'wearables';
 export type PatternCategoryId = CorePatternCategoryId | HolidayTopicId;
@@ -258,6 +259,7 @@ export function formatCommentCount(id: string, userCommentCount = 0): string {
 }
 
 export type PatternExtendedMeta = {
+  summary: string;
   description: string;
   materials: SeedPatternMaterial[];
   tools: SeedPatternTool[];
@@ -270,8 +272,12 @@ export function getPatternExtendedMeta(pattern: CrochetPattern): PatternExtended
   const seed = SEED_PATTERNS.find((entry) => entry.id === pattern.id);
   const communityReviews = seedCommunityReviewsForPattern(pattern);
   if (seed) {
+    const description = seed.description;
+    const summary =
+      (pattern.summary ?? seed.summary ?? '').trim() || derivePatternSummary(description);
     return {
-      description: seed.description,
+      summary,
+      description,
       materials: seed.materials,
       tools: seed.tools,
       keyStitches: seed.keyStitches,
@@ -279,8 +285,11 @@ export function getPatternExtendedMeta(pattern: CrochetPattern): PatternExtended
       communityReviews,
     };
   }
+  const description = 'Crochet tutorial from the community library.';
+  const summary = (pattern.summary ?? '').trim() || derivePatternSummary(description);
   return {
-    description: 'Crochet tutorial from the community library.',
+    summary,
+    description,
     materials: [{ name: 'Yarn', weight: yarnWeightMeta(pattern.yarnWeight).label, yardage: '—' }],
     tools: [{ type: 'Crochet Hook', size: formatHookSize(pattern.hookSize) }],
     keyStitches: pattern.tags.filter((tag) => tag.includes('crochet') || tag.includes('stitch')).slice(0, 4),

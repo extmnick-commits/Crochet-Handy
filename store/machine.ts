@@ -143,6 +143,8 @@ export type CrochetPattern = {
   totalRows: number;
   stitchesPerRow: number;
   tags: string[];
+  /** Short detail-screen blurb; full copy lives in seed `description` / extended meta. */
+  summary?: string;
   /** Seek points parsed from the tutorial description or generated for the pattern. */
   bookmarks: VideoBookmark[];
 };
@@ -233,6 +235,7 @@ export type NewPatternInput = {
   totalRows?: number;
   stitchesPerRow?: number;
   tags?: string[];
+  summary?: string;
   bookmarks?: VideoBookmark[];
 };
 
@@ -1194,6 +1197,7 @@ export function buildPattern(id: string, input: NewPatternInput): CrochetPattern
     .slice(0, 8);
   const totalRows = clampInt(input.totalRows ?? 10, 1, MAX_COUNT);
   const bookmarks = sanitizeVideoBookmarks(input.bookmarks);
+  const summaryRaw = typeof input.summary === 'string' ? sanitizeText(input.summary, 200) : null;
   return {
     id,
     title,
@@ -1207,6 +1211,7 @@ export function buildPattern(id: string, input: NewPatternInput): CrochetPattern
     totalRows,
     stitchesPerRow: clampInt(input.stitchesPerRow ?? 10, 1, MAX_COUNT),
     tags,
+    ...(summaryRaw ? { summary: summaryRaw } : {}),
     bookmarks,
   };
 }
@@ -1608,6 +1613,8 @@ function repairPattern(input: unknown): CrochetPattern | null {
     : undefined;
   let bookmarks = sanitizeVideoBookmarks(rawBookmarks);
   if (isEstimatedBookmarkSet(bookmarks)) bookmarks = [];
+  const summary =
+    typeof input.summary === 'string' ? sanitizeText(input.summary, 200) : null;
   return {
     id: input.id,
     title,
@@ -1621,6 +1628,7 @@ function repairPattern(input: unknown): CrochetPattern | null {
     totalRows,
     stitchesPerRow: clampInt(numberOr(input.stitchesPerRow, 10), 1, MAX_COUNT),
     tags,
+    ...(summary ? { summary } : {}),
     bookmarks,
   };
 }

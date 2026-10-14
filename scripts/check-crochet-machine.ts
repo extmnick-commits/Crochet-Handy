@@ -4,6 +4,7 @@
  */
 import { extractVideoBookmarks, formatBookmarkTime, isEstimatedBookmarkSet, sanitizeVideoBookmarks } from '../utils/chapters';
 import { parseYouTubeUrl } from '../utils/youtube';
+import { parseCaptionJson3, parseCaptionXml, trimTranscriptForPrompt } from '../utils/youtubeTranscript';
 import {
   activeProject,
   applyAddCheckpoint,
@@ -650,6 +651,7 @@ equal(formatViewCount(patternId), formatViewCount(patternId), 'view count is sta
 equal(formatMakeCount(patternId), formatMakeCount(patternId), 'make count is stable');
 const meta = getPatternExtendedMeta(seed.patterns[0]!);
 assert(meta.description.length > 0, 'extended meta description');
+assert(meta.summary.length > 0, 'extended meta summary');
 assert(meta.communityReviews.some((comment) => comment.pinned), 'pinned designer review');
 const related = getRelatedPatterns(seed.patterns[0]!, seed.patterns, 4);
 assert(related.every((item) => item.id !== patternId), 'related excludes self');
@@ -685,5 +687,12 @@ const removedWithComments = applyRemovePattern(
 assert(removedWithComments && removedWithComments.patternComments.every((comment) => comment.patternId !== patternId), 'remove pattern clears comments');
 
 equal(formatCommentCount(patternId, 1), formatCommentCount(patternId, 1), 'comment count stable');
+
+assert(
+  parseCaptionXml('<text start="0">Chain &amp; single crochet</text>') === 'Chain & single crochet',
+  'caption xml decode',
+);
+assert(parseCaptionJson3('{"events":[{"segs":[{"utf8":"Row one"}]}]}') === 'Row one', 'caption json3 parse');
+assert(trimTranscriptForPrompt('a'.repeat(50), 20).endsWith('…'), 'transcript trim');
 
 console.log('crochet machine checks passed');

@@ -4,6 +4,7 @@
  * counting for days after install and look like a stuck timer.
  */
 import type { VideoBookmark } from '../utils/chapters';
+import { derivePatternSummary } from '../utils/patternSummary';
 import {
   buildPattern,
   type CrochetPattern,
@@ -36,6 +37,8 @@ export type SeedPattern = {
   difficulty: PatternDifficulty;
   estimatedTimeMinutes: number;
   description: string;
+  /** Optional Gemini blurb; derived from description when omitted. */
+  summary?: string;
   materials: SeedPatternMaterial[];
   tools: SeedPatternTool[];
   keyStitches: string[];
@@ -173,7 +176,8 @@ function patternFromSeed(entry: SeedPattern): CrochetPattern {
   if (!pattern) {
     throw new Error(`Seed pattern "${entry.title}" could not be built from its YouTube URL.`);
   }
-  return pattern;
+  const summary = (entry.summary ?? '').trim() || derivePatternSummary(entry.description);
+  return { ...pattern, summary };
 }
 
 // <seed-patterns-start>

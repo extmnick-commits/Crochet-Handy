@@ -55,6 +55,7 @@ import {
   packMasonryColumns,
   yarnSizeLabel,
 } from '@/utils/patternDisplay';
+import { patternDescriptionAddsDetail } from '@/utils/patternSummary';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
 
 type PatternDetailSheetProps = {
@@ -115,6 +116,10 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
   const [draftRating, setDraftRating] = useState(5);
 
   const meta = useMemo(() => (pattern ? getPatternExtendedMeta(pattern) : null), [pattern]);
+  const hasLongerDescription = useMemo(
+    () => (meta ? patternDescriptionAddsDetail(meta.summary, meta.description) : false),
+    [meta],
+  );
   const comments = useMemo(
     () => (pattern ? mergeComments(storeComments, meta?.communityReviews ?? []) : []),
     [pattern, storeComments, meta],
@@ -353,19 +358,32 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
                 <Text style={styles.stat}>{difficultyLabel(pattern.difficulty)}</Text>
               </View>
 
-              <Text
-                style={styles.description}
-                numberOfLines={descExpanded ? undefined : 3}
-              >
-                {meta.description}
-              </Text>
+              <Text style={styles.summary}>{meta.summary}</Text>
+              {descExpanded && hasLongerDescription ? (
+                <View style={styles.aboutBlock}>
+                  <Text style={styles.aboutHeading}>About this pattern</Text>
+                  <Text style={styles.description}>{meta.description}</Text>
+                </View>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={descExpanded ? 'Show less description' : 'Show more description'}
+                accessibilityLabel={
+                  descExpanded
+                    ? 'Hide pattern details'
+                    : hasLongerDescription
+                      ? 'Show full description'
+                      : 'Show pattern details'
+                }
                 onPress={() => setDescExpanded((value) => !value)}
                 style={({ pressed }) => [styles.moreToggle, pressed && styles.pressed, webCursor]}
               >
-                <Text style={styles.moreToggleText}>{descExpanded ? 'Less ⌃' : 'More ⌄'}</Text>
+                <Text style={styles.moreToggleText}>
+                  {descExpanded
+                    ? 'Hide details ⌃'
+                    : hasLongerDescription
+                      ? 'About this pattern ⌄'
+                      : 'Pattern details ⌄'}
+                </Text>
               </Pressable>
 
               {descExpanded ? (
@@ -896,11 +914,21 @@ const styles = StyleSheet.create({
   },
   stat: { ...Typography.caption, color: Colors.textSecondary },
   statDot: { ...Typography.caption, color: Colors.textTertiary },
-  description: {
+  summary: {
     ...Typography.body,
     color: Colors.textPrimary,
     paddingHorizontal: Layout.screenGutter,
     marginTop: Spacing.sm,
+  },
+  aboutBlock: {
+    gap: Spacing.xs,
+    paddingHorizontal: Layout.screenGutter,
+    marginTop: Spacing.md,
+  },
+  aboutHeading: { ...Typography.label, color: Colors.textSecondary },
+  description: {
+    ...Typography.callout,
+    color: Colors.textPrimary,
   },
   moreToggle: { alignSelf: 'flex-start', paddingHorizontal: Layout.screenGutter, paddingVertical: Spacing.xs },
   moreToggleText: { ...Typography.label, color: Colors.accentPrimary },
