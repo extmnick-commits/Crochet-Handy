@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { crochetStateStorage, CROCHET_STORAGE_KEY, CROCHET_STORAGE_VERSION, enablePersistWrites } from '@/utils/storage';
+import { syncRemotePatternCatalog } from '@/utils/syncPatternCatalog';
 import { parseYouTubeUrl } from '@/utils/youtube';
 import {
   activeProject,
@@ -186,6 +187,14 @@ export const useCrochetStore = create<CrochetStore>()(
         const withCatalog = patterns.length !== data.patterns.length ? { ...data, patterns } : data;
         const reconciled = applyReconcileTimers(withCatalog, Date.now());
         set(reconciled ? { ...reconciled, hydrated: true } : { ...withCatalog, hydrated: true });
+
+        void syncRemotePatternCatalog(
+          () => readData(get()),
+          (next) => {
+            const synced = applyReconcileTimers(next, Date.now());
+            set((state) => ({ ...state, ...(synced ?? next) }));
+          },
+        );
       };
 
       return {

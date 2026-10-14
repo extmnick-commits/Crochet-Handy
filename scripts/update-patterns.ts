@@ -10,6 +10,7 @@
  * Topic: SEARCH_TOPIC or --topic (trending | seasonal | amigurumi | wearables | blankets | holiday ids)
  * Seasonal: trending/seasonal auto-target the active holiday window (e.g. halloween in October). Set SCRAPE_SEASONAL=0 to disable.
  */
+import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -246,6 +247,10 @@ function isShortFormTitle(title: string): boolean {
 
 function logTimestamp(message: string): void {
   console.log(`[${new Date().toISOString()}] ${message}`);
+}
+
+function publishPatternCatalog(): void {
+  execSync('npm run export-pattern-catalog', { cwd: ROOT, stdio: 'inherit' });
 }
 
 function formatVideosForBatchPrompt(videos: YouTubeVideoItem[]): string {
@@ -723,6 +728,8 @@ export async function main(): Promise<void> {
     logTimestamp('Appending new patterns to store/seed.ts…');
     const nextSource = appendSeedPatterns(seedSource, patterns);
     fs.writeFileSync(SEED_FILE, nextSource, 'utf8');
+    logTimestamp('Publishing catalog/pattern-catalog.json for in-app sync…');
+    publishPatternCatalog();
     const total = existingIds.size + patterns.length;
     logTimestamp(`Added ${patterns.length} new patterns. Catalog now has total of ${total} patterns.`);
 

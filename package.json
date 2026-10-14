@@ -41,7 +41,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "update-patterns": "ts-node --project tsconfig.scripts.json scripts/update-patterns.ts"
+    "update-patterns": "ts-node --project tsconfig.scripts.json scripts/update-patterns.ts",
+    "export-pattern-catalog": "npx tsx scripts/export-pattern-catalog.ts"
   },
   "private": true,
   "ts-node": {

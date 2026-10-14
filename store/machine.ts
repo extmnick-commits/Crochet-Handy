@@ -1047,6 +1047,14 @@ function sortCheckpoints(checkpoints: VideoCheckpoint[]): VideoCheckpoint[] {
   return [...checkpoints].sort((a, b) => a.timestampSeconds - b.timestampSeconds || a.id.localeCompare(b.id));
 }
 
+/** Validates pattern objects from `catalog/pattern-catalog.json` (remote scraper feed). */
+export function parseCatalogPatterns(input: unknown): CrochetPattern[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((item) => repairPattern(item))
+    .filter((item): item is CrochetPattern => item != null);
+}
+
 function repairPattern(input: unknown): CrochetPattern | null {
   if (!isRecord(input) || !isSafeId(input.id)) return null;
   const title = typeof input.title === 'string' ? sanitizeText(input.title, 120) : null;
