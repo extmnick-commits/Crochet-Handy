@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { Platform } from 'react-native';
 
+import { AuthRouteSync } from '@/components/AuthRouteSync';
 import { FirebaseAccountSync } from '@/components/FirebaseAccountSync';
 import { YouTubeBookmarkSync } from '@/components/YouTubeBookmarkSync';
 import { Colors } from '@/constants/BambuTheme';
@@ -41,6 +42,7 @@ export default function RootLayout() {
       {Platform.OS === 'android' && <NavigationBar style="light" />}
       <YouTubeBookmarkSync />
       <FirebaseAccountSync />
+      <AuthRouteSync />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -48,6 +50,7 @@ export default function RootLayout() {
           animation: Platform.OS === 'android' ? 'fade_from_bottom' : 'default',
         }}
       >
+        <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
         <Stack.Screen name="(tabs)" />
       </Stack>
     </ThemeProvider>

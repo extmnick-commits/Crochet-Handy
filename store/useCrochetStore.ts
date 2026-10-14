@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { crochetStateStorage, CROCHET_STORAGE_KEY, CROCHET_STORAGE_VERSION, enablePersistWrites } from '@/utils/storage';
+import { isFirebaseConfigured } from '@/utils/firebase';
 import { pullPatternCatalogUpdates, syncRemotePatternCatalog } from '@/utils/syncPatternCatalog';
 import { parseYouTubeUrl } from '@/utils/youtube';
 import {
@@ -168,12 +169,15 @@ type CrochetActions = {
   deleteIdeaFolder: (folderId: string) => void;
   togglePatternInFolder: (folderId: string, patternId: string) => void;
   hydrateFromCloud: (cloudRaw: unknown) => void;
+  setAuthSessionReady: (ready: boolean) => void;
 };
 
 export type CrochetStore = CrochetData &
   CrochetActions & {
     /** False until disk/localStorage has been read. Seed values are showing until then. */
     hydrated: boolean;
+    /** False until Firebase's first auth callback finishes (always true when Firebase is off). */
+    authSessionReady: boolean;
   };
 
 function readData(state: CrochetStore): CrochetData {
@@ -234,6 +238,8 @@ export const useCrochetStore = create<CrochetStore>()(
         ...createSeedData(),
         tapHistory: {},
         hydrated: false,
+        authSessionReady: !isFirebaseConfigured(),
+        setAuthSessionReady: (ready) => set({ authSessionReady: ready }),
 
         incrementStitch: (autoAdvance) => commit((data, now) => applyIncrementStitch(data, now, autoAdvance)),
         decrementStitch: () => commit(applyDecrementStitch),
@@ -378,6 +384,7 @@ export const useCrochetStore = create<CrochetStore>()(
           patterns,
           tapHistory: {},
           hydrated: current.hydrated,
+          authSessionReady: current.authSessionReady,
         };
       },
       migrate: (persisted) => persisted as CrochetPersistedSlice,

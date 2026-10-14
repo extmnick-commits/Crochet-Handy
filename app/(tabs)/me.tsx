@@ -1,5 +1,5 @@
 /**
- * Me — profile stats, yarn stash, and saved patterns with story reels.
+ * Me — profile stats, saved patterns, and story reels.
  */
 import * as Haptics from 'expo-haptics';
 import { signOut } from 'firebase/auth';
@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AddYarnModal } from '@/components/AddYarnModal';
 import { AuthAccountModal } from '@/components/AuthAccountModal';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
@@ -15,28 +14,23 @@ import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
   elapsedSeconds,
-  MAX_SKEINS,
   stitchesDone,
   useCrochetStore,
   type IdeaFolder,
   type UserAccount,
-  type YarnStashItem,
   type CrochetPattern,
 } from '@/store/useCrochetStore';
 import { auth, isFirebaseConfigured } from '@/utils/firebase';
 import { creatorInitials, yarnWeightMeta } from '@/utils/patternDisplay';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
 
-type LibraryTab = 'stash' | 'stories' | 'folders';
+type LibraryTab = 'stories' | 'folders';
 
 export default function MeScreen() {
   const insets = useSafeAreaInsets();
   const projects = useCrochetStore((state) => state.projects);
   const patterns = useCrochetStore((state) => state.patterns);
-  const yarnStash = useCrochetStore((state) => state.yarnStash);
   const progressPhotos = useCrochetStore((state) => state.progressPhotos);
-  const updateStashItem = useCrochetStore((state) => state.updateStashItem);
-  const removeStashItem = useCrochetStore((state) => state.removeStashItem);
   const account = useCrochetStore((state) => state.account);
   const likedPatternIds = useCrochetStore((state) => state.likedPatternIds);
   const ideaFolders = useCrochetStore((state) => state.ideaFolders);
@@ -44,8 +38,7 @@ export default function MeScreen() {
   const deleteIdeaFolder = useCrochetStore((state) => state.deleteIdeaFolder);
   const togglePatternInFolder = useCrochetStore((state) => state.togglePatternInFolder);
   const setAccount = useCrochetStore((state) => state.setAccount);
-  const [tab, setTab] = useState<LibraryTab>('stash');
-  const [addOpen, setAddOpen] = useState(false);
+  const [tab, setTab] = useState<LibraryTab>('stories');
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'sign-in' | 'create' | 'edit'>('sign-in');
   const [folderModalOpen, setFolderModalOpen] = useState(false);
@@ -118,7 +111,7 @@ export default function MeScreen() {
           <Text role="heading" aria-level={1} style={styles.title}>
             Me
           </Text>
-          <Text style={styles.subtitle}>Profile & Yarn Stash</Text>
+          <Text style={styles.subtitle}>Profile & library</Text>
         </View>
 
         <View style={styles.stats}>
@@ -143,15 +136,6 @@ export default function MeScreen() {
 
         <View accessibilityRole="tablist" style={styles.segment}>
           <Segment
-            testID="yarn-stash-tab"
-            label="Yarn Stash"
-            selected={tab === 'stash'}
-            onPress={() => {
-              tick();
-              setTab('stash');
-            }}
-          />
-          <Segment
             testID="patterns-stories-tab"
             label="Saved Patterns & Stories"
             selected={tab === 'stories'}
@@ -171,37 +155,7 @@ export default function MeScreen() {
           />
         </View>
 
-        {tab === 'stash' ? (
-          <View style={styles.section}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add yarn to stash"
-              testID="add-yarn"
-              onPress={() => {
-                tick();
-                setAddOpen(true);
-              }}
-              style={({ pressed }) => [styles.addButton, pressed && styles.pressed, webCursor]}
-            >
-              <Text style={styles.addButtonText}>+ Add Yarn to Stash</Text>
-            </Pressable>
-            {yarnStash.length === 0 ? (
-              <Text style={styles.empty}>Your stash is empty. Add a skein to start tracking colors.</Text>
-            ) : (
-              yarnStash.map((item) => (
-                <YarnCard
-                  key={item.id}
-                  item={item}
-                  onChange={(skeinCount) => updateStashItem(item.id, { skeinCount })}
-                  onRemove={() => {
-                    tick();
-                    removeStashItem(item.id);
-                  }}
-                />
-              ))
-            )}
-          </View>
-        ) : tab === 'stories' ? (
+        {tab === 'stories' ? (
           <View style={styles.section}>
             <Text role="heading" aria-level={2} style={styles.sectionTitle}>
               Saved patterns
@@ -408,7 +362,6 @@ export default function MeScreen() {
         </View>
       </BottomSheet>
 
-      <AddYarnModal visible={addOpen} onClose={() => setAddOpen(false)} />
       <AuthAccountModal visible={authOpen} initialMode={authMode} onClose={() => setAuthOpen(false)} />
       <PatternDetailSheet patternId={patternId} onClose={() => setPatternId(null)} />
       <PhotoProgressModal
@@ -439,7 +392,7 @@ function AccountProfileCard({
       <View style={styles.profileCard}>
         <Text style={styles.profileTitle}>Back up your crochet progress</Text>
         <Text style={styles.profileBody}>
-          Sign in to sync projects, yarn stash, liked tutorials, and idea folders across devices.
+          Sign in to sync projects, liked tutorials, and idea folders across devices.
         </Text>
         {!firebaseReady ? (
           <Text style={styles.profileNote}>
@@ -641,101 +594,11 @@ function Segment({
   );
 }
 
-function YarnCard({
-  item,
-  onChange,
-  onRemove,
-}: {
-  item: YarnStashItem;
-  onChange: (skeinCount: number) => void;
-  onRemove: () => void;
-}) {
-  const meta = yarnWeightMeta(item.yarnWeight);
-  const ink = inkOn(item.hexColor);
-  const atMin = item.skeinCount <= 0;
-  const atMax = item.skeinCount >= MAX_SKEINS;
-
-  return (
-    <View style={styles.yarnCard} testID={`yarn-card-${item.id}`}>
-      <View style={[styles.swatch, { backgroundColor: item.hexColor }]}>
-        <Text style={[styles.swatchHex, { color: ink }]}>{item.hexColor}</Text>
-      </View>
-      <View style={styles.yarnBody}>
-        <Text numberOfLines={1} style={styles.yarnBrand}>
-          {item.brand}
-        </Text>
-        <Text numberOfLines={1} style={styles.yarnName}>
-          {item.colorName}
-        </Text>
-        <View style={styles.weightBadge}>
-          <Text style={styles.weightBadgeText}>
-            {meta.label} {meta.number}
-          </Text>
-        </View>
-        <View style={styles.skeinRow}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Remove a skein of ${item.colorName}`}
-            accessibilityState={{ disabled: atMin }}
-            disabled={atMin}
-            testID={`skein-dec-${item.id}`}
-            onPress={() => {
-              tick('impact');
-              onChange(item.skeinCount - 1);
-            }}
-            style={({ pressed }) => [styles.step, atMin && styles.stepDisabled, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.stepText}>−</Text>
-          </Pressable>
-          <Text style={styles.skeinCount}>
-            {item.skeinCount} {item.skeinCount === 1 ? 'skein' : 'skeins'}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Add a skein of ${item.colorName}`}
-            accessibilityState={{ disabled: atMax }}
-            disabled={atMax}
-            testID={`skein-inc-${item.id}`}
-            onPress={() => {
-              tick('impact');
-              onChange(item.skeinCount + 1);
-            }}
-            style={({ pressed }) => [styles.step, atMax && styles.stepDisabled, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.stepText}>+</Text>
-          </Pressable>
-        </View>
-        <View style={styles.cardActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Remove ${item.colorName} from stash`}
-            onPress={onRemove}
-            hitSlop={Layout.hitSlop}
-            style={({ pressed }) => [pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.remove}>Remove</Text>
-          </Pressable>
-        </View>
-      </View>
-    </View>
-  );
-}
-
 function formatHours(totalSeconds: number): string {
   const hours = totalSeconds / 3600;
   if (!Number.isFinite(hours) || hours <= 0) return '0';
   if (hours < 10) return (Math.round(hours * 10) / 10).toFixed(1);
   return Math.round(hours).toLocaleString();
-}
-
-function inkOn(hex: string): string {
-  const raw = hex.replace('#', '');
-  if (raw.length !== 6) return Colors.textPrimary;
-  const red = Number.parseInt(raw.slice(0, 2), 16);
-  const green = Number.parseInt(raw.slice(2, 4), 16);
-  const blue = Number.parseInt(raw.slice(4, 6), 16);
-  const luma = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
-  return luma > 0.64 ? '#121212' : '#FFFFFF';
 }
 
 function tick(kind: 'selection' | 'impact' = 'selection') {
@@ -1024,88 +887,10 @@ const styles = StyleSheet.create({
     ...Typography.callout,
     color: Colors.textSecondary,
   },
-  yarnCard: {
-    flexDirection: 'row',
-    borderRadius: Radius.lg,
-    overflow: 'hidden',
-    backgroundColor: Colors.cardSurface,
-  },
-  swatch: {
-    width: 108,
-    minHeight: 148,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    padding: Spacing.sm,
-  },
-  swatchHex: {
-    fontFamily: FontFamily.mono,
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: FontWeight.semibold,
-  },
-  yarnBody: {
-    flex: 1,
-    padding: Spacing.md,
-    gap: 4,
-  },
-  yarnBrand: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  yarnName: {
-    ...Typography.subhead,
-    color: Colors.textPrimary,
-  },
-  weightBadge: {
-    alignSelf: 'flex-start',
-    marginTop: 2,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.elevatedControl,
-  },
-  weightBadgeText: {
-    ...Typography.caption,
-    color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
-  },
-  skeinRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  step: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.elevatedControl,
-  },
-  stepDisabled: {
-    opacity: 0.35,
-  },
-  stepText: {
-    ...Typography.headline,
-    color: Colors.textPrimary,
-  },
-  skeinCount: {
-    ...Typography.label,
-    flex: 1,
-    color: Colors.textPrimary,
-  },
   remove: {
     ...Typography.caption,
     color: Colors.danger,
     fontWeight: FontWeight.semibold,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
   },
   loadPill: {
     minHeight: 32,

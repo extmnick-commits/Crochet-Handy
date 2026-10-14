@@ -282,26 +282,27 @@ function PatternCard({
   const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${pattern.title}, ${formatSpecBadge(pattern)}, by ${pattern.creator}`}
-      testID={`pattern-card-${pattern.id}`}
-      onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed, webCursor]}
-    >
-      <View style={[styles.cardImageWrap, { height: imageHeight }]}>
-        <Image
-          accessible={false}
-          source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-          style={styles.cardImage}
-        />
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{formatSpecBadge(pattern)}</Text>
+    <View style={styles.card} testID={`pattern-card-${pattern.id}`}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${pattern.title}, ${formatSpecBadge(pattern)}, by ${pattern.creator}`}
+        onPress={onPress}
+        style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+      >
+        <View style={[styles.cardImageWrap, { height: imageHeight }]}>
+          <Image
+            accessible={false}
+            source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
+            style={styles.cardImage}
+          />
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{formatSpecBadge(pattern)}</Text>
+          </View>
         </View>
-      </View>
-      <Text numberOfLines={2} style={styles.cardTitle}>
-        {pattern.title}
-      </Text>
+        <Text numberOfLines={2} style={styles.cardTitle}>
+          {pattern.title}
+        </Text>
+      </Pressable>
       <View style={styles.cardFooter}>
         <View style={[styles.avatar, { backgroundColor: creatorColor(pattern.creator) }]}>
           <Text style={styles.avatarText}>{creatorInitials(pattern.creator)}</Text>
@@ -314,8 +315,7 @@ function PatternCard({
           accessibilityLabel={liked ? 'Unlike pattern' : 'Like pattern'}
           accessibilityState={{ selected: liked }}
           hitSlop={Layout.hitSlop}
-          onPress={(event) => {
-            event.stopPropagation();
+          onPress={() => {
             tick();
             toggleLikePattern(pattern.id);
           }}
@@ -325,7 +325,7 @@ function PatternCard({
           <Text style={[styles.likeCount, liked && styles.likeCountOn]}>{formatLikeCount(pattern.id, liked)}</Text>
         </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 

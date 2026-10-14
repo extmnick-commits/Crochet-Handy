@@ -1,10 +1,14 @@
+import { Redirect } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { Platform, StyleSheet } from 'react-native';
 
+import { LaunchSplash } from '@/components/LaunchSplash';
 import { BambuTabBar } from '@/components/navigation/BambuTabBar';
 import { MeIcon, PatternsIcon, ProjectIcon } from '@/components/navigation/TabIcons';
 import { Colors } from '@/constants/BambuTheme';
+import { useAuthGateReady } from '@/hooks/useAuthGateReady';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+import { useCrochetStore } from '@/store/useCrochetStore';
 
 /**
  * Primary navigation — mirrors Bambu Handy's Models / Devices / Me tabs.
@@ -15,6 +19,16 @@ import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
  */
 export default function TabLayout() {
   const { navPosition, contentMaxWidth } = useResponsiveLayout();
+  const gateReady = useAuthGateReady();
+  const account = useCrochetStore((state) => state.account);
+
+  if (!gateReady) {
+    return <LaunchSplash />;
+  }
+
+  if (!account) {
+    return <Redirect href="/welcome" />;
+  }
 
   return (
     <Tabs

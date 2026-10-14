@@ -58,42 +58,54 @@ export function FirebaseAccountSync() {
   const hydrated = useCrochetHydrated();
   const hydrateFromCloud = useCrochetStore((state) => state.hydrateFromCloud);
   const setAccount = useCrochetStore((state) => state.setAccount);
+  const setAuthSessionReady = useCrochetStore((state) => state.setAuthSessionReady);
   const skipRemoteWrite = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!hydrated || !isFirebaseConfigured() || !auth || !db) return undefined;
+    if (!hydrated) return undefined;
+
+    if (!isFirebaseConfigured() || !auth || !db) {
+      setAuthSessionReady(true);
+      return undefined;
+    }
+
     const firestore = db;
+    setAuthSessionReady(false);
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setAccount(null);
-        return;
+      try {
+        if (!user) {
+          setAccount(null);
+          return;
+        }
+
+        const ref = doc(firestore, 'users', user.uid);
+        const snap = await getDoc(ref);
+        skipRemoteWrite.current = true;
+
+        if (snap.exists()) {
+          const raw = snap.data() as Record<string, unknown>;
+          hydrateFromCloud(raw);
+          setAccount(cloudAccountFromDoc(raw, user));
+        } else {
+          const state = useCrochetStore.getState();
+          const account = accountFromUser(user, state.account ?? undefined);
+          setAccount(account);
+          const payload = {
+            ...partializeCrochetState(state),
+            account,
+            updatedAt: Date.now(),
+          };
+          await setDoc(ref, payload, { merge: true });
+        }
+
+        setTimeout(() => {
+          skipRemoteWrite.current = false;
+        }, SYNC_DEBOUNCE_MS + 120);
+      } finally {
+        setAuthSessionReady(true);
       }
-
-      const ref = doc(firestore, 'users', user.uid);
-      const snap = await getDoc(ref);
-      skipRemoteWrite.current = true;
-
-      if (snap.exists()) {
-        const raw = snap.data() as Record<string, unknown>;
-        hydrateFromCloud(raw);
-        setAccount(cloudAccountFromDoc(raw, user));
-      } else {
-        const state = useCrochetStore.getState();
-        const account = accountFromUser(user, state.account ?? undefined);
-        setAccount(account);
-        const payload = {
-          ...partializeCrochetState(state),
-          account,
-          updatedAt: Date.now(),
-        };
-        await setDoc(ref, payload, { merge: true });
-      }
-
-      setTimeout(() => {
-        skipRemoteWrite.current = false;
-      }, SYNC_DEBOUNCE_MS + 120);
     });
 
     const unsubscribeStore = useCrochetStore.subscribe((state) => {
@@ -121,7 +133,7 @@ export function FirebaseAccountSync() {
       unsubscribeStore();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [hydrated, hydrateFromCloud, setAccount]);
+  }, [hydrated, hydrateFromCloud, setAccount, setAuthSessionReady]);
 
   return null;
 }

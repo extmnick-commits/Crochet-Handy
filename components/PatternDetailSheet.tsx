@@ -14,7 +14,6 @@ import Svg, { Path } from 'react-native-svg';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
-  selectFoldersForPattern,
   selectIsPatternLiked,
   useCrochetStore,
   type CrochetPattern,
@@ -56,7 +55,10 @@ export function PatternDetailSheet({ patternId, onClose }: PatternDetailSheetPro
   const togglePatternInFolder = useCrochetStore((state) => state.togglePatternInFolder);
   const createIdeaFolder = useCrochetStore((state) => state.createIdeaFolder);
   const liked = useCrochetStore((state) => (patternId ? selectIsPatternLiked(state, patternId) : false));
-  const savedFolders = useCrochetStore((state) => (patternId ? selectFoldersForPattern(state, patternId) : []));
+  const savedFolders = useMemo(
+    () => (patternId ? ideaFolders.filter((folder) => folder.patternIds.includes(patternId)) : []),
+    [ideaFolders, patternId],
+  );
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
