@@ -119,6 +119,21 @@ export default function PatternsScreen() {
           {filtersActive && <View style={styles.filterDot} />}
         </Pressable>
 
+        {Platform.OS === 'web' && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Refresh patterns"
+            accessibilityState={{ busy: refreshing }}
+            testID="pattern-refresh"
+            hitSlop={Layout.hitSlop}
+            disabled={refreshing}
+            onPress={() => void onRefreshPatterns()}
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed, webCursor]}
+          >
+            <RefreshIcon color={Colors.textPrimary} />
+          </Pressable>
+        )}
+
         <View style={styles.searchPill}>
           <SearchIcon color={Colors.textSecondary} />
           <TextInput
@@ -439,6 +454,20 @@ function PlusIcon({ color }: { color: string }) {
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path d="M12 5 V19" stroke={color} strokeWidth={2} strokeLinecap="round" />
       <Path d="M5 12 H19" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function RefreshIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20 12a8 8 0 1 1-2.34-5.66"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+      <Path d="M20 4v6h-6" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }

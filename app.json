@@ -72,7 +72,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "patternCatalogUrl": "https://raw.githubusercontent.com/extmnick-commits/Crochet-Handy/main/catalog/pattern-catalog.json"
+      "patternCatalogUrl": "https://cdn.jsdelivr.net/gh/extmnick-commits/Crochet-Handy@main/catalog/pattern-catalog.json"
     }
   }
 }
