@@ -916,6 +916,28 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
   return { patterns, projects, activeProjectId, yarnStash, progressPhotos };
 }
 
+/**
+ * Keeps saved patterns and appends bundled seed catalog entries that are not
+ * already present (matched by YouTube video id). Scraper updates in seed.ts
+ * show up after reload without wiping projects or stash.
+ */
+export function mergeCatalogPatternsFromSeed(
+  persisted: CrochetPattern[],
+  seedCatalog: CrochetPattern[],
+): CrochetPattern[] {
+  const seenVideoIds = new Set(
+    persisted.map((pattern) => pattern.videoId).filter((id) => id.length > 0),
+  );
+  const additions: CrochetPattern[] = [];
+  for (const pattern of seedCatalog) {
+    if (!pattern.videoId || seenVideoIds.has(pattern.videoId)) continue;
+    seenVideoIds.add(pattern.videoId);
+    additions.push(pattern);
+  }
+  if (additions.length === 0) return persisted;
+  return dedupeById([...persisted, ...additions]);
+}
+
 function repairProgressPhoto(input: unknown): ProgressPhoto | null {
   if (!isRecord(input) || !isSafeId(input.id) || !isSafeId(input.projectId)) return null;
   if (typeof input.uri !== 'string' || !isProgressPhotoUri(input.uri)) return null;

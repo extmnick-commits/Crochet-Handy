@@ -36,6 +36,7 @@ import {
   formatCheckpointTime,
   formatElapsed,
   projectProgress,
+  mergeCatalogPatternsFromSeed,
   repairPersisted,
   type CrochetData,
   type CrochetProject,
@@ -108,7 +109,7 @@ equal(formatBookmarkTime(75), '01:15', 'bookmark time format');
 equal(formatBookmarkTime(3735), '1:02:15', 'hour bookmark format');
 
 const seed = createSeedData();
-equal(seed.patterns.length, 8, 'eight patterns');
+equal(seed.patterns.length, 15, 'fifteen catalog patterns');
 equal(seed.projects.length, 1, 'one project');
 equal(seed.projects[0]?.name, 'Bambi Amigurumi Plush', 'project name');
 equal(seed.projects[0]?.currentRow, 28, 'bambi row');
@@ -130,6 +131,14 @@ equal(seed.projects[0]?.checkpoints.length, 3, 'three bookmarks');
 equal(formatCheckpointTime(75), '01:15', 'checkpoint time format');
 equal(seed.yarnStash.length, 6, 'stash size');
 assert(seed.patterns.every((pattern) => pattern.videoId.length === 11), 'parsed ids');
+const persistedSlice = seed.patterns.slice(0, 8);
+const mergedCatalog = mergeCatalogPatternsFromSeed(persistedSlice, seed.patterns);
+equal(mergedCatalog.length, seed.patterns.length, 'seed catalog merges into persisted patterns');
+equal(
+  mergedCatalog.filter((pattern) => persistedSlice.some((item) => item.id === pattern.id)).length,
+  8,
+  'merged catalog keeps existing saved patterns',
+);
 equal(sanitizeVideoBookmarks(undefined).length, 0, 'no placeholder bookmarks');
 assert(!isEstimatedBookmarkSet(extracted), 'real chapters are not estimates');
 const withRealChapters = applySetPatternBookmarks(dataFrom(createSeedData()), seed.patterns[0]!.id, extracted);

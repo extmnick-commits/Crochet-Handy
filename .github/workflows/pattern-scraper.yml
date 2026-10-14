@@ -13,6 +13,13 @@ on:
         type: choice
         options:
           - 'trending'
+          - 'seasonal'
+          - 'halloween'
+          - 'christmas'
+          - 'thanksgiving'
+          - 'valentines'
+          - 'easter'
+          - 'stpatricks'
           - 'amigurumi'
           - 'wearables'
           - 'blankets'

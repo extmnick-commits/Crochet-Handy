@@ -7,7 +7,8 @@
  * Local LM Studio: npm run update-patterns -- --local
  *
  * Batch size: SCRAPE_COUNT or --count (default 10)
- * Topic: SEARCH_TOPIC or --topic (trending | amigurumi | wearables | blankets)
+ * Topic: SEARCH_TOPIC or --topic (trending | seasonal | amigurumi | wearables | blankets | holiday ids)
+ * Seasonal: trending/seasonal auto-target the active holiday window (e.g. halloween in October). Set SCRAPE_SEASONAL=0 to disable.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -19,6 +20,12 @@ import {
   extractVideoBookmarks,
   type VideoBookmark,
 } from '../utils/chapters';
+import {
+  getActiveHolidayTopic,
+  resolveScrapeTopic,
+  scrapeCategoryKeywords,
+  searchQueryForScrapeTopic,
+} from '../utils/holidayTopics';
 
 type PatternDifficulty = 'beginner' | 'easy' | 'intermediate' | 'advanced';
 
@@ -114,21 +121,8 @@ if (cliCount) process.env.SCRAPE_COUNT = cliCount;
 if (cliTopic) process.env.SEARCH_TOPIC = cliTopic;
 
 const BATCH_SIZE = parseInt(process.env.SCRAPE_COUNT || '10', 10);
-const SEARCH_TOPIC = process.env.SEARCH_TOPIC || 'trending';
-
-/** Long-form project tutorials only; API params also block Shorts and non-embeddable videos. */
-function searchQueryForTopic(topic: string): string {
-  if (topic === 'amigurumi') {
-    return '("crochet amigurumi" | "crochet plushie") ("tutorial" | "pattern") -shorts';
-  }
-  if (topic === 'wearables') {
-    return '("crochet sweater" | "crochet cardigan" | "crochet top") ("tutorial" | "pattern") -shorts';
-  }
-  if (topic === 'blankets') {
-    return '("crochet blanket" | "crochet granny square") ("tutorial" | "pattern") -shorts';
-  }
-  return '("crochet tutorial" | "crochet pattern") ("step by step" | "full project" | "pattern") -shorts';
-}
+const REQUESTED_TOPIC = process.env.SEARCH_TOPIC || 'trending';
+const SEARCH_TOPIC = resolveScrapeTopic(REQUESTED_TOPIC);
 
 type YouTubeSearchItem = {
   id?: { videoId?: string };
@@ -282,7 +276,7 @@ export async function getTrendingVideos(
   const search = await fetchJson<{ items?: YouTubeSearchItem[] }>(YOUTUBE_SEARCH_URL, {
     part: 'snippet',
     type: 'video',
-    q: searchQueryForTopic(SEARCH_TOPIC),
+    q: searchQueryForScrapeTopic(SEARCH_TOPIC),
     videoCategoryId: YOUTUBE_VIDEO_CATEGORY_HOWTO,
     videoDuration: 'medium',
     videoEmbeddable: 'true',
@@ -370,7 +364,7 @@ export async function extractBatchPatterns(
           'materials [{ name, weight, yardage }], tools [{ type, size }], keyStitches [string],',
           'yarnWeight (lace|fingering|sport|dk|worsted|aran|bulky|super-bulky|jumbo), hookSize,',
           'totalRows, stitchesPerRow,',
-          'tags [string] (include relevant category tags such as amigurumi, wearables, halloween, blanket, bag alongside key stitches),',
+          'tags [string] (include relevant category tags such as amigurumi, wearables, halloween, christmas, valentines, thanksgiving, easter, blanket, bag alongside key stitches),',
           'chapters [{ label, time }] when the description lists timestamps (time as M:SS or H:MM:SS).',
           `Include exactly ${videos.length} entries with videoIndex 0 through ${videos.length - 1}.`,
           'Infer reasonable values when a video omits them.',
@@ -477,32 +471,7 @@ export function mergePattern(
   const yarnFromMaterials = materials[0]?.weight;
   const estimatedMinutes = clampInt(ai.estimatedTimeMinutes ?? 120, 15, 24 * 60);
 
-  const categoryKeywords: Record<string, string[]> = {
-    amigurumi: ['amigurumi', 'plush', 'plushie', 'doll', 'stuffie', 'toy'],
-    wearables: [
-      'wearable',
-      'wearables',
-      'cardigan',
-      'sweater',
-      'jumper',
-      'pullover',
-      'hat',
-      'beanie',
-      'scarf',
-      'shawl',
-      'duster',
-      'sock',
-      'glove',
-      'mitten',
-      'cowl',
-      'vest',
-      'hoodie',
-      'dress',
-    ],
-    halloween: ['halloween', 'pumpkin', 'spooky', 'ghost', 'bat', 'witch', 'skull', 'spider', 'autumn', 'october'],
-    blanket: ['blanket', 'afghan', 'throw'],
-    bag: ['bag', 'tote', 'purse', 'pouch'],
-  };
+  const categoryKeywords = scrapeCategoryKeywords();
 
   const textToScan = `${title} ${video.snippet?.description ?? ''}`.toLowerCase();
   const inferredCategories = Object.entries(categoryKeywords)
@@ -715,8 +684,12 @@ export async function main(): Promise<void> {
     const seedSource = fs.readFileSync(SEED_FILE, 'utf8');
     const existingIds = readExistingVideoIds(seedSource);
 
+    const seasonalNote =
+      REQUESTED_TOPIC !== SEARCH_TOPIC
+        ? ` (requested: ${REQUESTED_TOPIC}, seasonal: ${getActiveHolidayTopic()?.tag ?? 'none'})`
+        : '';
     logTimestamp(
-      `YouTube fetch starting (topic: ${SEARCH_TOPIC}, batch: ${BATCH_SIZE}, catalog: ${existingIds.size})…`,
+      `YouTube fetch starting (topic: ${SEARCH_TOPIC}${seasonalNote}, batch: ${BATCH_SIZE}, catalog: ${existingIds.size})…`,
     );
     const videos = await getTrendingVideos(youtubeKey, existingIds);
     if (videos.length === 0) {

@@ -49,6 +49,7 @@ import {
   applyUpdateStashItem,
   createId,
   elapsedSeconds,
+  mergeCatalogPatternsFromSeed,
   repairPersisted,
   type CreateProjectInput,
   type CrochetData,
@@ -295,9 +296,11 @@ export const useCrochetStore = create<CrochetStore>()(
       merge: (persisted, current) => {
         const repaired = repairPersisted(persisted, Date.now());
         if (!repaired) return current;
+        const patterns = mergeCatalogPatternsFromSeed(repaired.patterns, current.patterns);
         return {
           ...current,
           ...repaired,
+          patterns,
           tapHistory: {},
           hydrated: current.hydrated,
         };

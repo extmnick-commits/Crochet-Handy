@@ -6,7 +6,7 @@
  * at the top; Trending sorts by a stable like count.
  */
 import * as Haptics from 'expo-haptics';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Modal,
@@ -35,20 +35,13 @@ import {
   MASONRY_IMAGE_RATIOS,
   matchesPatternCategory,
   matchesPatternQuery,
+  patternFeedCategories,
   sortPatternsForCategory,
   yarnWeightMeta,
   type PatternCategoryId,
 } from '@/utils/patternDisplay';
+import { holidayEmptyState, isHolidayTopicId } from '@/utils/holidayTopics';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
-
-const CATEGORIES: readonly { id: PatternCategoryId; label: string }[] = [
-  { id: 'following', label: 'Following' },
-  { id: 'for-you', label: 'For You' },
-  { id: 'trending', label: 'Trending' },
-  { id: 'halloween', label: '🎃 Halloween' },
-  { id: 'amigurumi', label: 'Amigurumi' },
-  { id: 'wearables', label: 'Wearables' },
-];
 
 const TEXT_BLOCK = 86;
 
@@ -66,6 +59,14 @@ export default function PatternsScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const filtersActive = yarnFilters.length > 0 || hookFilters.length > 0;
+
+  const categories = useMemo(() => patternFeedCategories(), []);
+
+  useEffect(() => {
+    if (!categories.some((item) => item.id === category)) {
+      setCategory('for-you');
+    }
+  }, [categories, category]);
 
   const visiblePatterns = useMemo(() => {
     const matched = patterns.filter(
@@ -146,7 +147,7 @@ export default function PatternsScreen() {
         style={styles.categoryScroll}
         contentContainerStyle={styles.categoryContent}
       >
-        {CATEGORIES.map((item) => {
+        {categories.map((item) => {
           const selected = item.id === category;
           return (
             <Pressable
@@ -458,8 +459,8 @@ function emptyCopy(category: PatternCategoryId, query: string, filtering: boolea
   const trimmed = query.trim();
   if (trimmed) return { title: 'No matches', body: `Nothing in your library matches “${trimmed}”.` };
   if (filtering) return { title: 'No matches', body: 'Try clearing the yarn or hook filters.' };
-  if (category === 'halloween') {
-    return { title: 'No Halloween patterns yet', body: 'Save a tutorial with + and tag it halloween.' };
+  if (isHolidayTopicId(category)) {
+    return holidayEmptyState(category);
   }
   if (category === 'amigurumi') {
     return { title: 'No amigurumi yet', body: 'Patterns tagged amigurumi or plush show up here.' };

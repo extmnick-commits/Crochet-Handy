@@ -5,8 +5,18 @@
  * Hook sizes are normalized to the compact badge form used on cards (`4.0mm`).
  */
 import { MAX_COUNT, type CrochetPattern, type PatternDifficulty, type YarnWeight } from '@/store/machine';
+import {
+  getActiveHolidayTopics,
+  getHolidayTopic,
+  holidayChipLabel,
+  isHolidayTopicId,
+  type HolidayTopicId,
+} from '@/utils/holidayTopics';
 
-export type PatternCategoryId = 'following' | 'for-you' | 'trending' | 'halloween' | 'amigurumi' | 'wearables';
+export type CorePatternCategoryId = 'following' | 'for-you' | 'trending' | 'amigurumi' | 'wearables';
+export type PatternCategoryId = CorePatternCategoryId | HolidayTopicId;
+
+export type PatternFeedCategory = { id: PatternCategoryId; label: string };
 
 export type YarnWeightMeta = {
   id: YarnWeight;
@@ -56,7 +66,21 @@ const WEARABLE_WORDS = [
 
 const AMIGURUMI_WORDS = ['amigurumi', 'plush', 'plushie', 'doll', 'stuffie', 'toy'] as const;
 
-const HALLOWEEN_WORDS = ['halloween', 'pumpkin', 'spooky', 'ghost', 'bat', 'witch', 'skull', 'spider', 'autumn', 'october'] as const;
+/** Patterns tab chips: core categories plus seasonal holidays for the current date. */
+export function patternFeedCategories(date = new Date()): readonly PatternFeedCategory[] {
+  const seasonal = getActiveHolidayTopics(date).map((holiday) => ({
+    id: holiday.id,
+    label: holidayChipLabel(holiday.id),
+  }));
+  return [
+    { id: 'following', label: 'Following' },
+    { id: 'for-you', label: 'For You' },
+    { id: 'trending', label: 'Trending' },
+    ...seasonal,
+    { id: 'amigurumi', label: 'Amigurumi' },
+    { id: 'wearables', label: 'Wearables' },
+  ];
+}
 
 export function yarnWeightMeta(weight: YarnWeight): YarnWeightMeta {
   return YARN_WEIGHT_META[weight];
@@ -185,7 +209,11 @@ export function matchesPatternQuery(pattern: CrochetPattern, query: string): boo
 }
 
 export function matchesPatternCategory(pattern: CrochetPattern, category: PatternCategoryId): boolean {
-  if (category === 'halloween') return mentions(pattern, HALLOWEEN_WORDS);
+  if (isHolidayTopicId(category)) {
+    const keywords = getHolidayTopic(category)?.keywords;
+    if (keywords?.length) return mentions(pattern, keywords);
+    return false;
+  }
   if (category === 'amigurumi') return mentions(pattern, AMIGURUMI_WORDS);
   if (category === 'wearables') return mentions(pattern, WEARABLE_WORDS);
   return true;
