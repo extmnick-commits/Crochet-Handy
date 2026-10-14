@@ -11,7 +11,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { crochetStateStorage, CROCHET_STORAGE_KEY, CROCHET_STORAGE_VERSION, enablePersistWrites } from '@/utils/storage';
-import { syncRemotePatternCatalog } from '@/utils/syncPatternCatalog';
+import { pullPatternCatalogUpdates, syncRemotePatternCatalog } from '@/utils/syncPatternCatalog';
 import { parseYouTubeUrl } from '@/utils/youtube';
 import {
   activeProject,
@@ -141,6 +141,8 @@ type CrochetActions = {
   addProgressPhoto: (input: NewProgressPhotoInput) => string | null;
   removeProgressPhoto: (photoId: string) => void;
   resetToSeed: () => void;
+  /** Pull-to-refresh: merge bundled seed and remote scraper catalog. */
+  refreshPatternCatalog: () => Promise<number>;
 };
 
 export type CrochetStore = CrochetData &
@@ -298,6 +300,16 @@ export const useCrochetStore = create<CrochetStore>()(
           enablePersistWrites();
           set({ ...createSeedData(), tapHistory: {}, hydrated: true });
         },
+
+        refreshPatternCatalog: async () =>
+          pullPatternCatalogUpdates(
+            () => readData(get()),
+            (next) => {
+              const reconciled = applyReconcileTimers(next, Date.now());
+              set((state) => ({ ...state, ...(reconciled ?? next) }));
+            },
+            createSeedData().patterns,
+          ),
       };
     },
     {

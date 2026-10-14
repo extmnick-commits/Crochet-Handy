@@ -6,12 +6,13 @@
  * at the top; Trending sorts by a stable like count.
  */
 import * as Haptics from 'expo-haptics';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -48,8 +49,10 @@ const TEXT_BLOCK = 86;
 export default function PatternsScreen() {
   const insets = useSafeAreaInsets();
   const patterns = useCrochetStore((state) => state.patterns);
+  const refreshPatternCatalog = useCrochetStore((state) => state.refreshPatternCatalog);
 
   const [contentWidth, setContentWidth] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<PatternCategoryId>('for-you');
   const [yarnFilters, setYarnFilters] = useState<YarnWeight[]>([]);
@@ -86,6 +89,16 @@ export default function PatternsScreen() {
     if (next !== category) tick();
     setCategory(next);
   };
+
+  const onRefreshPatterns = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshPatternCatalog();
+      tick();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshPatternCatalog]);
 
   return (
     <View
@@ -172,6 +185,15 @@ export default function PatternsScreen() {
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefreshPatterns}
+            tintColor={Colors.accentPrimary}
+            colors={[Colors.accentPrimary]}
+            progressBackgroundColor={Colors.backgroundPrimary}
+          />
+        }
       >
         {visiblePatterns.length === 0 ? (
           <EmptyFeed category={category} query={query} filtering={filtersActive} />
