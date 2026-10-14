@@ -62,6 +62,8 @@ type PatternDetailSheetProps = {
   patternId: string | null;
   onClose: () => void;
   onPatternChange?: (patternId: string) => void;
+  /** Opens the feed filtered to patterns sharing this tag. */
+  onTagPress?: (tag: string) => void;
 };
 
 type DetailTab = 'details' | 'bom' | 'reviews' | 'for-you';
@@ -77,7 +79,7 @@ type Swatch = { hex: string; name: string };
 
 const EMPTY_PATTERN_COMMENTS: PatternComment[] = [];
 
-export function PatternDetailSheet({ patternId, onClose, onPatternChange }: PatternDetailSheetProps) {
+export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagPress }: PatternDetailSheetProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
@@ -109,7 +111,6 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
 
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [heroIndex, setHeroIndex] = useState(0);
-  const [descExpanded, setDescExpanded] = useState(false);
   const [reviewsExpanded, setReviewsExpanded] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [draftComment, setDraftComment] = useState('');
@@ -155,7 +156,6 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
     if (!patternId) return;
     setActiveTab('details');
     setHeroIndex(0);
-    setDescExpanded(false);
     setReviewsExpanded(false);
     setDraftComment('');
     setDraftRating(5);
@@ -359,35 +359,14 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
               </View>
 
               <Text style={styles.summary}>{meta.summary}</Text>
-              {descExpanded && hasLongerDescription ? (
+              {hasLongerDescription ? (
                 <View style={styles.aboutBlock}>
                   <Text style={styles.aboutHeading}>About this pattern</Text>
                   <Text style={styles.description}>{meta.description}</Text>
                 </View>
               ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  descExpanded
-                    ? 'Hide pattern details'
-                    : hasLongerDescription
-                      ? 'Show full description'
-                      : 'Show pattern details'
-                }
-                onPress={() => setDescExpanded((value) => !value)}
-                style={({ pressed }) => [styles.moreToggle, pressed && styles.pressed, webCursor]}
-              >
-                <Text style={styles.moreToggleText}>
-                  {descExpanded
-                    ? 'Hide details ⌃'
-                    : hasLongerDescription
-                      ? 'About this pattern ⌄'
-                      : 'Pattern details ⌄'}
-                </Text>
-              </Pressable>
 
-              {descExpanded ? (
-                <View style={styles.expandedBlock}>
+              <View style={styles.expandedBlock}>
                   {meta.keyStitches.length > 0 ? (
                     <View style={styles.keyStitches}>
                       <Text style={styles.sectionHeading}>Key stitches</Text>
@@ -409,20 +388,36 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
                     <Text style={styles.clubTitle}>{pattern.creator} Club</Text>
                     <Text style={styles.clubBody}>Get early drops, BOM packs, and maker-only chapters.</Text>
                   </View>
-                  <Pressable
-                    accessibilityRole="link"
-                    onPress={() => void Linking.openURL(pattern.youtubeUrl)}
-                    style={({ pressed }) => [styles.youtubeLink, pressed && styles.pressed, webCursor]}
-                  >
-                    <Text style={styles.youtubeLinkText}>{pattern.youtubeUrl}</Text>
-                  </Pressable>
-                  <View style={styles.tagRow}>
-                    {pattern.tags.map((tag) => (
-                      <View key={tag} style={styles.tagPill}>
-                        <Text style={styles.tagText}>#{tag}</Text>
+                  {pattern.tags.length > 0 ? (
+                    <View style={styles.tagSection}>
+                      <Text style={styles.tagSectionHeading}>Topics</Text>
+                      <View style={styles.tagRow}>
+                        {pattern.tags.map((tag) => (
+                          <Pressable
+                            key={tag}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Browse patterns tagged ${tag}`}
+                            disabled={!onTagPress}
+                            onPress={() => {
+                              if (!onTagPress) return;
+                              tick();
+                              onTagPress(tag);
+                            }}
+                            style={({ pressed }) => [
+                              styles.tagPill,
+                              onTagPress && styles.tagPillInteractive,
+                              pressed && onTagPress && styles.tagPillPressed,
+                              webCursor,
+                            ]}
+                          >
+                            <Text style={[styles.tagText, onTagPress && styles.tagTextInteractive]}>
+                              #{tag}
+                            </Text>
+                          </Pressable>
+                        ))}
                       </View>
-                    ))}
-                  </View>
+                    </View>
+                  ) : null}
                   {pattern.bookmarks.length > 0 ? (
                     <View style={styles.chapterWrap}>
                       {pattern.bookmarks.map((bookmark) => (
@@ -442,7 +437,6 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange }: Patt
                     <Spec label="Difficulty" value={difficultyLabel(pattern.difficulty)} />
                   </View>
                 </View>
-              ) : null}
             </View>
 
             <View
@@ -930,9 +924,7 @@ const styles = StyleSheet.create({
     ...Typography.callout,
     color: Colors.textPrimary,
   },
-  moreToggle: { alignSelf: 'flex-start', paddingHorizontal: Layout.screenGutter, paddingVertical: Spacing.xs },
-  moreToggleText: { ...Typography.label, color: Colors.accentPrimary },
-  expandedBlock: { gap: Spacing.md, paddingHorizontal: Layout.screenGutter, marginTop: Spacing.sm },
+  expandedBlock: { gap: Spacing.md, paddingHorizontal: Layout.screenGutter, marginTop: Spacing.md },
   keyStitches: { gap: Spacing.xs },
   sectionHeading: {
     ...Typography.label,
@@ -960,8 +952,13 @@ const styles = StyleSheet.create({
   },
   clubTitle: { ...Typography.label, color: Colors.textPrimary },
   clubBody: { ...Typography.caption, color: Colors.textSecondary },
-  youtubeLink: { paddingVertical: Spacing.xs },
-  youtubeLinkText: { ...Typography.caption, color: Colors.info },
+  tagSection: { gap: Spacing.sm },
+  tagSectionHeading: {
+    ...Typography.label,
+    color: Colors.textSecondary,
+    paddingHorizontal: 0,
+    marginBottom: 0,
+  },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   tagPill: {
     paddingHorizontal: Spacing.sm,
@@ -969,7 +966,16 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     backgroundColor: Colors.elevatedControl,
   },
+  tagPillInteractive: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  tagPillPressed: {
+    backgroundColor: Colors.accentMuted,
+    borderColor: Colors.accentPrimary,
+  },
   tagText: { ...Typography.caption, color: Colors.textPrimary },
+  tagTextInteractive: { color: Colors.accentPrimary, fontWeight: FontWeight.semibold },
   chapterWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   chapterChip: {
     flexDirection: 'row',

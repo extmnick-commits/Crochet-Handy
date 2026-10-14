@@ -6,6 +6,7 @@
  * at the top; Trending sorts by a stable like count.
  */
 import * as Haptics from 'expo-haptics';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -33,6 +34,8 @@ import {
   packMasonryColumns,
   MASONRY_TEXT_BLOCK,
   matchesPatternQuery,
+  matchesPatternTagFilter,
+  normalizePatternTag,
   patternFeedCategories,
   sortPatternsForCategory,
   yarnWeightMeta,
@@ -43,12 +46,15 @@ import { isEnglishFeedPattern } from '@/utils/patternEnglishFilter';
 
 export default function PatternsScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const routeParams = useLocalSearchParams<{ tag?: string }>();
   const patterns = useCrochetStore((state) => state.patterns);
   const refreshPatternCatalog = useCrochetStore((state) => state.refreshPatternCatalog);
 
   const [contentWidth, setContentWidth] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [category, setCategory] = useState<PatternCategoryId>('for-you');
   const [yarnFilters, setYarnFilters] = useState<YarnWeight[]>([]);
   const [hookFilters, setHookFilters] = useState<string[]>([]);
@@ -56,7 +62,17 @@ export default function PatternsScreen() {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const filtersActive = yarnFilters.length > 0 || hookFilters.length > 0;
+  const filtersActive = yarnFilters.length > 0 || hookFilters.length > 0 || tagFilter != null;
+
+  useEffect(() => {
+    const raw = routeParams.tag;
+    const next = typeof raw === 'string' ? normalizePatternTag(raw) : '';
+    if (!next) return;
+    setTagFilter(next);
+    setCategory('for-you');
+    setSelectedId(null);
+    router.setParams({ tag: undefined });
+  }, [routeParams.tag, router]);
 
   const categories = useMemo(() => patternFeedCategories(), []);
 
@@ -75,10 +91,11 @@ export default function PatternsScreen() {
         }) &&
         matchesPatternCategory(pattern, category) &&
         matchesPatternQuery(pattern, query) &&
+        matchesPatternTagFilter(pattern, tagFilter) &&
         matchesFacets(pattern, yarnFilters, hookFilters),
     );
     return sortPatternsForCategory(matched, category);
-  }, [patterns, category, query, yarnFilters, hookFilters]);
+  }, [patterns, category, query, tagFilter, yarnFilters, hookFilters]);
 
   const innerWidth = Math.max(0, contentWidth - insets.left - insets.right);
   const columnWidth = Math.floor((innerWidth - Layout.screenGutter * 2 - Layout.cardGap) / 2);
@@ -89,6 +106,16 @@ export default function PatternsScreen() {
     if (next !== category) tick();
     setCategory(next);
   };
+
+  const onBrowseTag = useCallback((tag: string) => {
+    const normalized = normalizePatternTag(tag);
+    if (!normalized) return;
+    setSelectedId(null);
+    setTagFilter(normalized);
+    setCategory('for-you');
+    setQuery('');
+    tick();
+  }, []);
 
   const onRefreshPatterns = useCallback(async () => {
     setRefreshing(true);
@@ -194,6 +221,27 @@ export default function PatternsScreen() {
         })}
       </ScrollView>
 
+      {tagFilter ? (
+        <View style={styles.tagFilterBar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Clear tag filter ${tagFilter}`}
+            onPress={() => {
+              tick();
+              setTagFilter(null);
+            }}
+            style={({ pressed }) => [styles.tagFilterChip, pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.tagFilterHash}>#</Text>
+            <Text style={styles.tagFilterLabel}>{tagFilter}</Text>
+            <Text style={styles.tagFilterClear}>×</Text>
+          </Pressable>
+          <Text style={styles.tagFilterMeta}>
+            {visiblePatterns.length} pattern{visiblePatterns.length === 1 ? '' : 's'}
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
         style={styles.feedScroll}
         contentContainerStyle={[styles.feed, visiblePatterns.length === 0 && styles.feedEmpty]}
@@ -211,7 +259,7 @@ export default function PatternsScreen() {
         }
       >
         {visiblePatterns.length === 0 ? (
-          <EmptyFeed category={category} query={query} filtering={filtersActive} />
+          <EmptyFeed category={category} query={query} tagFilter={tagFilter} filtering={filtersActive} />
         ) : (
           <View style={styles.masonry}>
             {columns.map((column, columnIndex) => (
@@ -262,13 +310,24 @@ export default function PatternsScreen() {
         patternId={selectedId}
         onClose={() => setSelectedId(null)}
         onPatternChange={setSelectedId}
+        onTagPress={onBrowseTag}
       />
     </View>
   );
 }
 
-function EmptyFeed({ category, query, filtering }: { category: PatternCategoryId; query: string; filtering: boolean }) {
-  const copy = emptyCopy(category, query, filtering);
+function EmptyFeed({
+  category,
+  query,
+  tagFilter,
+  filtering,
+}: {
+  category: PatternCategoryId;
+  query: string;
+  tagFilter: string | null;
+  filtering: boolean;
+}) {
+  const copy = emptyCopy(category, query, tagFilter, filtering);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>{copy.title}</Text>
@@ -449,10 +508,21 @@ function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
-function emptyCopy(category: PatternCategoryId, query: string, filtering: boolean): { title: string; body: string } {
+function emptyCopy(
+  category: PatternCategoryId,
+  query: string,
+  tagFilter: string | null,
+  filtering: boolean,
+): { title: string; body: string } {
   const trimmed = query.trim();
   if (trimmed) return { title: 'No matches', body: `Nothing in your library matches “${trimmed}”.` };
-  if (filtering) return { title: 'No matches', body: 'Try clearing the yarn or hook filters.' };
+  if (tagFilter) {
+    return {
+      title: 'No matches',
+      body: `No patterns are tagged #${tagFilter} yet. Try another topic from a pattern detail screen.`,
+    };
+  }
+  if (filtering) return { title: 'No matches', body: 'Try clearing the yarn, hook, or topic filters.' };
   if (isHolidayTopicId(category)) {
     return holidayEmptyState(category);
   }
@@ -573,6 +643,44 @@ const styles = StyleSheet.create({
         elevation: 6,
       },
     }),
+  },
+  tagFilterBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    paddingHorizontal: Layout.screenGutter,
+    paddingBottom: Spacing.sm,
+  },
+  tagFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xxs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentMuted,
+    borderWidth: 1,
+    borderColor: Colors.accentPrimary,
+  },
+  tagFilterHash: {
+    ...Typography.caption,
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.bold,
+  },
+  tagFilterLabel: {
+    ...Typography.caption,
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.semibold,
+  },
+  tagFilterClear: {
+    ...Typography.label,
+    color: Colors.accentPrimary,
+    marginLeft: Spacing.xs,
+  },
+  tagFilterMeta: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
   },
   feedScroll: {
     flex: 1,

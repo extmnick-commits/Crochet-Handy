@@ -1,6 +1,7 @@
 /**
  * Me — profile, Collections | Likes library, folders, and progress stories.
  */
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { signOut } from 'firebase/auth';
 import { useEffect, useMemo, useState } from 'react';
@@ -24,6 +25,7 @@ import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { normalizePatternTag } from '@/utils/patternDisplay';
 import {
   elapsedSeconds,
   stitchesDone,
@@ -45,6 +47,7 @@ type LibraryPill = 'collections' | 'likes';
 type CollectionSubTab = 'folders' | 'stories';
 
 export default function MeScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const projects = useCrochetStore((state) => state.projects);
@@ -564,6 +567,13 @@ export default function MeScreen() {
         patternId={patternId}
         onClose={() => setPatternId(null)}
         onPatternChange={setPatternId}
+        onTagPress={(tag) => {
+          const normalized = normalizePatternTag(tag);
+          if (!normalized) return;
+          setPatternId(null);
+          tick();
+          router.push({ pathname: '/(tabs)', params: { tag: normalized } });
+        }}
       />
       <PhotoProgressModal
         visible={storyProjectId != null}

@@ -346,7 +346,24 @@ export function patternSearchText(pattern: CrochetPattern): string {
 export function matchesPatternQuery(pattern: CrochetPattern, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
+  const tagNeedle = needle.startsWith('#') ? needle.slice(1) : needle;
+  if (pattern.tags.some((tag) => normalizePatternTag(tag) === tagNeedle)) return true;
   return patternSearchText(pattern).includes(needle);
+}
+
+export function normalizePatternTag(tag: string): string {
+  return tag.trim().replace(/^#+/, '').toLowerCase();
+}
+
+export function patternHasTag(pattern: CrochetPattern, tag: string): boolean {
+  const needle = normalizePatternTag(tag);
+  if (!needle) return false;
+  return pattern.tags.some((item) => normalizePatternTag(item) === needle);
+}
+
+export function matchesPatternTagFilter(pattern: CrochetPattern, tagFilter: string | null): boolean {
+  if (!tagFilter) return true;
+  return patternHasTag(pattern, tagFilter);
 }
 
 export function matchesPatternCategory(pattern: CrochetPattern, category: PatternCategoryId): boolean {
