@@ -141,9 +141,11 @@ type YouTubeVideoItem = {
     title?: string;
     description?: string;
     channelTitle?: string;
+    defaultAudioLanguage?: string;
+    defaultLanguage?: string;
   };
-  statistics?: {
-    viewCount?: string;
+  contentDetails?: {
+    duration?: string;
   };
 };
 
@@ -170,7 +172,12 @@ type AiBatchPatternsResponse = {
   patterns?: AiBatchPatternPayload[];
 };
 
-const BATCH_DESCRIPTION_MAX_CHARS = 400;
+/** Leading description window checked for non-English script (title is checked in full). */
+const LEADING_DESCRIPTION_SCRIPT_CHECK_CHARS = 500;
+
+/** CJK, Cyrillic, Arabic, and related scripts — not Latin crochet pattern text. */
+const NON_LATIN_SCRIPT_RE =
+  /[\u0400-\u04FF\u0500-\u052F\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/g;
 
 export function isLocalAiMode(): boolean {
   return process.argv.includes('--local');
@@ -245,6 +252,45 @@ function isShortFormTitle(title: string): boolean {
   return lower.includes('#shorts') || lower.includes('#short');
 }
 
+function countNonLatinScriptChars(text: string): number {
+  return text.match(NON_LATIN_SCRIPT_RE)?.length ?? 0;
+}
+
+function hasSignificantNonLatinScript(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  const nonLatin = countNonLatinScriptChars(trimmed);
+  if (nonLatin === 0) return false;
+  const dense = trimmed.replace(/\s+/g, '').length;
+  if (dense === 0) return false;
+  return nonLatin >= 3 || nonLatin / dense >= 0.08;
+}
+
+/** Keeps English, description-rich embeddable tutorials suitable for pattern extraction. */
+export function isValidEnglishPatternVideo(video: YouTubeVideoItem): boolean {
+  const snippet = video.snippet;
+  if (!snippet) return false;
+
+  const title = (snippet.title ?? '').trim();
+  const description = (snippet.description ?? '').trim();
+
+  if (isShortFormTitle(title)) return false;
+  if (description.length < 350) return false;
+
+  const audioLang = snippet.defaultAudioLanguage?.trim();
+  if (audioLang && !audioLang.toLowerCase().startsWith('en')) return false;
+
+  const defaultLang = snippet.defaultLanguage?.trim();
+  if (defaultLang && !defaultLang.toLowerCase().startsWith('en')) return false;
+
+  const leadingDescription = description.slice(0, LEADING_DESCRIPTION_SCRIPT_CHECK_CHARS);
+  if (hasSignificantNonLatinScript(title) || hasSignificantNonLatinScript(leadingDescription)) {
+    return false;
+  }
+
+  return true;
+}
+
 function logTimestamp(message: string): void {
   console.log(`[${new Date().toISOString()}] ${message}`);
 }
@@ -257,7 +303,7 @@ function formatVideosForBatchPrompt(videos: YouTubeVideoItem[]): string {
   return videos
     .map((video, index) => {
       const title = (video.snippet?.title ?? '').trim();
-      const description = (video.snippet?.description ?? '').slice(0, BATCH_DESCRIPTION_MAX_CHARS);
+      const description = (video.snippet?.description ?? '').trim();
       return `Video ${index}:\nTitle: ${title}\nDescription:\n${description}`;
     })
     .join('\n\n---\n\n');
@@ -281,6 +327,7 @@ export async function getTrendingVideos(
   const search = await fetchJson<{ items?: YouTubeSearchItem[] }>(YOUTUBE_SEARCH_URL, {
     part: 'snippet',
     type: 'video',
+    relevanceLanguage: 'en',
     q: searchQueryForScrapeTopic(SEARCH_TOPIC),
     videoCategoryId: YOUTUBE_VIDEO_CATEGORY_HOWTO,
     videoDuration: 'medium',
@@ -288,12 +335,11 @@ export async function getTrendingVideos(
     videoSyndicated: 'true',
     order: 'viewCount',
     publishedAfter: publishedAfterIso(7),
-    maxResults: '25',
+    maxResults: '50',
     key: apiKey,
   });
 
   const ids = (search.items ?? [])
-    .filter((item) => !isShortFormTitle(item.snippet?.title ?? ''))
     .map((item) => item.id?.videoId)
     .filter((id): id is string => Boolean(id))
     .filter((id) => !existingVideoIds.has(id));
@@ -303,20 +349,23 @@ export async function getTrendingVideos(
   }
 
   const details = await fetchJson<{ items?: YouTubeVideoItem[] }>(YOUTUBE_VIDEOS_URL, {
-    part: 'snippet,statistics',
+    part: 'snippet,contentDetails',
     id: ids.join(','),
     key: apiKey,
   });
 
   const batchSize = Number.isFinite(BATCH_SIZE) && BATCH_SIZE > 0 ? BATCH_SIZE : 10;
   return (details.items ?? [])
-    .filter((item) => !isShortFormTitle(item.snippet?.title ?? ''))
     .filter((item) => {
       const videoId = item.id ?? '';
       return videoId.length > 0 && !existingVideoIds.has(videoId);
     })
+    .filter(isValidEnglishPatternVideo)
     .slice()
-    .sort((a, b) => Number(b.statistics?.viewCount ?? 0) - Number(a.statistics?.viewCount ?? 0))
+    .sort(
+      (a, b) =>
+        (b.snippet?.description?.length ?? 0) - (a.snippet?.description?.length ?? 0),
+    )
     .slice(0, batchSize);
 }
 
