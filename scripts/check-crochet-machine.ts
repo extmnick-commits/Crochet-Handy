@@ -87,7 +87,7 @@ assert(parseYouTubeUrl('') == null, 'empty');
 assert(parseYouTubeUrl('not a url') == null, 'garbage');
 
 const seed = createSeedData();
-equal(seed.patterns.length, 5, 'five patterns');
+equal(seed.patterns.length, 8, 'eight patterns');
 equal(seed.projects.length, 1, 'one project');
 equal(seed.projects[0]?.name, 'Bambi Amigurumi Plush', 'project name');
 equal(seed.projects[0]?.currentRow, 28, 'bambi row');
@@ -386,7 +386,60 @@ const shot = applyAddProgressPhoto(
 );
 equal(shot?.progressPhotos.length, 1, 'progress photo stored');
 equal(shot?.progressPhotos[0]?.percent, 70, 'sticker percent frozen');
+assert(shot?.progressPhotos[0]?.caption === undefined, 'photo without caption omits field');
 assert(applyAddProgressPhoto(dataFrom(seed), 'photo-x', { ...shot!.progressPhotos[0]!, projectId: 'missing', uri: 'data:image/jpeg;base64,aaaa' }, t0) == null, 'photo needs a project');
+
+const note =
+  'Finished the ears! Switching to Champagne White and a very long note that should trim cleanly at the one-twenty character ceiling without breaking repair.';
+const captioned = applyAddProgressPhoto(
+  shot!,
+  'photo-2',
+  {
+    projectId: 'project-bambi',
+    uri: 'data:image/jpeg;base64,bbbb',
+    projectName: 'Bambi Amigurumi Plush',
+    row: 29,
+    totalRows: 40,
+    percent: 72,
+    elapsedSeconds: 100,
+    hookSize: '4.0 mm',
+    caption: note,
+    createdAt: t0 + 1,
+  },
+  t0 + 1,
+);
+assert(captioned, 'caption photo stored');
+equal(captioned?.progressPhotos.length, 2, 'two progress photos');
+const savedCaption = captioned?.progressPhotos.find((photo) => photo.id === 'photo-2')?.caption;
+assert(savedCaption && savedCaption.length === 120, 'caption sanitized to 120 chars');
+assert(savedCaption.startsWith('Finished the ears!'), 'caption text kept');
+const repairedPhotos = repairPersisted(
+  {
+    patterns: seed.patterns,
+    yarnStash: seed.yarnStash,
+    activeProjectId: 'project-bambi',
+    projects: seed.projects,
+    progressPhotos: [
+      captioned!.progressPhotos.find((photo) => photo.id === 'photo-2')!,
+      {
+        id: 'photo-legacy',
+        projectId: 'project-bambi',
+        uri: 'data:image/jpeg;base64,cccc',
+        projectName: 'Bambi Amigurumi Plush',
+        row: 1,
+        totalRows: 40,
+        percent: 3,
+        elapsedSeconds: 60,
+        hookSize: '4.0 mm',
+        createdAt: t0,
+      },
+    ],
+  },
+  t0,
+);
+assert(repairedPhotos, 'photos repair');
+equal(repairedPhotos?.progressPhotos.find((photo) => photo.id === 'photo-2')?.caption, savedCaption, 'caption survives repair');
+assert(repairedPhotos?.progressPhotos.find((photo) => photo.id === 'photo-legacy')?.caption === undefined, 'legacy photo without caption');
 
 const legacyStash = repairPersisted(
   {

@@ -84,6 +84,7 @@ export {
   formatElapsed,
   isSlotEmpty,
   isTimerRunning,
+  MAX_COUNT,
   MAX_SKEINS,
   projectProgress,
   rowPercent,
@@ -310,7 +311,6 @@ export function useCrochetHydrated(): boolean {
 
   useEffect(() => {
     if (useCrochetStore.persist.hasHydrated()) {
-      setFallback(true);
       return undefined;
     }
     return useCrochetStore.persist.onFinishHydration(() => {

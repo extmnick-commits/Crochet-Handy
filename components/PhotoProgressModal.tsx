@@ -15,6 +15,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -222,6 +223,11 @@ function ProgressLog({
                   <Text style={styles.shotMeta}>
                     {formatElapsed(photo.elapsedSeconds)} · {formatHookMillimeters(photo.hookSize)}
                   </Text>
+                  {photo.caption ? (
+                    <Text numberOfLines={2} style={styles.shotCaption}>
+                      {photo.caption}
+                    </Text>
+                  ) : null}
                 </View>
                 <Pressable
                   accessibilityRole="button"
@@ -292,6 +298,7 @@ function PreviewStill({
   const project = useCrochetStore((state) => state.projects.find((item) => item.id === projectId) ?? null);
   const addProgressPhoto = useCrochetStore((state) => state.addProgressPhoto);
   const [busy, setBusy] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState('');
 
   const sticker = project
     ? {
@@ -307,6 +314,7 @@ function PreviewStill({
   const onSave = () => {
     if (!project || !sticker || busy) return;
     tick('impact');
+    const trimmedCaption = captionDraft.trim();
     const id = addProgressPhoto({
       projectId: project.id,
       uri,
@@ -317,6 +325,7 @@ function PreviewStill({
       elapsedSeconds: sticker.elapsedSeconds,
       hookSize: sticker.hookSize,
       createdAt: Date.now(),
+      ...(trimmedCaption ? { caption: trimmedCaption } : {}),
     });
     if (!id) {
       onError('Could not save that photo.');
@@ -353,8 +362,24 @@ function PreviewStill({
           <Text style={styles.glassButtonText}>Back</Text>
         </Pressable>
       </View>
-      {sticker ? <ProgressSticker {...sticker} /> : null}
-      <View style={[styles.footer, styles.previewFooter, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
+      {sticker ? <ProgressSticker {...sticker} caption={captionDraft.trim() || undefined} /> : null}
+      <View style={[styles.previewBottom, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
+        <View style={styles.captionBar}>
+          <TextInput
+            accessibilityLabel="Progress photo caption"
+            testID="progress-photo-caption"
+            value={captionDraft}
+            onChangeText={setCaptionDraft}
+            placeholder="Add a note…"
+            placeholderTextColor="rgba(255, 255, 255, 0.45)"
+            maxLength={120}
+            multiline
+            returnKeyType="done"
+            blurOnSubmit
+            style={styles.captionInput}
+          />
+        </View>
+        <View style={styles.previewFooterRow}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Retake photo"
@@ -375,6 +400,7 @@ function PreviewStill({
         >
           <Text style={styles.footerButtonPrimaryText}>Save to story</Text>
         </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -529,6 +555,7 @@ function StoryPlayer({ photos, startIndex, onClose }: { photos: ProgressPhoto[];
         percent={photo.percent}
         elapsedSeconds={photo.elapsedSeconds}
         hookSize={photo.hookSize}
+        caption={photo.caption}
       />
     </View>
   );
@@ -541,6 +568,7 @@ function ProgressSticker({
   percent,
   elapsedSeconds,
   hookSize,
+  caption,
 }: {
   projectName: string;
   row: number;
@@ -548,6 +576,7 @@ function ProgressSticker({
   percent: number;
   elapsedSeconds: number;
   hookSize: string;
+  caption?: string;
 }) {
   const hook = formatHookMillimeters(hookSize);
   return (
@@ -561,6 +590,11 @@ function ProgressSticker({
         <Text style={styles.stickerRow}>
           Row {row}/{totalRows} ({percent}%)
         </Text>
+        {caption ? (
+          <Text numberOfLines={3} style={styles.stickerCaption}>
+            {caption}
+          </Text>
+        ) : null}
         <Text style={styles.stickerMeta}>
           {formatElapsed(elapsedSeconds)} · {hook === '—' ? 'Hook —' : hook}
         </Text>
@@ -686,6 +720,11 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textSecondary,
   },
+  shotCaption: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    marginTop: 2,
+  },
   remove: {
     minHeight: 36,
     justifyContent: 'center',
@@ -723,12 +762,34 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     backgroundColor: Colors.backgroundPrimary,
   },
-  previewFooter: {
+  previewBottom: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'transparent',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+  },
+  captionBar: {
+    borderRadius: Radius.lg,
+    backgroundColor: 'rgba(18, 18, 18, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  captionInput: {
+    ...Typography.callout,
+    color: Colors.textPrimary,
+    maxHeight: 72,
+    padding: 0,
+  },
+  previewFooterRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
   },
   footerButton: {
     flex: 1,
@@ -817,6 +878,11 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontWeight: FontWeight.bold,
     color: Colors.textPrimary,
+  },
+  stickerCaption: {
+    ...Typography.callout,
+    color: 'rgba(255, 255, 255, 0.92)',
+    marginTop: 2,
   },
   stickerMeta: {
     ...Typography.callout,

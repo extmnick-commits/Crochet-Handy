@@ -9,10 +9,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddYarnModal } from '@/components/AddYarnModal';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
   elapsedSeconds,
+  isSlotEmpty,
   MAX_SKEINS,
+  selectActiveProject,
   stitchesDone,
   useCrochetStore,
   type YarnStashItem,
@@ -30,11 +33,15 @@ export default function MeScreen() {
   const progressPhotos = useCrochetStore((state) => state.progressPhotos);
   const updateStashItem = useCrochetStore((state) => state.updateStashItem);
   const removeStashItem = useCrochetStore((state) => state.removeStashItem);
+  const activeProject = useCrochetStore(selectActiveProject);
+  const assignStashToSlot = useCrochetStore((state) => state.assignStashToSlot);
 
   const [tab, setTab] = useState<LibraryTab>('stash');
   const [addOpen, setAddOpen] = useState(false);
   const [patternId, setPatternId] = useState<string | null>(null);
   const [storyProjectId, setStoryProjectId] = useState<string | null>(null);
+  const [loadItemId, setLoadItemId] = useState<string | null>(null);
+  const loadItem = loadItemId ? yarnStash.find((item) => item.id === loadItemId) ?? null : null;
   const running = projects.some((project) => project.timerStartedAt != null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -133,7 +140,12 @@ export default function MeScreen() {
                 <YarnCard
                   key={item.id}
                   item={item}
+                  canLoad={activeProject != null}
                   onChange={(skeinCount) => updateStashItem(item.id, { skeinCount })}
+                  onLoad={() => {
+                    tick();
+                    setLoadItemId(item.id);
+                  }}
                   onRemove={() => {
                     tick();
                     removeStashItem(item.id);
@@ -219,6 +231,54 @@ export default function MeScreen() {
 
       <AddYarnModal visible={addOpen} onClose={() => setAddOpen(false)} />
       <PatternDetailSheet patternId={patternId} onClose={() => setPatternId(null)} />
+      <BottomSheet
+        visible={loadItem != null && activeProject != null}
+        onClose={() => setLoadItemId(null)}
+        header={
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Load into AMS-A</Text>
+            <Text numberOfLines={1} style={styles.sheetSubtitle}>
+              {loadItem ? `${loadItem.brand} ${loadItem.colorName}` : ''} → {activeProject?.name ?? ''}
+            </Text>
+          </View>
+        }
+      >
+        <View style={styles.sheetBody}>
+          {activeProject?.slots.map((slot) => {
+            const empty = isSlotEmpty(slot);
+            const current = loadItem != null && slot.stashItemId === loadItem.id;
+            return (
+              <Pressable
+                key={slot.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: current }}
+                accessibilityLabel={`Load into ${slot.id}${empty ? ', empty' : `, replaces ${slot.colorName}`}`}
+                testID={`load-slot-${slot.id}`}
+                onPress={() => {
+                  if (!loadItem) return;
+                  tick('impact');
+                  assignStashToSlot(slot.id, loadItem.id);
+                  setLoadItemId(null);
+                }}
+                style={({ pressed }) => [styles.slotRow, current && styles.slotRowSelected, pressed && styles.pressed, webCursor]}
+              >
+                <View style={[styles.slotSwatch, { backgroundColor: slot.hexColor }]}>
+                  <Text style={[styles.slotSwatchLabel, { color: inkOn(slot.hexColor) }]}>{slot.id}</Text>
+                </View>
+                <View style={styles.patternCopy}>
+                  <Text numberOfLines={1} style={styles.patternTitle}>
+                    {empty ? 'Empty slot' : slot.colorName}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.patternMeta}>
+                    {empty ? 'Ready to load' : `${slot.brand} · ${slot.remainingPercent}% remaining`}
+                  </Text>
+                </View>
+                <Text style={current ? styles.watchLabel : styles.slotAction}>{current ? 'Loaded' : empty ? 'Load' : 'Replace'}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </BottomSheet>
       <PhotoProgressModal
         visible={storyProjectId != null}
         projectId={storyProjectId}
@@ -264,11 +324,15 @@ function Segment({
 
 function YarnCard({
   item,
+  canLoad,
   onChange,
+  onLoad,
   onRemove,
 }: {
   item: YarnStashItem;
+  canLoad: boolean;
   onChange: (skeinCount: number) => void;
+  onLoad: () => void;
   onRemove: () => void;
 }) {
   const meta = yarnWeightMeta(item.yarnWeight);
@@ -326,14 +390,28 @@ function YarnCard({
             <Text style={styles.stepText}>+</Text>
           </Pressable>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Remove ${item.colorName} from stash`}
-          onPress={onRemove}
-          style={({ pressed }) => [pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.remove}>Remove</Text>
-        </Pressable>
+        <View style={styles.cardActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={canLoad ? `Load ${item.colorName} into the active AMS` : 'Start a project to load yarn into the AMS'}
+            accessibilityState={{ disabled: !canLoad }}
+            disabled={!canLoad}
+            testID={`load-ams-${item.id}`}
+            onPress={onLoad}
+            style={({ pressed }) => [styles.loadPill, !canLoad && styles.stepDisabled, pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.loadPillText}>Load into AMS</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${item.colorName} from stash`}
+            onPress={onRemove}
+            hitSlop={Layout.hitSlop}
+            style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.remove}>Remove</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -542,7 +620,78 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.danger,
     fontWeight: FontWeight.semibold,
-    marginTop: Spacing.xs,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  loadPill: {
+    minHeight: 32,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.accentPrimary,
+    backgroundColor: Colors.accentMuted,
+  },
+  loadPillText: {
+    ...Typography.caption,
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.semibold,
+  },
+  sheetHeader: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.xxs,
+  },
+  sheetTitle: {
+    ...Typography.headline,
+    color: Colors.textPrimary,
+  },
+  sheetSubtitle: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  sheetBody: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  slotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.transparent,
+    backgroundColor: Colors.elevatedControl,
+  },
+  slotRowSelected: {
+    backgroundColor: Colors.accentMuted,
+    borderColor: Colors.accentPrimary,
+  },
+  slotSwatch: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  slotSwatchLabel: {
+    ...Typography.caption,
+    fontWeight: FontWeight.bold,
+  },
+  slotAction: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.semibold,
   },
   patternRow: {
     flexDirection: 'row',

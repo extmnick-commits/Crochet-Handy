@@ -15,6 +15,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +30,7 @@ import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } f
 import { useProjectTimer } from '@/hooks/useProjectTimer';
 import {
   isSlotEmpty,
+  MAX_COUNT,
   selectActiveProject,
   selectCanUndo,
   useCrochetStore,
@@ -66,6 +68,17 @@ export default function ActiveProjectScreen() {
   const undoLastTap = useCrochetStore((state) => state.undoLastTap);
   const setActiveProject = useCrochetStore((state) => state.setActiveProject);
   const setHookAndYarn = useCrochetStore((state) => state.setHookAndYarn);
+  const yarnStash = useCrochetStore((state) => state.yarnStash);
+  const assignStashToSlot = useCrochetStore((state) => state.assignStashToSlot);
+  const updateSlot = useCrochetStore((state) => state.updateSlot);
+  const clearSlot = useCrochetStore((state) => state.clearSlot);
+  const createProject = useCrochetStore((state) => state.createProject);
+  const renameProject = useCrochetStore((state) => state.renameProject);
+  const finishProject = useCrochetStore((state) => state.finishProject);
+  const reopenProject = useCrochetStore((state) => state.reopenProject);
+  const deleteProject = useCrochetStore((state) => state.deleteProject);
+  const setTotalRows = useCrochetStore((state) => state.setTotalRows);
+  const setStitchesPerRow = useCrochetStore((state) => state.setStitchesPerRow);
 
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [selectedSlot, setSelectedSlot] = useState<AmsSlotId>('A1');
@@ -76,6 +89,9 @@ export default function ActiveProjectScreen() {
   const [draftUri, setDraftUri] = useState<string | null>(null);
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [stashOpen, setStashOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
 
   const live = project?.status === 'in-progress';
   const statusLabel = project == null ? 'Idle' : live ? 'Active' : 'Finished';
@@ -99,6 +115,23 @@ export default function ActiveProjectScreen() {
     setDraftUri(result.uri);
     setPhotoView('preview');
     setPhotoOpen(true);
+  };
+
+  const newNameClean = newName.replace(/\s+/g, ' ').trim();
+
+  const closeSwitcher = () => {
+    setSwitcherOpen(false);
+    setCreating(false);
+    setNewName('');
+  };
+
+  const onCreateProject = () => {
+    if (!newNameClean) return;
+    const id = createProject({ name: newNameClean });
+    if (!id) return;
+    tick('impact');
+    setFullscreen(false);
+    closeSwitcher();
   };
 
   return (
@@ -155,6 +188,7 @@ export default function ActiveProjectScreen() {
             />
 
             <ProgressCard
+              key={project.id}
               project={project}
               pattern={pattern}
               canUndo={canUndo}
@@ -172,6 +206,14 @@ export default function ActiveProjectScreen() {
                 if (canUndo) undoLastTap();
                 else decrementStitch();
               }}
+              onFinish={() => {
+                tick('impact');
+                finishProject();
+              }}
+              onReopen={() => {
+                tick('impact');
+                reopenProject();
+              }}
             />
 
             <View style={styles.section}>
@@ -181,7 +223,7 @@ export default function ActiveProjectScreen() {
               <View style={styles.bento}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Hook ${formatHookMillimeters(project.hookSize)}, yarn ${yarnWeightMeta(project.yarnWeight).label}. Tap to adjust.`}
+                  accessibilityLabel={`Hook ${formatHookMillimeters(project.hookSize)}, yarn ${yarnWeightMeta(project.yarnWeight).label}. Tap for project setup.`}
                   testID="hook-yarn-card"
                   onPress={() => {
                     tick();
@@ -244,7 +286,23 @@ export default function ActiveProjectScreen() {
                     );
                   })}
                 </View>
-                {slot ? <SlotDetail slot={slot} /> : null}
+                {slot ? (
+                  <SlotDetail
+                    slot={slot}
+                    onLoad={() => {
+                      tick();
+                      setStashOpen(true);
+                    }}
+                    onStep={(delta) => {
+                      tick('impact');
+                      updateSlot(slot.id, { remainingPercent: clampPercent(slot.remainingPercent + delta) });
+                    }}
+                    onUnload={() => {
+                      tick('impact');
+                      clearSlot(slot.id);
+                    }}
+                  />
+                ) : null}
               </View>
             </View>
           </>
@@ -259,38 +317,140 @@ export default function ActiveProjectScreen() {
 
       <BottomSheet
         visible={switcherOpen}
-        onClose={() => setSwitcherOpen(false)}
+        onClose={closeSwitcher}
         header={<Text style={styles.sheetTitle}>Projects</Text>}
       >
         <View style={styles.sheetBody}>
-          {projects.length === 0 ? (
-            <Text style={styles.sheetEmpty}>No projects yet. Start one from Patterns.</Text>
+          {creating ? (
+            <View style={styles.newProjectForm}>
+              <Text style={styles.cardKicker}>New Blank Project</Text>
+              <TextInput
+                autoFocus
+                value={newName}
+                onChangeText={setNewName}
+                onSubmitEditing={onCreateProject}
+                placeholder="Project name"
+                placeholderTextColor={Colors.textTertiary}
+                returnKeyType="done"
+                maxLength={80}
+                accessibilityLabel="New project name"
+                testID="new-project-name"
+                style={styles.input}
+              />
+              <View style={styles.newProjectActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  testID="new-project-cancel"
+                  onPress={() => {
+                    tick();
+                    setCreating(false);
+                    setNewName('');
+                  }}
+                  style={({ pressed }) => [styles.slotPill, pressed && styles.pressed, webCursor]}
+                >
+                  <Text style={styles.slotPillText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !newNameClean }}
+                  disabled={!newNameClean}
+                  testID="new-project-create"
+                  onPress={onCreateProject}
+                  style={({ pressed }) => [styles.slotPill, styles.slotPillPrimary, !newNameClean && styles.pillDisabled, pressed && styles.pressed, webCursor]}
+                >
+                  <Text style={[styles.slotPillText, styles.slotPillTextPrimary]}>Create</Text>
+                </Pressable>
+              </View>
+            </View>
           ) : (
-            projects.map((item) => {
-              const selected = item.id === project?.id;
+            <Pressable
+              accessibilityRole="button"
+              testID="new-project"
+              onPress={() => {
+                tick();
+                setCreating(true);
+              }}
+              style={({ pressed }) => [styles.newProjectButton, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.newProjectButtonText}>+ New Blank Project</Text>
+            </Pressable>
+          )}
+          {projects.length === 0 ? (
+            <Text style={styles.sheetEmpty}>No projects yet. Create a blank one above or start one from Patterns.</Text>
+          ) : (
+            projects.map((item) => (
+              <ProjectOption
+                key={item.id}
+                project={item}
+                selected={item.id === project?.id}
+                onSelect={() => {
+                  tick();
+                  setFullscreen(false);
+                  setActiveProject(item.id);
+                  closeSwitcher();
+                }}
+                onDelete={() => {
+                  tick('impact');
+                  deleteProject(item.id);
+                }}
+              />
+            ))
+          )}
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={stashOpen && project != null && slot != null}
+        onClose={() => setStashOpen(false)}
+        header={<Text style={styles.sheetTitle}>Load {slot?.id ?? selectedSlot} from Stash</Text>}
+      >
+        <View style={styles.sheetBody}>
+          {yarnStash.length === 0 ? (
+            <Text style={styles.sheetEmpty}>Your stash is empty. Add a skein on the Me tab first.</Text>
+          ) : (
+            yarnStash.map((item) => {
+              const meta = yarnWeightMeta(item.yarnWeight);
+              const loadedHere = slot?.stashItemId === item.id;
+              const loadedElsewhere = project?.slots.find((other) => other.id !== slot?.id && other.stashItemId === item.id)?.id;
               return (
                 <Pressable
                   key={item.id}
                   accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  testID={`project-option-${item.id}`}
+                  accessibilityState={{ selected: loadedHere }}
+                  accessibilityLabel={`Load ${item.brand} ${item.colorName} into ${slot?.id ?? selectedSlot}`}
+                  testID={`stash-option-${item.id}`}
                   onPress={() => {
-                    tick();
-                    setFullscreen(false);
-                    setActiveProject(item.id);
-                    setSwitcherOpen(false);
+                    if (!slot) return;
+                    tick('impact');
+                    assignStashToSlot(slot.id, item.id);
+                    setStashOpen(false);
                   }}
-                  style={({ pressed }) => [styles.projectRow, selected && styles.projectRowSelected, pressed && styles.pressed, webCursor]}
+                  style={({ pressed }) => [styles.stashRow, loadedHere && styles.stashRowSelected, pressed && styles.pressed, webCursor]}
                 >
-                  <View style={styles.projectCopy}>
+                  <View style={[styles.stashSwatch, { backgroundColor: item.hexColor }]} />
+                  <View style={styles.stashCopy}>
+                    <Text numberOfLines={1} style={styles.yarnBrand}>
+                      {item.brand}
+                    </Text>
                     <Text numberOfLines={1} style={styles.projectName}>
-                      {item.name}
+                      {item.colorName}
                     </Text>
-                    <Text style={styles.projectMeta}>
-                      {rowPercent(item)}% · Row {item.currentRow}/{item.totalRows}
-                    </Text>
+                    <View style={styles.stashMetaRow}>
+                      <View style={styles.weightBadge}>
+                        <Text style={styles.weightBadgeText}>
+                          {meta.label} {meta.number}
+                        </Text>
+                      </View>
+                      <Text style={styles.projectMeta}>
+                        {item.skeinCount} {item.skeinCount === 1 ? 'skein' : 'skeins'}
+                      </Text>
+                    </View>
                   </View>
-                  {selected ? <View style={[styles.statusDot, styles.statusDotLive]} /> : null}
+                  {loadedHere ? (
+                    <Text style={styles.stashTagLive}>Loaded</Text>
+                  ) : loadedElsewhere ? (
+                    <Text style={styles.stashTag}>In {loadedElsewhere}</Text>
+                  ) : null}
                 </Pressable>
               );
             })
@@ -301,10 +461,35 @@ export default function ActiveProjectScreen() {
       <BottomSheet
         visible={toolingOpen && project != null}
         onClose={() => setToolingOpen(false)}
-        header={<Text style={styles.sheetTitle}>Hook & Yarn</Text>}
+        header={<Text style={styles.sheetTitle}>Project Setup</Text>}
       >
         {project ? (
           <View style={styles.sheetBody}>
+            <Text style={styles.sheetSection}>Project name</Text>
+            <ProjectNameInput
+              key={`${project.id}:${project.name}`}
+              name={project.name}
+              onCommit={(name) => {
+                tick();
+                renameProject(name);
+              }}
+            />
+            <NumberStepper
+              label="Total rows"
+              testID="setup-total-rows"
+              value={project.totalRows}
+              min={Math.max(1, project.currentRow)}
+              hint={`You're on row ${project.currentRow}, so the goal can't drop below it.`}
+              onChange={setTotalRows}
+            />
+            <NumberStepper
+              label="Stitches per row"
+              testID="setup-stitches-per-row"
+              value={project.stitchesPerRow}
+              min={1}
+              hint="Changing this clears undo history for the project."
+              onChange={setStitchesPerRow}
+            />
             <Text style={styles.sheetSection}>Hook size</Text>
             <View style={styles.chips}>
               {HOOK_SIZE_OPTIONS.map((option) => {
@@ -458,6 +643,8 @@ function ProgressCard({
   onStitch,
   onRow,
   onUndo,
+  onFinish,
+  onReopen,
 }: {
   project: CrochetProject;
   pattern: CrochetPattern | null;
@@ -466,14 +653,32 @@ function ProgressCard({
   onStitch: () => void;
   onRow: () => void;
   onUndo: () => void;
+  onFinish: () => void;
+  onReopen: () => void;
 }) {
   const percent = rowPercent(project);
   const live = project.status === 'in-progress';
+  const finished = project.status === 'finished';
+  const atGoal = project.currentRow >= project.totalRows;
+  // A finished make is frozen until it's reopened.
   const stitchBlocked =
-    project.currentStitch >= project.stitchesPerRow && (!autoAdvance || project.currentRow >= project.totalRows);
-  const rowBlocked = project.currentRow >= project.totalRows;
-  const undoBlocked = !canUndo && project.currentStitch <= 0 && project.currentRow <= 1;
+    finished ||
+    (project.currentStitch >= project.stitchesPerRow && (!autoAdvance || project.currentRow >= project.totalRows));
+  const rowBlocked = finished || atGoal;
+  const undoBlocked = finished || (!canUndo && project.currentStitch <= 0 && project.currentRow <= 1);
   const poster = pattern ? youtubeThumbnailUrl(pattern.videoId, 'hq') : null;
+  const finishEarly = useArmed();
+
+  const onFinishPress = () => {
+    // Before the last row, the first tap only arms so a stray thumb can't end the make.
+    if (!atGoal && !finishEarly.armed) {
+      tick('impact');
+      finishEarly.arm();
+      return;
+    }
+    finishEarly.disarm();
+    onFinish();
+  };
 
   return (
     <View style={styles.progressCard}>
@@ -541,8 +746,268 @@ function ProgressCard({
           <Text style={styles.pillText}>Undo (-1)</Text>
         </Pressable>
       </View>
+
+      {finished ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Reopen make"
+          testID="project-reopen"
+          onPress={onReopen}
+          style={({ pressed }) => [styles.cta, styles.ctaSecondary, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.ctaText}>Reopen Make</Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={finishEarly.armed ? 'Confirm finish make early' : 'Finish make'}
+          testID="project-finish"
+          onPress={onFinishPress}
+          style={({ pressed }) => [
+            styles.cta,
+            atGoal ? styles.ctaPrimary : styles.ctaSecondary,
+            finishEarly.armed && styles.ctaArmed,
+            pressed && styles.pressed,
+            webCursor,
+          ]}
+        >
+          <Text style={[styles.ctaText, atGoal && styles.ctaTextPrimary, finishEarly.armed && styles.ctaTextArmed]}>
+            {finishEarly.armed ? `Finish at row ${project.currentRow}? Tap again` : 'Finish Make ✓'}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
+}
+
+function ProjectOption({
+  project,
+  selected,
+  onSelect,
+  onDelete,
+}: {
+  project: CrochetProject;
+  selected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const finished = project.status === 'finished';
+  // The make on the hook is protected unless it's already finished.
+  const deletable = !selected || finished;
+  const confirm = useArmed();
+
+  return (
+    <View style={[styles.projectRow, selected && styles.projectRowSelected]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        testID={`project-option-${project.id}`}
+        onPress={onSelect}
+        style={({ pressed }) => [styles.projectSelect, pressed && styles.pressed, webCursor]}
+      >
+        <View style={styles.projectCopy}>
+          <Text numberOfLines={1} style={styles.projectName}>
+            {project.name}
+          </Text>
+          <Text style={styles.projectMeta}>
+            {finished ? 'Finished · ' : ''}
+            {rowPercent(project)}% · Row {project.currentRow}/{project.totalRows}
+          </Text>
+        </View>
+        {selected ? <View style={[styles.statusDot, !finished && styles.statusDotLive]} /> : null}
+      </Pressable>
+      {deletable ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={confirm.armed ? `Confirm delete ${project.name}` : `Delete ${project.name}`}
+          accessibilityHint="Also removes its progress photos."
+          testID={`project-delete-${project.id}`}
+          hitSlop={Layout.hitSlop}
+          onPress={() => {
+            if (!confirm.armed) {
+              tick('impact');
+              confirm.arm();
+              return;
+            }
+            confirm.disarm();
+            onDelete();
+          }}
+          style={({ pressed }) => [styles.deleteButton, confirm.armed && styles.deleteButtonArmed, pressed && styles.pressed, webCursor]}
+        >
+          {confirm.armed ? <Text style={styles.deleteText}>Delete?</Text> : <TrashIcon />}
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** Commits on blur or return so every keystroke isn't a store write. Remount via `key` to resync. */
+function ProjectNameInput({ name, onCommit }: { name: string; onCommit: (name: string) => void }) {
+  const [draft, setDraft] = useState(name);
+
+  const commit = () => {
+    const clean = draft.replace(/\s+/g, ' ').trim();
+    if (!clean) {
+      setDraft(name);
+      return;
+    }
+    setDraft(clean);
+    if (clean !== name) onCommit(clean);
+  };
+
+  return (
+    <TextInput
+      value={draft}
+      onChangeText={setDraft}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      placeholder="Project name"
+      placeholderTextColor={Colors.textTertiary}
+      returnKeyType="done"
+      maxLength={80}
+      accessibilityLabel="Project name"
+      testID="setup-project-name"
+      style={styles.input}
+    />
+  );
+}
+
+function NumberStepper({
+  label,
+  value,
+  min,
+  max = MAX_COUNT,
+  hint,
+  testID,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max?: number;
+  hint?: string;
+  testID: string;
+  onChange: (value: number) => void;
+}) {
+  const atMin = value <= min;
+  const atMax = value >= max;
+  const step = (delta: number) => {
+    const next = Math.min(max, Math.max(min, value + delta));
+    if (next === value) return;
+    tick();
+    onChange(next);
+  };
+
+  return (
+    <View style={styles.stepperField}>
+      <Text style={styles.sheetSection}>{label}</Text>
+      <View style={styles.stepper}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Decrease ${label.toLowerCase()}`}
+          accessibilityHint="Long press to step by 10."
+          accessibilityState={{ disabled: atMin }}
+          disabled={atMin}
+          testID={`${testID}-down`}
+          onPress={() => step(-1)}
+          onLongPress={() => step(-10)}
+          delayLongPress={350}
+          style={({ pressed }) => [styles.stepperButton, atMin && styles.pillDisabled, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.stepperGlyph}>−</Text>
+        </Pressable>
+        <StepperInput key={value} label={label} value={value} min={min} max={max} testID={testID} onCommit={onChange} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Increase ${label.toLowerCase()}`}
+          accessibilityHint="Long press to step by 10."
+          accessibilityState={{ disabled: atMax }}
+          disabled={atMax}
+          testID={`${testID}-up`}
+          onPress={() => step(1)}
+          onLongPress={() => step(10)}
+          delayLongPress={350}
+          style={({ pressed }) => [styles.stepperButton, atMax && styles.pillDisabled, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.stepperGlyph}>+</Text>
+        </Pressable>
+      </View>
+      {hint ? <Text style={styles.stepperHint}>{hint}</Text> : null}
+    </View>
+  );
+}
+
+function StepperInput({
+  label,
+  value,
+  min,
+  max,
+  testID,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  testID: string;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  const commit = () => {
+    const parsed = Number.parseInt(draft, 10);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    const next = Math.min(max, Math.max(min, parsed));
+    setDraft(String(next));
+    if (next !== value) onCommit(next);
+  };
+
+  return (
+    <TextInput
+      value={draft}
+      onChangeText={(text) => setDraft(text.replace(/[^0-9]/g, ''))}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      keyboardType="number-pad"
+      inputMode="numeric"
+      returnKeyType="done"
+      maxLength={String(MAX_COUNT).length}
+      selectTextOnFocus
+      accessibilityLabel={label}
+      testID={testID}
+      style={styles.stepperInput}
+    />
+  );
+}
+
+/** Two-tap confirm: the first tap arms for a moment, the second one acts. */
+function useArmed(timeoutMs = 2500) {
+  const [armed, setArmed] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  return {
+    armed,
+    arm: () => {
+      if (timer.current) clearTimeout(timer.current);
+      setArmed(true);
+      timer.current = setTimeout(() => setArmed(false), timeoutMs);
+    },
+    disarm: () => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      setArmed(false);
+    },
+  };
 }
 
 function HookYarnBody({ project }: { project: CrochetProject }) {
@@ -653,17 +1118,42 @@ function ProjectTimerCard() {
   );
 }
 
-function SlotDetail({ slot }: { slot: AmsYarnSlot }) {
+function SlotDetail({
+  slot,
+  onLoad,
+  onStep,
+  onUnload,
+}: {
+  slot: AmsYarnSlot;
+  onLoad: () => void;
+  onStep: (delta: number) => void;
+  onUnload: () => void;
+}) {
+  const loadPill = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Load ${slot.id} from stash`}
+      testID="slot-load"
+      onPress={onLoad}
+      style={({ pressed }) => [styles.slotPill, styles.slotPillPrimary, pressed && styles.pressed, webCursor]}
+    >
+      <Text style={[styles.slotPillText, styles.slotPillTextPrimary]}>Load from Stash</Text>
+    </Pressable>
+  );
+
   if (isSlotEmpty(slot)) {
     return (
       <View testID="yarn-slot-detail" style={styles.slotDetail}>
         <Text style={styles.yarnBrand}>{slot.id}</Text>
         <Text style={styles.yarnName}>Empty slot</Text>
+        <View style={styles.slotActions}>{loadPill}</View>
       </View>
     );
   }
 
   const size = slot.yarnWeight ? `${yarnWeightMeta(slot.yarnWeight).label} · ${yarnWeightMeta(slot.yarnWeight).number}` : 'Size —';
+  const atMin = slot.remainingPercent <= 0;
+  const atMax = slot.remainingPercent >= 100;
 
   return (
     <View testID="yarn-slot-detail" style={styles.slotDetail}>
@@ -674,8 +1164,46 @@ function SlotDetail({ slot }: { slot: AmsYarnSlot }) {
       <View style={styles.miniTrack}>
         <View style={[styles.miniFill, { width: `${slot.remainingPercent}%`, backgroundColor: slot.hexColor }]} />
       </View>
+      <View style={styles.slotActions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Decrease ${slot.id} remaining by 10 percent`}
+          accessibilityState={{ disabled: atMin }}
+          disabled={atMin}
+          testID="slot-step-down"
+          onPress={() => onStep(-10)}
+          style={({ pressed }) => [styles.slotPill, atMin && styles.pillDisabled, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.slotPillText}>-10%</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Increase ${slot.id} remaining by 10 percent`}
+          accessibilityState={{ disabled: atMax }}
+          disabled={atMax}
+          testID="slot-step-up"
+          onPress={() => onStep(10)}
+          style={({ pressed }) => [styles.slotPill, atMax && styles.pillDisabled, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.slotPillText}>+10%</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Unload ${slot.id}`}
+          testID="slot-unload"
+          onPress={onUnload}
+          style={({ pressed }) => [styles.slotPill, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={[styles.slotPillText, styles.slotPillTextDanger]}>Unload</Text>
+        </Pressable>
+      </View>
+      <View style={styles.slotActions}>{loadPill}</View>
     </View>
   );
+}
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function PillSwitch({ on }: { on: boolean }) {
@@ -763,6 +1291,17 @@ function ResetIcon() {
     <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
       <Path d="M19 12 A7 7 0 1 1 16.5 6.5" stroke={Colors.textPrimary} strokeWidth={1.8} strokeLinecap="round" />
       <Path d="M16 3.5 V8 H20.5" stroke={Colors.textPrimary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M4 6.5 H20" stroke={Colors.textSecondary} strokeWidth={1.8} strokeLinecap="round" />
+      <Path d="M9 6.5 V4.5 H15 V6.5" stroke={Colors.textSecondary} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M6.5 6.5 L7.5 20 H16.5 L17.5 6.5" stroke={Colors.textSecondary} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M10 10.5 V16 M14 10.5 V16" stroke={Colors.textSecondary} strokeWidth={1.8} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -989,6 +1528,48 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     textAlign: 'center',
   },
+  cta: {
+    minHeight: 48,
+    marginTop: Spacing.xs,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.transparent,
+  },
+  ctaPrimary: {
+    backgroundColor: Colors.accentPrimary,
+    ...Platform.select({
+      web: { boxShadow: '0 0 18px rgba(0, 230, 118, 0.35)' },
+      default: {
+        shadowColor: Colors.accentPrimary,
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 0 },
+        elevation: 4,
+      },
+    }),
+  },
+  ctaSecondary: {
+    backgroundColor: Colors.transparent,
+    borderColor: Colors.border,
+  },
+  ctaArmed: {
+    backgroundColor: Colors.accentMuted,
+    borderColor: Colors.accentPrimary,
+  },
+  ctaText: {
+    ...Typography.label,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  ctaTextPrimary: {
+    color: Colors.onAccent,
+  },
+  ctaTextArmed: {
+    color: Colors.accentPrimary,
+  },
   section: {
     gap: Spacing.md,
   },
@@ -1187,6 +1768,90 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: Radius.pill,
   },
+  slotActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  slotPill: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.elevatedControl,
+  },
+  slotPillPrimary: {
+    backgroundColor: Colors.accentMuted,
+    borderWidth: 1,
+    borderColor: Colors.accentPrimary,
+  },
+  slotPillText: {
+    ...Typography.callout,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  slotPillTextPrimary: {
+    color: Colors.accentPrimary,
+  },
+  slotPillTextDanger: {
+    color: Colors.danger,
+  },
+  stashRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.transparent,
+    backgroundColor: Colors.elevatedControl,
+  },
+  stashRowSelected: {
+    backgroundColor: Colors.accentMuted,
+    borderColor: Colors.accentPrimary,
+  },
+  stashSwatch: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  stashCopy: {
+    flex: 1,
+    gap: Spacing.xxs,
+  },
+  stashMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.xxs,
+  },
+  weightBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xxs,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.cardSurface,
+  },
+  weightBadgeText: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.semibold,
+  },
+  stashTag: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.semibold,
+  },
+  stashTagLive: {
+    ...Typography.caption,
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.semibold,
+  },
   sheetTitle: {
     ...Typography.headline,
     color: Colors.textPrimary,
@@ -1235,14 +1900,119 @@ const styles = StyleSheet.create({
   projectRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: Spacing.sm,
     minHeight: 56,
-    paddingHorizontal: Spacing.md,
+    paddingRight: Spacing.sm,
     borderRadius: Radius.md,
     backgroundColor: Colors.elevatedControl,
   },
   projectRowSelected: {
     backgroundColor: Colors.accentMuted,
+  },
+  projectSelect: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    alignSelf: 'stretch',
+    paddingLeft: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  deleteButton: {
+    minWidth: 40,
+    height: 40,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.transparent,
+  },
+  deleteButtonArmed: {
+    backgroundColor: 'rgba(255, 90, 78, 0.14)',
+    borderColor: Colors.danger,
+  },
+  deleteText: {
+    ...Typography.caption,
+    fontWeight: FontWeight.semibold,
+    color: Colors.danger,
+  },
+  newProjectButton: {
+    minHeight: 52,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: Colors.accentPrimary,
+    backgroundColor: Colors.accentMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xs,
+  },
+  newProjectButtonText: {
+    ...Typography.label,
+    color: Colors.accentPrimary,
+  },
+  newProjectForm: {
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.accentPrimary,
+    backgroundColor: Colors.backgroundPrimary,
+    marginBottom: Spacing.xs,
+  },
+  newProjectActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  input: {
+    ...Typography.body,
+    color: Colors.textPrimary,
+    backgroundColor: Colors.elevatedControl,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Platform.OS === 'ios' ? Spacing.md : Spacing.sm,
+    minHeight: 48,
+  },
+  stepperField: {
+    gap: Spacing.sm,
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  stepperButton: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.elevatedControl,
+  },
+  stepperGlyph: {
+    fontFamily: FontFamily.medium,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+  },
+  stepperInput: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.elevatedControl,
+    paddingHorizontal: Spacing.md,
+    fontFamily: FontFamily.mono,
+    fontSize: 20,
+    fontWeight: FontWeight.semibold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  stepperHint: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
   },
   projectCopy: {
     flex: 1,

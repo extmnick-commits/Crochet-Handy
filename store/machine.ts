@@ -76,6 +76,8 @@ export type ProgressPhoto = {
   elapsedSeconds: number;
   hookSize: string;
   createdAt: number;
+  /** Optional note frozen at capture time (e.g. yarn change). */
+  caption?: string;
 };
 
 export type AmsYarnSlot = {
@@ -189,6 +191,7 @@ export type NewProgressPhotoInput = {
   elapsedSeconds: number;
   hookSize: string;
   createdAt?: number;
+  caption?: string;
 };
 
 export type YarnStashPatch = Partial<Omit<YarnStashItem, 'id'>>;
@@ -815,6 +818,7 @@ export function buildProgressPhoto(id: string, input: NewProgressPhotoInput, now
   if (!projectName) return null;
   const totalRows = clampInt(input.totalRows, 1, MAX_COUNT);
   const row = clampInt(input.row, 1, totalRows);
+  const caption = sanitizeOptionalCaption(input.caption);
   return {
     id,
     projectId: input.projectId,
@@ -826,6 +830,7 @@ export function buildProgressPhoto(id: string, input: NewProgressPhotoInput, now
     elapsedSeconds: bankSeconds(input.elapsedSeconds),
     hookSize: sanitizeHook(input.hookSize),
     createdAt: finiteTimestamp(input.createdAt, now),
+    ...(caption ? { caption } : {}),
   };
 }
 
@@ -885,6 +890,7 @@ function repairProgressPhoto(input: unknown): ProgressPhoto | null {
   const projectName = typeof input.projectName === 'string' ? sanitizeText(input.projectName, 80) : null;
   if (!projectName) return null;
   const totalRows = clampInt(numberOr(input.totalRows, 1), 1, MAX_COUNT);
+  const caption = typeof input.caption === 'string' ? sanitizeOptionalCaption(input.caption) : undefined;
   return {
     id: input.id,
     projectId: input.projectId,
@@ -896,6 +902,7 @@ function repairProgressPhoto(input: unknown): ProgressPhoto | null {
     elapsedSeconds: bankSeconds(numberOr(input.elapsedSeconds, 0)),
     hookSize: typeof input.hookSize === 'string' ? sanitizeHook(input.hookSize) : '',
     createdAt: finiteTimestamp(input.createdAt, 1),
+    ...(caption ? { caption } : {}),
   };
 }
 
@@ -1227,6 +1234,11 @@ function sanitizeName(value: string): string | null {
 function sanitizeText(value: string, max: number): string | null {
   const text = value.replace(/\s+/g, ' ').trim().slice(0, max);
   return text.length > 0 ? text : null;
+}
+
+function sanitizeOptionalCaption(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return sanitizeText(value, 120) ?? undefined;
 }
 
 function sanitizeHook(value: string): string {

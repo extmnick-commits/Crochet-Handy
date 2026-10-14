@@ -316,7 +316,8 @@ export async function extractBatchPatterns(
           'Return strict JSON only with a top-level "patterns" array.',
           'Each item must include videoIndex (0-based, matching Video N in the user message),',
           'difficulty (Beginner|Easy|Intermediate|Advanced), estimatedTimeMinutes, description,',
-          'materials [{ name, weight, yardage }], tools [{ type, size }], keyStitches [string].',
+          'materials [{ name, weight, yardage }], tools [{ type, size }], keyStitches [string],',
+          'tags [string] (include relevant category tags such as amigurumi, wearables, halloween, blanket, bag alongside key stitches).',
           `Include exactly ${videos.length} entries with videoIndex 0 through ${videos.length - 1}.`,
           'Infer reasonable values when a video omits them.',
         ].join(' '),
@@ -383,6 +384,51 @@ export function mergePattern(
   const yarnFromMaterials = materials[0]?.weight;
   const estimatedMinutes = clampInt(ai.estimatedTimeMinutes ?? 120, 15, 24 * 60);
 
+  const categoryKeywords: Record<string, string[]> = {
+    amigurumi: ['amigurumi', 'plush', 'plushie', 'doll', 'stuffie', 'toy'],
+    wearables: [
+      'wearable',
+      'wearables',
+      'cardigan',
+      'sweater',
+      'jumper',
+      'pullover',
+      'hat',
+      'beanie',
+      'scarf',
+      'shawl',
+      'duster',
+      'sock',
+      'glove',
+      'mitten',
+      'cowl',
+      'vest',
+      'hoodie',
+      'dress',
+    ],
+    halloween: ['halloween', 'pumpkin', 'spooky', 'ghost', 'bat', 'witch', 'skull', 'spider', 'autumn', 'october'],
+    blanket: ['blanket', 'afghan', 'throw'],
+    bag: ['bag', 'tote', 'purse', 'pouch'],
+  };
+
+  const textToScan = `${title} ${video.snippet?.description ?? ''}`.toLowerCase();
+  const inferredCategories = Object.entries(categoryKeywords)
+    .filter(([, keywords]) => keywords.some((kw) => textToScan.includes(kw)))
+    .map(([category]) => category);
+
+  const rawTags = [
+    ...(ai.tags ?? []),
+    ...inferredCategories,
+    ...keyStitches,
+  ];
+  const tags: string[] = [];
+  for (const tag of rawTags) {
+    const normalized = String(tag).trim().toLowerCase();
+    if (normalized && !tags.includes(normalized)) {
+      tags.push(normalized);
+    }
+  }
+
   return {
     id: slugifyId(title, videoId),
     videoId,
@@ -400,10 +446,7 @@ export function mergePattern(
     hookSize: hookFromTools,
     totalRows: clampInt(ai.totalRows ?? Math.round(estimatedMinutes / 12), 1, 9999),
     stitchesPerRow: clampInt(ai.stitchesPerRow ?? 36, 1, 9999),
-    tags: (ai.tags ?? keyStitches.slice(0, 4))
-      .map((tag) => tag.trim().toLowerCase())
-      .filter((tag) => tag.length > 0)
-      .slice(0, 8),
+    tags: tags.slice(0, 8),
   };
 }
 
