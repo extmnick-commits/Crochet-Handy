@@ -4,6 +4,7 @@
  *
  * Run: npx ts-node --project tsconfig.scripts.json scripts/update-patterns.ts
  * Or:  npm run update-patterns
+ * Local LM Studio: npm run update-patterns -- --local
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -72,14 +73,16 @@ const SEED_FILE = path.join(ROOT, 'store', 'seed.ts');
 
 /** Long-form project tutorials only; API params also block Shorts and non-embeddable videos. */
 const YOUTUBE_SEARCH_QUERY =
-  '"crochet tutorial" ("full project" | "step by step" | "pattern") -shorts -short';
+  '("crochet tutorial" | "crochet pattern") ("step by step" | "full project" | "pattern") -shorts -short';
 const YOUTUBE_SEARCH_MAX_RESULTS = 10;
 /** YouTube category 26 = Howto & Style */
 const YOUTUBE_VIDEO_CATEGORY_HOWTO = '26';
 const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
 const YOUTUBE_VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
-const GEMINI_MODEL = 'gemini-3.8-flash';
+const GEMINI_CLOUD_DEFAULT_MODEL = 'gemini-2.0-flash';
+const LM_STUDIO_BASE_URL = 'http://127.0.0.1:1234/v1';
+const LM_STUDIO_MODEL = 'local-model';
 
 const SEED_PATTERNS_START = '// <seed-patterns-start>';
 const SEED_PATTERNS_END = '// <seed-patterns-end>';
@@ -130,7 +133,11 @@ type AiBatchPatternsResponse = {
   patterns?: AiBatchPatternPayload[];
 };
 
-const GEMINI_DESCRIPTION_CHARS_PER_VIDEO = 6_000;
+const BATCH_DESCRIPTION_MAX_CHARS = 450;
+
+export function isLocalAiMode(): boolean {
+  return process.argv.includes('--local');
+}
 
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -199,18 +206,6 @@ function isShortFormTitle(title: string): boolean {
   return lower.includes('#shorts') || lower.includes('#short');
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isRateLimitError(error: unknown): boolean {
-  if (error && typeof error === 'object' && 'status' in error) {
-    return (error as { status?: number }).status === 429;
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('429');
-}
-
 function logTimestamp(message: string): void {
   console.log(`[${new Date().toISOString()}] ${message}`);
 }
@@ -219,7 +214,7 @@ function formatVideosForBatchPrompt(videos: YouTubeVideoItem[]): string {
   return videos
     .map((video, index) => {
       const title = (video.snippet?.title ?? '').trim();
-      const description = (video.snippet?.description ?? '').slice(0, GEMINI_DESCRIPTION_CHARS_PER_VIDEO);
+      const description = (video.snippet?.description ?? '').slice(0, BATCH_DESCRIPTION_MAX_CHARS);
       return `Video ${index}:\nTitle: ${title}\nDescription:\n${description}`;
     })
     .join('\n\n---\n\n');
@@ -235,7 +230,8 @@ async function fetchJson<T>(url: string, params: Record<string, string>): Promis
   return (await response.json()) as T;
 }
 
-export async function fetchTrendingCrochetVideos(apiKey: string, limit = 5): Promise<YouTubeVideoItem[]> {
+/** Fetches embeddable, syndicated, medium-length crochet tutorials (no Shorts). */
+export async function getTrendingVideos(apiKey: string, limit = 5): Promise<YouTubeVideoItem[]> {
   const search = await fetchJson<{ items?: YouTubeSearchItem[] }>(YOUTUBE_SEARCH_URL, {
     part: 'snippet',
     type: 'video',
@@ -272,64 +268,71 @@ export async function fetchTrendingCrochetVideos(apiKey: string, limit = 5): Pro
     .slice(0, limit);
 }
 
-function buildGeminiClient(apiKey: string): OpenAI {
-  return new OpenAI({
-    apiKey,
-    baseURL: GEMINI_BASE_URL,
-  });
+type AiClientConfig = {
+  client: OpenAI;
+  model: string;
+};
+
+export function buildAiClient(isLocal: boolean): AiClientConfig {
+  if (isLocal) {
+    return {
+      client: new OpenAI({
+        apiKey: 'lm-studio',
+        baseURL: LM_STUDIO_BASE_URL,
+        timeout: 45_000,
+      }),
+      model: LM_STUDIO_MODEL,
+    };
+  }
+
+  const apiKey = requireEnv('GEMINI_API_KEY');
+  const model = process.env.GEMINI_MODEL?.trim() || GEMINI_CLOUD_DEFAULT_MODEL;
+  return {
+    client: new OpenAI({
+      apiKey,
+      baseURL: GEMINI_BASE_URL,
+      timeout: 30_000,
+      maxRetries: 1,
+    }),
+    model,
+  };
 }
 
 export async function extractBatchPatterns(
   client: OpenAI,
+  model: string,
   videos: YouTubeVideoItem[],
 ): Promise<AiBatchPatternPayload[]> {
-  const request = {
-    model: GEMINI_MODEL,
-    response_format: { type: 'json_object' as const },
+  const completion = await client.chat.completions.create({
+    model,
+    response_format: { type: 'json_object' },
     messages: [
       {
-        role: 'system' as const,
+        role: 'system',
         content: [
           `Analyze these ${videos.length} crochet YouTube videos and extract project details for each.`,
-          'Return JSON only matching this shape:',
-          '{"patterns":[{"videoIndex":number,"difficulty":"Beginner"|"Easy"|"Intermediate"|"Advanced",',
-          '"estimatedTimeMinutes":number,"description":string,',
-          '"materials":[{"name":string,"weight":string,"yardage":string}],',
-          '"tools":[{"type":string,"size":string}],"keyStitches":[string],',
-          '"yarnWeight":"lace"|"fingering"|"sport"|"dk"|"worsted"|"aran"|"bulky"|"super-bulky"|"jumbo",',
-          '"hookSize":string,"totalRows":number,"stitchesPerRow":number,"tags":[string]}]}',
-          'Include exactly one patterns entry per video, with videoIndex 0 through',
-          `${videos.length - 1} matching the Video N blocks in the user message.`,
+          'Return strict JSON only with a top-level "patterns" array.',
+          'Each item must include videoIndex (0-based, matching Video N in the user message),',
+          'difficulty (Beginner|Easy|Intermediate|Advanced), estimatedTimeMinutes, description,',
+          'materials [{ name, weight, yardage }], tools [{ type, size }], keyStitches [string].',
+          `Include exactly ${videos.length} entries with videoIndex 0 through ${videos.length - 1}.`,
           'Infer reasonable values when a video omits them.',
         ].join(' '),
       },
       {
-        role: 'user' as const,
+        role: 'user',
         content: formatVideosForBatchPrompt(videos),
       },
     ],
-  };
+  });
 
-  const maxAttempts = 5;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const completion = await client.chat.completions.create(request);
-      const raw = completion.choices[0]?.message?.content;
-      if (!raw) {
-        throw new Error('Gemini returned an empty response');
-      }
-      const parsed = JSON.parse(raw) as AiBatchPatternsResponse;
-      return parsed.patterns ?? [];
-    } catch (error) {
-      if (attempt < maxAttempts - 1 && isRateLimitError(error)) {
-        await sleep(20_000 * (attempt + 1));
-        continue;
-      }
-      throw error;
-    }
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) {
+    throw new Error('AI returned an empty response');
   }
 
-  throw new Error('Gemini rate limit retries exhausted');
+  const parsed = JSON.parse(raw) as AiBatchPatternsResponse;
+  return parsed.patterns ?? [];
 }
 
 export function mapBatchPatternsToSeed(
@@ -372,7 +375,7 @@ export function mergePattern(
     .filter((item) => item.type.length > 0);
 
   const keyStitches = (ai.keyStitches ?? [])
-    .map((stitch) => stitch.trim())
+    .map((stitch) => String(stitch).trim())
     .filter((stitch) => stitch.length > 0);
 
   const yarnFromMaterials = materials[0]?.weight;
@@ -479,38 +482,52 @@ export function replaceSeedPatternsBlock(seedSource: string, block: string): str
 }
 
 export async function main(): Promise<void> {
-  const youtubeKey = requireEnv('YOUTUBE_API_KEY');
-  const geminiKey = requireEnv('GEMINI_API_KEY');
+  try {
+    const isLocal = isLocalAiMode();
+    const youtubeKey = requireEnv('YOUTUBE_API_KEY');
 
-  const videos = await fetchTrendingCrochetVideos(youtubeKey, 5);
-  if (videos.length === 0) {
-    throw new Error('No crochet tutorial videos found for the last 7 days');
-  }
+    logTimestamp('YouTube fetch starting…');
+    const videos = await getTrendingVideos(youtubeKey, 5);
+    if (videos.length === 0) {
+      throw new Error('No crochet tutorial videos found for the last 7 days');
+    }
+    logTimestamp(`YouTube fetch finished (${videos.length} videos)`);
 
-  const client = buildGeminiClient(geminiKey);
+    const { client, model } = buildAiClient(isLocal);
 
-  logTimestamp(`Gemini batch extraction starting (${videos.length} videos)…`);
-  const geminiStartedAt = Date.now();
-  const batch = await extractBatchPatterns(client, videos);
-  const geminiElapsedSeconds = ((Date.now() - geminiStartedAt) / 1000).toFixed(1);
-  logTimestamp(`Gemini batch extraction finished in ${geminiElapsedSeconds}s (${batch.length} pattern objects)`);
+    logTimestamp(`AI batch extraction starting (${videos.length} videos, model: ${model})…`);
+    const aiStartedAt = Date.now();
+    const batch = await extractBatchPatterns(client, model, videos);
+    const aiElapsedSeconds = ((Date.now() - aiStartedAt) / 1000).toFixed(1);
+    logTimestamp(
+      `AI batch extraction finished in ${aiElapsedSeconds}s (${batch.length} pattern objects)`,
+    );
 
-  const patterns = mapBatchPatternsToSeed(videos, batch);
+    const patterns = mapBatchPatternsToSeed(videos, batch);
 
-  const seedSource = fs.readFileSync(SEED_FILE, 'utf8');
-  const nextSource = replaceSeedPatternsBlock(seedSource, formatSeedPatternsExport(patterns));
-  fs.writeFileSync(SEED_FILE, nextSource, 'utf8');
+    logTimestamp('Writing store/seed.ts…');
+    const seedSource = fs.readFileSync(SEED_FILE, 'utf8');
+    const nextSource = replaceSeedPatternsBlock(seedSource, formatSeedPatternsExport(patterns));
+    fs.writeFileSync(SEED_FILE, nextSource, 'utf8');
+    logTimestamp(`Saved ${patterns.length} patterns to store/seed.ts`);
 
-  console.log(`Updated ${patterns.length} seed patterns in store/seed.ts`);
-  for (const pattern of patterns) {
-    console.log(`  • ${pattern.title} (${pattern.youtubeUrl})`);
+    for (const pattern of patterns) {
+      console.log(`  • ${pattern.title} (${pattern.youtubeUrl})`);
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(`[${new Date().toISOString()}] Fatal error: ${error.message}`);
+      if (error.stack) {
+        console.error(error.stack);
+      }
+    } else {
+      console.error(`[${new Date().toISOString()}] Fatal error:`, error);
+    }
+    process.exit(1);
   }
 }
 
 const isDirectRun = require.main === module;
 if (isDirectRun) {
-  main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  });
+  void main();
 }
