@@ -26,7 +26,13 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { AddPatternModal } from '@/components/AddPatternModal';
 import { HeartIcon, PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
-import { useCrochetStore, YARN_WEIGHTS, type CrochetPattern, type YarnWeight } from '@/store/useCrochetStore';
+import {
+  selectIsPatternLiked,
+  useCrochetStore,
+  YARN_WEIGHTS,
+  type CrochetPattern,
+  type YarnWeight,
+} from '@/store/useCrochetStore';
 import {
   creatorColor,
   creatorInitials,
@@ -272,6 +278,9 @@ function PatternCard({
   imageHeight: number;
   onPress: () => void;
 }) {
+  const liked = useCrochetStore((state) => selectIsPatternLiked(state, pattern.id));
+  const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -300,10 +309,21 @@ function PatternCard({
         <Text numberOfLines={1} style={styles.creator}>
           {pattern.creator}
         </Text>
-        <View style={styles.likes}>
-          <HeartIcon color={Colors.textSecondary} />
-          <Text style={styles.likeCount}>{formatLikeCount(pattern.id)}</Text>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={liked ? 'Unlike pattern' : 'Like pattern'}
+          accessibilityState={{ selected: liked }}
+          hitSlop={Layout.hitSlop}
+          onPress={(event) => {
+            event.stopPropagation();
+            tick();
+            toggleLikePattern(pattern.id);
+          }}
+          style={({ pressed }) => [styles.likes, pressed && styles.pressed, webCursor]}
+        >
+          <HeartIcon color={liked ? Colors.accentPrimary : Colors.textSecondary} filled={liked} />
+          <Text style={[styles.likeCount, liked && styles.likeCountOn]}>{formatLikeCount(pattern.id, liked)}</Text>
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -722,6 +742,10 @@ const styles = StyleSheet.create({
   likeCount: {
     ...Typography.caption,
     color: Colors.textSecondary,
+  },
+  likeCountOn: {
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.semibold,
   },
   empty: {
     alignItems: 'center',

@@ -1663,5 +1663,8 @@ export function createSeedData(): CrochetPersistedSlice {
     activeProjectId: bambi.id,
     yarnStash: [softFudge, champagne, coffeeBean, blushPink, mustard, sage],
     progressPhotos: [],
+    account: null,
+    likedPatternIds: [],
+    ideaFolders: [],
   };
 }

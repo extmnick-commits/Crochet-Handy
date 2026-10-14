@@ -32,6 +32,11 @@ export const MAX_PROGRESS_PHOTOS = 24;
 const MAX_PHOTO_URI = 500_000;
 const MAX_ROW_NOTE_CHARS = 240;
 const MAX_CHECKPOINT_LABEL_CHARS = 48;
+const MAX_USERNAME_CHARS = 32;
+const MAX_BIO_CHARS = 240;
+const MAX_FOLDER_NAME_CHARS = 64;
+const MAX_FOLDER_DESC_CHARS = 240;
+const MAX_IDEA_FOLDERS = 48;
 /** Caps a corrupted timestamp that landed in the seconds field (~11 years). */
 const MAX_ACCUMULATED_SECONDS = 100_000 * 60 * 60;
 
@@ -96,6 +101,25 @@ export type ProgressPhoto = {
   caption?: string;
 };
 
+export type UserAccount = {
+  uid: string;
+  email: string;
+  displayName: string;
+  username: string;
+  bio: string;
+  avatarColor: string;
+  updatedAt: number;
+};
+
+export type IdeaFolder = {
+  id: string;
+  name: string;
+  description: string;
+  patternIds: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type CrochetPattern = {
   id: string;
   title: string;
@@ -151,6 +175,9 @@ export type CrochetData = {
   activeProjectId: string | null;
   yarnStash: YarnStashItem[];
   progressPhotos: ProgressPhoto[];
+  account: UserAccount | null;
+  likedPatternIds: string[];
+  ideaFolders: IdeaFolder[];
   tapHistory: Record<string, CounterSnapshot[]>;
 };
 
@@ -160,6 +187,9 @@ export type CrochetPersistedSlice = {
   activeProjectId: string | null;
   yarnStash: YarnStashItem[];
   progressPhotos: ProgressPhoto[];
+  account: UserAccount | null;
+  likedPatternIds: string[];
+  ideaFolders: IdeaFolder[];
 };
 
 export type NewPatternInput = {
@@ -646,13 +676,180 @@ function sameBookmarks(current: VideoBookmark[], next: VideoBookmark[]): boolean
 
 export function applyRemovePattern(data: CrochetData, patternId: string, now: number): CrochetData | null {
   if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
+  const likedPatternIds = data.likedPatternIds.filter((id) => id !== patternId);
+  const ideaFolders = data.ideaFolders.map((folder) => ({
+    ...folder,
+    patternIds: folder.patternIds.filter((id) => id !== patternId),
+    updatedAt: folder.patternIds.includes(patternId) ? now : folder.updatedAt,
+  }));
+  const foldersChanged = ideaFolders.some((folder, index) => folder !== data.ideaFolders[index]);
   return {
     ...data,
     patterns: data.patterns.filter((pattern) => pattern.id !== patternId),
     projects: data.projects.map((project) =>
       project.patternId === patternId ? { ...project, patternId: null, updatedAt: now } : project,
     ),
+    likedPatternIds,
+    ideaFolders: foldersChanged ? ideaFolders : data.ideaFolders,
   };
+}
+
+export function applySetAccount(data: CrochetData, account: UserAccount | null): CrochetData | null {
+  if (account === null && data.account === null) return null;
+  if (account !== null && data.account !== null && accountsEqual(data.account, account)) return null;
+  return { ...data, account };
+}
+
+export function applyUpdateAccountProfile(
+  data: CrochetData,
+  patch: { displayName?: string; username?: string; bio?: string; avatarColor?: string },
+  now: number,
+): CrochetData | null {
+  if (!data.account) return null;
+  let next = data.account;
+  let changed = false;
+  if (patch.displayName !== undefined) {
+    const displayName = sanitizeText(patch.displayName, 80);
+    if (!displayName) return null;
+    if (displayName !== next.displayName) {
+      next = { ...next, displayName };
+      changed = true;
+    }
+  }
+  if (patch.username !== undefined) {
+    const username = sanitizeUsername(patch.username);
+    if (!username) return null;
+    if (username !== next.username) {
+      next = { ...next, username };
+      changed = true;
+    }
+  }
+  if (patch.bio !== undefined) {
+    const bio = sanitizeBio(patch.bio);
+    if (bio !== next.bio) {
+      next = { ...next, bio };
+      changed = true;
+    }
+  }
+  if (patch.avatarColor !== undefined) {
+    const avatarColor = normalizeHex(patch.avatarColor) ?? next.avatarColor;
+    if (avatarColor !== next.avatarColor) {
+      next = { ...next, avatarColor };
+      changed = true;
+    }
+  }
+  if (!changed) return null;
+  return { ...data, account: { ...next, updatedAt: now } };
+}
+
+export function applyToggleLikePattern(data: CrochetData, patternId: string): CrochetData | null {
+  if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
+  const liked = data.likedPatternIds.includes(patternId);
+  const likedPatternIds = liked
+    ? data.likedPatternIds.filter((id) => id !== patternId)
+    : [...data.likedPatternIds, patternId];
+  return { ...data, likedPatternIds };
+}
+
+export function applyCreateIdeaFolder(
+  data: CrochetData,
+  id: string,
+  input: { name: string; description?: string },
+  now: number,
+): CrochetData | null {
+  if (!isSafeId(id) || data.ideaFolders.length >= MAX_IDEA_FOLDERS) return null;
+  if (data.ideaFolders.some((folder) => folder.id === id)) return null;
+  const name = sanitizeText(input.name, MAX_FOLDER_NAME_CHARS);
+  if (!name) return null;
+  const description = sanitizeFolderDescription(input.description ?? '');
+  const folder: IdeaFolder = {
+    id,
+    name,
+    description,
+    patternIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  return { ...data, ideaFolders: [...data.ideaFolders, folder] };
+}
+
+export function applyUpdateIdeaFolder(
+  data: CrochetData,
+  folderId: string,
+  patch: { name?: string; description?: string },
+  now: number,
+): CrochetData | null {
+  const index = data.ideaFolders.findIndex((folder) => folder.id === folderId);
+  if (index < 0) return null;
+  const current = data.ideaFolders[index];
+  let next = current;
+  if (patch.name !== undefined) {
+    const name = sanitizeText(patch.name, MAX_FOLDER_NAME_CHARS);
+    if (!name || name === next.name) return null;
+    next = { ...next, name };
+  }
+  if (patch.description !== undefined) {
+    const description = sanitizeFolderDescription(patch.description);
+    if (description === next.description) return null;
+    next = { ...next, description };
+  }
+  if (next === current) return null;
+  const ideaFolders = [...data.ideaFolders];
+  ideaFolders[index] = { ...next, updatedAt: now };
+  return { ...data, ideaFolders };
+}
+
+export function applyDeleteIdeaFolder(data: CrochetData, folderId: string): CrochetData | null {
+  if (!data.ideaFolders.some((folder) => folder.id === folderId)) return null;
+  return { ...data, ideaFolders: data.ideaFolders.filter((folder) => folder.id !== folderId) };
+}
+
+export function applyTogglePatternInFolder(
+  data: CrochetData,
+  folderId: string,
+  patternId: string,
+  now: number,
+): CrochetData | null {
+  if (!data.patterns.some((pattern) => pattern.id === patternId)) return null;
+  const index = data.ideaFolders.findIndex((folder) => folder.id === folderId);
+  if (index < 0) return null;
+  const folder = data.ideaFolders[index];
+  const has = folder.patternIds.includes(patternId);
+  const patternIds = has ? folder.patternIds.filter((id) => id !== patternId) : [...folder.patternIds, patternId];
+  const ideaFolders = [...data.ideaFolders];
+  ideaFolders[index] = { ...folder, patternIds, updatedAt: now };
+  return { ...data, ideaFolders };
+}
+
+export function applyHydrateCloudSlice(
+  data: CrochetData,
+  cloudRaw: unknown,
+  seedCatalog: CrochetPattern[],
+  now: number,
+): CrochetData | null {
+  const repaired = repairPersisted(cloudRaw, now);
+  if (!repaired) return null;
+  const patterns = mergeCatalogPatternsFromSeed(repaired.patterns, seedCatalog);
+  const patternIds = new Set(patterns.map((pattern) => pattern.id));
+  const likedPatternIds = repaired.likedPatternIds.filter((id) => patternIds.has(id));
+  const ideaFolders = repaired.ideaFolders.map((folder) => ({
+    ...folder,
+    patternIds: folder.patternIds.filter((id) => patternIds.has(id)),
+  }));
+  const merged: CrochetData = {
+    ...data,
+    patterns,
+    projects: repaired.projects,
+    activeProjectId: repaired.activeProjectId,
+    yarnStash: repaired.yarnStash,
+    progressPhotos: repaired.progressPhotos,
+    account: repaired.account ?? data.account,
+    likedPatternIds,
+    ideaFolders,
+    tapHistory: data.tapHistory,
+  };
+  const reconciled = applyReconcileTimers(merged, now);
+  return reconciled ?? merged;
 }
 
 export function applyAddStashItem(data: CrochetData, id: string, input: NewYarnInput): CrochetData | null {
@@ -913,7 +1110,20 @@ export function repairPersisted(input: unknown, now = Date.now()): CrochetPersis
     ),
   ).slice(-MAX_PROGRESS_PHOTOS * 8);
 
-  return { patterns, projects, activeProjectId, yarnStash, progressPhotos };
+  const account = repairAccount(input.account);
+  const likedPatternIds = repairLikedPatternIds(input.likedPatternIds, patterns);
+  const ideaFolders = repairIdeaFolders(input.ideaFolders, patterns);
+
+  return {
+    patterns,
+    projects,
+    activeProjectId,
+    yarnStash,
+    progressPhotos,
+    account,
+    likedPatternIds,
+    ideaFolders,
+  };
 }
 
 /**
@@ -1292,4 +1502,80 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPresent<T>(value: T | null | undefined): value is T {
   return value != null;
+}
+
+function accountsEqual(a: UserAccount, b: UserAccount): boolean {
+  return (
+    a.uid === b.uid &&
+    a.email === b.email &&
+    a.displayName === b.displayName &&
+    a.username === b.username &&
+    a.bio === b.bio &&
+    a.avatarColor === b.avatarColor &&
+    a.updatedAt === b.updatedAt
+  );
+}
+
+function sanitizeUsername(value: string): string | null {
+  const trimmed = value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, MAX_USERNAME_CHARS);
+  return trimmed.length >= 2 ? trimmed : null;
+}
+
+function sanitizeBio(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, MAX_BIO_CHARS);
+}
+
+function sanitizeFolderDescription(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, MAX_FOLDER_DESC_CHARS);
+}
+
+function repairAccount(input: unknown): UserAccount | null {
+  if (!isRecord(input) || typeof input.uid !== 'string' || !isSafeId(input.uid)) return null;
+  const email = typeof input.email === 'string' ? sanitizeText(input.email, 120) : null;
+  const displayName = typeof input.displayName === 'string' ? sanitizeText(input.displayName, 80) : null;
+  const username = typeof input.username === 'string' ? sanitizeUsername(input.username) : null;
+  if (!email || !displayName || !username) return null;
+  const bio = typeof input.bio === 'string' ? sanitizeBio(input.bio) : '';
+  const avatarColor =
+    typeof input.avatarColor === 'string' ? (normalizeHex(input.avatarColor) ?? '#2F6B4F') : '#2F6B4F';
+  const updatedAt = finiteTimestamp(input.updatedAt, Date.now());
+  return { uid: input.uid, email, displayName, username, bio, avatarColor, updatedAt };
+}
+
+function repairLikedPatternIds(input: unknown, patterns: CrochetPattern[]): string[] {
+  const patternIds = new Set(patterns.map((pattern) => pattern.id));
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of input) {
+    if (typeof entry !== 'string' || !patternIds.has(entry) || seen.has(entry)) continue;
+    seen.add(entry);
+    result.push(entry);
+  }
+  return result;
+}
+
+function repairIdeaFolders(input: unknown, patterns: CrochetPattern[]): IdeaFolder[] {
+  const patternIds = new Set(patterns.map((pattern) => pattern.id));
+  if (!Array.isArray(input)) return [];
+  const folders = readArray(input)
+    .map((item) => repairIdeaFolder(item, patternIds))
+    .filter((item): item is IdeaFolder => item != null);
+  return dedupeById(folders).slice(0, MAX_IDEA_FOLDERS);
+}
+
+function repairIdeaFolder(input: unknown, patternIds: Set<string>): IdeaFolder | null {
+  if (!isRecord(input) || !isSafeId(input.id)) return null;
+  const name = typeof input.name === 'string' ? sanitizeText(input.name, MAX_FOLDER_NAME_CHARS) : null;
+  if (!name) return null;
+  const description = typeof input.description === 'string' ? sanitizeFolderDescription(input.description) : '';
+  const now = Date.now();
+  const createdAt = finiteTimestamp(input.createdAt, now);
+  const updatedAt = finiteTimestamp(input.updatedAt, createdAt);
+  const ids = Array.isArray(input.patternIds)
+    ? input.patternIds
+        .filter((id): id is string => typeof id === 'string' && patternIds.has(id))
+        .filter((id, index, list) => list.indexOf(id) === index)
+    : [];
+  return { id: input.id, name, description, patternIds: ids, createdAt, updatedAt };
 }

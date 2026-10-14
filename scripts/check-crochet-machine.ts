@@ -10,7 +10,13 @@ import {
   applyAddPattern,
   applyAddProgressPhoto,
   applyAddProjectYarnColor,
+  applyCreateIdeaFolder,
   applyCreateProject,
+  applyHydrateCloudSlice,
+  applySetAccount,
+  applyToggleLikePattern,
+  applyTogglePatternInFolder,
+  applyUpdateAccountProfile,
   applyDecrementRow,
   applyDecrementStitch,
   applyFinishProject,
@@ -18,6 +24,7 @@ import {
   applyIncrementStitch,
   applyPauseTimer,
   applyReconcileTimers,
+  applyRemovePattern,
   applyRemoveCheckpoint,
   applyRemoveProjectYarnColor,
   applyRemoveStashItem,
@@ -41,7 +48,7 @@ import {
   type CrochetData,
   type CrochetProject,
 } from '../store/machine';
-import { createSeedData } from '../store/seed';
+import { createSeedData, SEED_PATTERNS } from '../store/seed';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -109,7 +116,7 @@ equal(formatBookmarkTime(75), '01:15', 'bookmark time format');
 equal(formatBookmarkTime(3735), '1:02:15', 'hour bookmark format');
 
 const seed = createSeedData();
-equal(seed.patterns.length, 20, 'twenty catalog patterns');
+equal(seed.patterns.length, SEED_PATTERNS.length, 'seed catalog pattern count');
 equal(seed.projects.length, 1, 'one project');
 equal(seed.projects[0]?.name, 'Bambi Amigurumi Plush', 'project name');
 equal(seed.projects[0]?.currentRow, 28, 'bambi row');
@@ -230,7 +237,17 @@ function projectFixture(overrides: Partial<CrochetProject> = {}): CrochetData {
     updatedAt: 1,
     ...overrides,
   };
-  return { patterns: [], projects: [project], activeProjectId: 'p', yarnStash: [], progressPhotos: [], tapHistory: {} };
+  return {
+    patterns: [],
+    projects: [project],
+    activeProjectId: 'p',
+    yarnStash: [],
+    progressPhotos: [],
+    account: null,
+    likedPatternIds: [],
+    ideaFolders: [],
+    tapHistory: {},
+  };
 }
 
 function tap(times: number, source = projectFixture(), autoAdvance?: boolean) {
@@ -502,5 +519,75 @@ const legacyStash = repairPersisted(
 );
 equal(legacyStash?.yarnStash[0]?.skeinCount, 1, 'missing skein count repairs to 1');
 equal(legacyStash?.progressPhotos.length, 0, 'missing photo log repairs empty');
+equal(legacyStash?.likedPatternIds.length, 0, 'legacy stash repairs empty likes');
+equal(legacyStash?.ideaFolders.length, 0, 'legacy stash repairs empty folders');
+equal(legacyStash?.account, null, 'legacy stash repairs null account');
+
+const account = {
+  uid: 'user-1',
+  email: 'nick@example.com',
+  displayName: 'Nick',
+  username: 'nick',
+  bio: 'Making plushies',
+  avatarColor: '#2F6B4F',
+  updatedAt: t0,
+};
+const withAccount = applySetAccount(dataFrom(seed), account);
+assert(withAccount?.account?.username === 'nick', 'set account');
+const profilePatch = applyUpdateAccountProfile(withAccount!, { bio: 'Blankets next', displayName: 'Nick C' }, t0 + 1);
+equal(profilePatch?.account?.bio, 'Blankets next', 'profile bio updated');
+equal(profilePatch?.account?.displayName, 'Nick C', 'profile name updated');
+
+const patternId = seed.patterns[0]!.id;
+const liked = applyToggleLikePattern(dataFrom(seed), patternId);
+assert(liked?.likedPatternIds.includes(patternId), 'like pattern');
+const unliked = applyToggleLikePattern(liked!, patternId);
+assert(unliked && !unliked.likedPatternIds.includes(patternId), 'unlike pattern');
+assert(applyToggleLikePattern(dataFrom(seed), 'missing-pattern') == null, 'like unknown pattern is no-op');
+
+const foldered = applyCreateIdeaFolder(dataFrom(seed), 'folder-1', { name: 'Weekend makes', description: 'Soft toys' }, t0);
+assert(foldered?.ideaFolders[0]?.name === 'Weekend makes', 'create folder');
+const inFolder = applyTogglePatternInFolder(foldered!, 'folder-1', patternId, t0 + 2);
+assert(inFolder?.ideaFolders[0]?.patternIds.includes(patternId), 'toggle pattern into folder');
+const outFolder = applyTogglePatternInFolder(inFolder!, 'folder-1', patternId, t0 + 3);
+assert(outFolder && outFolder.ideaFolders[0]?.patternIds.length === 0, 'toggle pattern out of folder');
+
+const cloudSlice = applyHydrateCloudSlice(
+  dataFrom(seed),
+  {
+    ...seed,
+    likedPatternIds: [patternId, 'missing-like'],
+    ideaFolders: [
+      {
+        id: 'folder-cloud',
+        name: 'Cloud folder',
+        description: '',
+        patternIds: [patternId],
+        createdAt: t0,
+        updatedAt: t0,
+      },
+    ],
+    account,
+  },
+  seed.patterns,
+  t0,
+);
+assert(cloudSlice?.likedPatternIds.includes(patternId), 'hydrate keeps valid likes');
+equal(cloudSlice?.ideaFolders.length, 1, 'hydrate repairs folders');
+assert(!cloudSlice?.likedPatternIds.includes('missing-like'), 'hydrate drops unknown likes');
+
+const removedPattern = applyRemovePattern(
+  applyToggleLikePattern(
+    applyTogglePatternInFolder(foldered!, 'folder-1', patternId, t0 + 4)!,
+    patternId,
+  )!,
+  patternId,
+  t0 + 5,
+);
+assert(removedPattern && !removedPattern.likedPatternIds.includes(patternId), 'remove pattern clears likes');
+assert(
+  removedPattern.ideaFolders.every((folder: { patternIds: string[] }) => !folder.patternIds.includes(patternId)),
+  'remove pattern clears folders',
+);
 
 console.log('crochet machine checks passed');

@@ -42,10 +42,18 @@ import {
   applyToggleTimer,
   applyUndoLastTap,
   applyAddProgressPhoto,
+  applyCreateIdeaFolder,
+  applyDeleteIdeaFolder,
+  applyHydrateCloudSlice,
   applyRemoveCheckpoint,
   applyRemoveProgressPhoto,
   applyRemoveProjectYarnColor,
+  applySetAccount,
   applySetRowNote,
+  applyToggleLikePattern,
+  applyTogglePatternInFolder,
+  applyUpdateAccountProfile,
+  applyUpdateIdeaFolder,
   applyUpdateProjectYarnColor,
   applyUpdateStashItem,
   createId,
@@ -57,7 +65,9 @@ import {
   type CrochetPattern,
   type CrochetPersistedSlice,
   type CrochetProject,
+  type IdeaFolder,
   type NewPatternInput,
+  type UserAccount,
   type VideoBookmark,
   type NewProgressPhotoInput,
   type NewProjectYarnColorInput,
@@ -74,10 +84,12 @@ export type {
   CounterSnapshot,
   CrochetPattern,
   CrochetProject,
+  IdeaFolder,
   PatternDifficulty,
   ProjectStatus,
   ProgressPhoto,
   ProjectYarnColor,
+  UserAccount,
   VideoBookmark,
   VideoCheckpoint,
   YarnStashItem,
@@ -143,6 +155,19 @@ type CrochetActions = {
   resetToSeed: () => void;
   /** Pull-to-refresh: merge bundled seed and remote scraper catalog. */
   refreshPatternCatalog: () => Promise<number>;
+  setAccount: (account: UserAccount | null) => void;
+  updateAccountProfile: (patch: {
+    displayName?: string;
+    username?: string;
+    bio?: string;
+    avatarColor?: string;
+  }) => void;
+  toggleLikePattern: (patternId: string) => void;
+  createIdeaFolder: (input: { name: string; description?: string }) => string | null;
+  updateIdeaFolder: (folderId: string, patch: { name?: string; description?: string }) => void;
+  deleteIdeaFolder: (folderId: string) => void;
+  togglePatternInFolder: (folderId: string, patternId: string) => void;
+  hydrateFromCloud: (cloudRaw: unknown) => void;
 };
 
 export type CrochetStore = CrochetData &
@@ -158,17 +183,23 @@ function readData(state: CrochetStore): CrochetData {
     activeProjectId: state.activeProjectId,
     yarnStash: state.yarnStash,
     progressPhotos: state.progressPhotos,
+    account: state.account,
+    likedPatternIds: state.likedPatternIds,
+    ideaFolders: state.ideaFolders,
     tapHistory: state.tapHistory,
   };
 }
 
-function partializeCrochetState(state: CrochetStore): CrochetPersistedSlice {
+export function partializeCrochetState(state: CrochetStore): CrochetPersistedSlice {
   return {
     patterns: state.patterns,
     projects: state.projects,
     activeProjectId: state.activeProjectId,
     yarnStash: state.yarnStash,
     progressPhotos: state.progressPhotos,
+    account: state.account,
+    likedPatternIds: state.likedPatternIds,
+    ideaFolders: state.ideaFolders,
   };
 }
 
@@ -310,6 +341,26 @@ export const useCrochetStore = create<CrochetStore>()(
             },
             createSeedData().patterns,
           ),
+
+        setAccount: (account) => commit((data) => applySetAccount(data, account)),
+        updateAccountProfile: (patch) => commit((data, now) => applyUpdateAccountProfile(data, patch, now)),
+        toggleLikePattern: (patternId) => commit((data) => applyToggleLikePattern(data, patternId)),
+        createIdeaFolder: (input) => {
+          const id = createId('folder');
+          const next = applyCreateIdeaFolder(readData(get()), id, input, Date.now());
+          if (!next) return null;
+          set(next);
+          return id;
+        },
+        updateIdeaFolder: (folderId, patch) =>
+          commit((data, now) => applyUpdateIdeaFolder(data, folderId, patch, now)),
+        deleteIdeaFolder: (folderId) => commit((data) => applyDeleteIdeaFolder(data, folderId)),
+        togglePatternInFolder: (folderId, patternId) =>
+          commit((data, now) => applyTogglePatternInFolder(data, folderId, patternId, now)),
+        hydrateFromCloud: (cloudRaw) => {
+          const next = applyHydrateCloudSlice(readData(get()), cloudRaw, createSeedData().patterns, Date.now());
+          if (next) set(next);
+        },
       };
     },
     {
@@ -355,6 +406,14 @@ export function selectPattern(state: CrochetStore, patternId: string | null): Cr
 export function selectStashItem(state: CrochetStore, stashItemId: string | null): YarnStashItem | null {
   if (!stashItemId) return null;
   return state.yarnStash.find((item) => item.id === stashItemId) ?? null;
+}
+
+export function selectIsPatternLiked(state: CrochetStore, patternId: string): boolean {
+  return state.likedPatternIds.includes(patternId);
+}
+
+export function selectFoldersForPattern(state: CrochetStore, patternId: string): IdeaFolder[] {
+  return state.ideaFolders.filter((folder) => folder.patternIds.includes(patternId));
 }
 
 /** True once storage has been read. On web this is usually true on the first render. */

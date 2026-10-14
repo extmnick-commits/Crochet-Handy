@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { Platform } from 'react-native';
 
+import { FirebaseAccountSync } from '@/components/FirebaseAccountSync';
 import { YouTubeBookmarkSync } from '@/components/YouTubeBookmarkSync';
 import { Colors } from '@/constants/BambuTheme';
 
@@ -39,6 +40,7 @@ export default function RootLayout() {
       <StatusBar style="light" />
       {Platform.OS === 'android' && <NavigationBar style="light" />}
       <YouTubeBookmarkSync />
+      <FirebaseAccountSync />
       <Stack
         screenOptions={{
           headerShown: false,

@@ -1,0 +1,9 @@
+# Crochet Handy — Cursor rules
+
+Complements `AGENTS.md` with project-specific architecture:
+
+- All state transitions must be pure functions in `store/machine.ts` returning `CrochetData | null` and tested in `scripts/check-crochet-machine.ts`.
+- All UI styling must import tokens from `@/constants/BambuTheme` (`Colors`, `Spacing`, `Radius`, `Typography`, `Layout`) — never hardcode hex colors or raw font names.
+- Use `react-native-svg` for icons (no external icon font bundles) and keep web/native parity across `app/(tabs)/index.tsx`, `app/(tabs)/active.tsx`, and `app/(tabs)/me.tsx`.
+- Always run `npx tsc --noEmit` and `npx tsx scripts/check-crochet-machine.ts` after modifying store or screen files.
+- Firebase: use `utils/firebase.ts` and `isFirebaseConfigured()`; never initialize Firebase without checking keys. Cloud sync lives in `components/FirebaseAccountSync.tsx`.

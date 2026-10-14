@@ -163,17 +163,18 @@ export function difficultyLabel(difficulty: PatternDifficulty): string {
 }
 
 /** Stable like count so a card doesn't change every render. Not persisted. */
-export function displayLikeCount(id: string): number {
+export function displayLikeCount(id: string, isLiked = false): number {
   let hash = 2166136261;
   for (let index = 0; index < id.length; index += 1) {
     hash ^= id.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
-  return 80 + (hash >>> 0) % 12400;
+  const base = 80 + (hash >>> 0) % 12400;
+  return isLiked ? base + 1 : base;
 }
 
-export function formatLikeCount(id: string): string {
-  const count = displayLikeCount(id);
+export function formatLikeCount(id: string, isLiked = false): string {
+  const count = displayLikeCount(id, isLiked);
   if (count < 1000) return String(count);
   const scaled = count / 1000;
   const rounded = scaled >= 10 ? Math.round(scaled) : Math.round(scaled * 10) / 10;
