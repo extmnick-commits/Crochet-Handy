@@ -5,6 +5,8 @@ import Constants from 'expo-constants';
 
 import { parseCatalogPatterns, type CrochetPattern } from '@/store/machine';
 
+import bundledCatalogFile from '../catalog/pattern-catalog.json';
+
 /** jsDelivr tracks `main` quickly; raw.githubusercontent.com often lags by hours. */
 const DEFAULT_CATALOG_URL =
   'https://cdn.jsdelivr.net/gh/extmnick-commits/Crochet-Handy@main/catalog/pattern-catalog.json';
@@ -20,9 +22,17 @@ export type PatternCatalogFile = {
 export function patternCatalogUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_PATTERN_CATALOG_URL?.trim();
   if (fromEnv) return fromEnv;
+  if (__DEV__ && process.env.EXPO_PUBLIC_PATTERN_CATALOG_REMOTE !== '1') {
+    return '';
+  }
   const fromExtra = Constants.expoConfig?.extra?.patternCatalogUrl;
   if (typeof fromExtra === 'string' && fromExtra.trim().length > 0) return fromExtra.trim();
   return DEFAULT_CATALOG_URL;
+}
+
+function loadRepoPatternCatalog(): CrochetPattern[] {
+  const payload = bundledCatalogFile as PatternCatalogFile;
+  return parseCatalogPatterns(payload.patterns);
 }
 
 function catalogFetchUrl(url: string, bustCache: boolean): string {
@@ -35,6 +45,10 @@ export async function fetchRemotePatternCatalog(
   url = patternCatalogUrl(),
   options?: { bustCache?: boolean },
 ): Promise<CrochetPattern[]> {
+  if (!url.trim()) {
+    return loadRepoPatternCatalog();
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   const bustCache = options?.bustCache ?? true;

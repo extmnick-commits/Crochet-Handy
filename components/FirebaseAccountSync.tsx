@@ -5,6 +5,8 @@ import { useEffect, useRef } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
+import { type CrochetData } from '@/store/machine';
+import { createSeedData } from '@/store/seed';
 import {
   partializeCrochetState,
   useCrochetHydrated,
@@ -12,8 +14,28 @@ import {
   type UserAccount,
 } from '@/store/useCrochetStore';
 import { auth, db, isFirebaseConfigured } from '@/utils/firebase';
+import { pullPatternCatalogUpdates } from '@/utils/syncPatternCatalog';
 
 const SYNC_DEBOUNCE_MS = 800;
+
+function readCrochetDataFromStore(): CrochetData {
+  const state = useCrochetStore.getState();
+  return {
+    ...partializeCrochetState(state),
+    tapHistory: state.tapHistory,
+  };
+}
+
+/** Drops stale feed entries saved in Firestore before catalog rules tightened. */
+function reconcilePatternsAfterCloudHydrate(): void {
+  void pullPatternCatalogUpdates(
+    readCrochetDataFromStore,
+    (next) => {
+      useCrochetStore.setState((state) => ({ ...state, patterns: next.patterns }));
+    },
+    createSeedData().patterns,
+  );
+}
 
 function accountFromUser(user: User, profile?: Partial<UserAccount>): UserAccount {
   const now = Date.now();
@@ -87,6 +109,7 @@ export function FirebaseAccountSync() {
         if (snap.exists()) {
           const raw = snap.data() as Record<string, unknown>;
           hydrateFromCloud(raw);
+          reconcilePatternsAfterCloudHydrate();
           setAccount(cloudAccountFromDoc(raw, user));
         } else {
           const state = useCrochetStore.getState();
@@ -98,6 +121,7 @@ export function FirebaseAccountSync() {
             updatedAt: Date.now(),
           };
           await setDoc(ref, payload, { merge: true });
+          reconcilePatternsAfterCloudHydrate();
         }
 
         setTimeout(() => {

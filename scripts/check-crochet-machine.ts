@@ -50,6 +50,7 @@ import {
   formatElapsed,
   projectProgress,
   mergeCatalogPatternsFromSeed,
+  reconcilePatternCatalog,
   repairPersisted,
   type CrochetData,
   type CrochetProject,
@@ -159,6 +160,21 @@ equal(
   8,
   'merged catalog keeps existing saved patterns',
 );
+const staleVideoId = 'removed-stale-video';
+const stalePattern = {
+  ...seed.patterns[0]!,
+  id: 'pattern-stale-remote',
+  videoId: staleVideoId,
+  title: 'Knitting pattern for sweater',
+};
+const reconciled = reconcilePatternCatalog(
+  [stalePattern, ...persistedSlice],
+  seed.patterns,
+  [],
+  new Set(),
+);
+assert(!reconciled.some((pattern) => pattern.videoId === staleVideoId), 'reconcile drops stale feed entries');
+equal(reconciled.length, seed.patterns.length, 'reconcile matches bundled catalog');
 equal(sanitizeVideoBookmarks(undefined).length, 0, 'no placeholder bookmarks');
 assert(!isEstimatedBookmarkSet(extracted), 'real chapters are not estimates');
 const withRealChapters = applySetPatternBookmarks(dataFrom(createSeedData()), seed.patterns[0]!.id, extracted);

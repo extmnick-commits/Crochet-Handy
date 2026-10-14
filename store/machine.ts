@@ -15,6 +15,7 @@
  * `totalRows`. Turn auto-advance off to stop at the end of the row.
  */
 import { formatBookmarkTime, isEstimatedBookmarkSet, sanitizeVideoBookmarks, type VideoBookmark } from '../utils/chapters';
+import { isEnglishFeedPattern } from '../utils/patternEnglishFilter';
 import { parseYouTubeUrl } from '../utils/youtube';
 
 export type { VideoBookmark } from '../utils/chapters';
@@ -1046,7 +1047,8 @@ export function applyHydrateCloudSlice(
 ): CrochetData | null {
   const repaired = repairPersisted(cloudRaw, now);
   if (!repaired) return null;
-  const patterns = mergeCatalogPatternsFromSeed(repaired.patterns, seedCatalog);
+  const retain = collectReferencedPatternIds(repaired);
+  const patterns = reconcilePatternCatalog(repaired.patterns, seedCatalog, [], retain);
   const patternIds = new Set(patterns.map((pattern) => pattern.id));
   const likedPatternIds = repaired.likedPatternIds.filter((id) => patternIds.has(id));
   const collectedPatternIds = repaired.collectedPatternIds.filter((id) => patternIds.has(id));
@@ -1410,6 +1412,51 @@ export function mergeCatalogPatternsFromSeed(
   }
   if (additions.length === 0) return persisted;
   return dedupeById([...persisted, ...additions]);
+}
+
+/** Pattern ids referenced by projects, likes, collections, or folders. */
+export function collectReferencedPatternIds(data: CrochetPersistedSlice): Set<string> {
+  const ids = new Set<string>();
+  for (const project of data.projects) {
+    if (project.patternId) ids.add(project.patternId);
+  }
+  for (const id of data.likedPatternIds) ids.add(id);
+  for (const id of data.collectedPatternIds) ids.add(id);
+  for (const folder of data.collectionFolders) {
+    for (const id of folder.patternIds) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * Published catalog = bundled seed + remote JSON. Replaces stale feed entries that
+ * were removed from seed/catalog but linger in AsyncStorage or an old CDN snapshot.
+ */
+export function reconcilePatternCatalog(
+  persisted: CrochetPattern[],
+  bundledCatalog: CrochetPattern[],
+  remoteCatalog: CrochetPattern[] = [],
+  retainPatternIds: ReadonlySet<string> = new Set(),
+): CrochetPattern[] {
+  let canonical = mergeCatalogPatternsFromSeed(bundledCatalog, remoteCatalog);
+  canonical = canonical.filter((pattern) =>
+    isEnglishFeedPattern({
+      title: pattern.title,
+      creator: pattern.creator,
+    }),
+  );
+  const canonicalVideoIds = new Set(
+    canonical.map((pattern) => pattern.videoId).filter((id) => id.length > 0),
+  );
+
+  const orphanKeep = persisted.filter(
+    (pattern) =>
+      pattern.videoId.length > 0 &&
+      !canonicalVideoIds.has(pattern.videoId) &&
+      retainPatternIds.has(pattern.id),
+  );
+
+  return dedupeById([...canonical, ...orphanKeep]);
 }
 
 function repairProgressPhoto(input: unknown): ProgressPhoto | null {

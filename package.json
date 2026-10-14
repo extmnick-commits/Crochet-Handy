@@ -44,7 +44,9 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "update-patterns": "ts-node --project tsconfig.scripts.json scripts/update-patterns.ts",
-    "export-pattern-catalog": "npx tsx scripts/export-pattern-catalog.ts"
+    "export-pattern-catalog": "npx tsx scripts/export-pattern-catalog.ts",
+    "prune-non-english-patterns": "npx tsx scripts/prune-non-english-patterns.ts",
+    "prune-non-english-thumbnails": "npx tsx scripts/prune-non-english-thumbnails.ts"
   },
   "private": true,
   "ts-node": {

@@ -39,6 +39,7 @@ import {
   type PatternCategoryId,
 } from '@/utils/patternDisplay';
 import { holidayEmptyState, isHolidayTopicId } from '@/utils/holidayTopics';
+import { isEnglishFeedPattern } from '@/utils/patternEnglishFilter';
 
 export default function PatternsScreen() {
   const insets = useSafeAreaInsets();
@@ -68,6 +69,10 @@ export default function PatternsScreen() {
   const visiblePatterns = useMemo(() => {
     const matched = patterns.filter(
       (pattern) =>
+        isEnglishFeedPattern({
+          title: pattern.title,
+          creator: pattern.creator,
+        }) &&
         matchesPatternCategory(pattern, category) &&
         matchesPatternQuery(pattern, query) &&
         matchesFacets(pattern, yarnFilters, hookFilters),

@@ -9,6 +9,7 @@
  * Batch size: SCRAPE_COUNT or --count (default 10)
  * Topic: SEARCH_TOPIC or --topic (trending | seasonal | amigurumi | wearables | blankets | holiday ids)
  * Seasonal: trending/seasonal auto-target the active holiday window (e.g. halloween in October). Set SCRAPE_SEASONAL=0 to disable.
+ * Thumbnail vision: cloud Gemini pass drops foreign on-image text and yarn-only thumbnails. Set SCRAPE_SKIP_THUMBNAIL_CHECK=1 to skip.
  */
 import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -27,6 +28,8 @@ import {
   scrapeCategoryKeywords,
   searchQueryForScrapeTopic,
 } from '../utils/holidayTopics';
+import { isValidEnglishYoutubeSnippet } from '../utils/patternEnglishFilter';
+import { filterVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
 
 type PatternDifficulty = 'beginner' | 'easy' | 'intermediate' | 'advanced';
 
@@ -64,7 +67,7 @@ type SeedPatternTool = {
   size: string;
 };
 
-type SeedPattern = {
+export type SeedPattern = {
   id: string;
   videoId: string;
   youtubeUrl: string;
@@ -99,6 +102,10 @@ const LM_STUDIO_MODEL = 'local-model';
 
 const SEED_PATTERNS_START = '// <seed-patterns-start>';
 const SEED_PATTERNS_END = '// <seed-patterns-end>';
+
+/** Extra text-filtered candidates so thumbnail rejects can still fill the batch. */
+const THUMBNAIL_POOL_MULTIPLIER = 4;
+const THUMBNAIL_POOL_MIN = 24;
 
 dotenv.config({ path: path.join(ROOT, '.env') });
 
@@ -172,13 +179,6 @@ type AiBatchPatternsResponse = {
   patterns?: AiBatchPatternPayload[];
 };
 
-/** Leading description window checked for non-English script (title is checked in full). */
-const LEADING_DESCRIPTION_SCRIPT_CHECK_CHARS = 500;
-
-/** CJK, Cyrillic, Arabic, and related scripts — not Latin crochet pattern text. */
-const NON_LATIN_SCRIPT_RE =
-  /[\u0400-\u04FF\u0500-\u052F\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/g;
-
 export function isLocalAiMode(): boolean {
   return process.argv.includes('--local');
 }
@@ -246,49 +246,9 @@ function youtubeWatchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${videoId}`;
 }
 
-/** Fallback defense when Shorts slip through search filters. */
-function isShortFormTitle(title: string): boolean {
-  const lower = title.toLowerCase();
-  return lower.includes('#shorts') || lower.includes('#short');
-}
-
-function countNonLatinScriptChars(text: string): number {
-  return text.match(NON_LATIN_SCRIPT_RE)?.length ?? 0;
-}
-
-function hasSignificantNonLatinScript(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  const nonLatin = countNonLatinScriptChars(trimmed);
-  if (nonLatin === 0) return false;
-  const dense = trimmed.replace(/\s+/g, '').length;
-  if (dense === 0) return false;
-  return nonLatin >= 3 || nonLatin / dense >= 0.08;
-}
-
 /** Keeps English, description-rich embeddable tutorials suitable for pattern extraction. */
 export function isValidEnglishPatternVideo(video: YouTubeVideoItem): boolean {
-  const snippet = video.snippet;
-  if (!snippet) return false;
-
-  const title = (snippet.title ?? '').trim();
-  const description = (snippet.description ?? '').trim();
-
-  if (isShortFormTitle(title)) return false;
-  if (description.length < 350) return false;
-
-  const audioLang = snippet.defaultAudioLanguage?.trim();
-  if (audioLang && !audioLang.toLowerCase().startsWith('en')) return false;
-
-  const defaultLang = snippet.defaultLanguage?.trim();
-  if (defaultLang && !defaultLang.toLowerCase().startsWith('en')) return false;
-
-  const leadingDescription = description.slice(0, LEADING_DESCRIPTION_SCRIPT_CHECK_CHARS);
-  if (hasSignificantNonLatinScript(title) || hasSignificantNonLatinScript(leadingDescription)) {
-    return false;
-  }
-
-  return true;
+  return isValidEnglishYoutubeSnippet(video.snippet);
 }
 
 function logTimestamp(message: string): void {
@@ -355,6 +315,7 @@ export async function getTrendingVideos(
   });
 
   const batchSize = Number.isFinite(BATCH_SIZE) && BATCH_SIZE > 0 ? BATCH_SIZE : 10;
+  const poolCap = Math.max(batchSize * THUMBNAIL_POOL_MULTIPLIER, THUMBNAIL_POOL_MIN);
   return (details.items ?? [])
     .filter((item) => {
       const videoId = item.id ?? '';
@@ -366,7 +327,28 @@ export async function getTrendingVideos(
       (a, b) =>
         (b.snippet?.description?.length ?? 0) - (a.snippet?.description?.length ?? 0),
     )
-    .slice(0, batchSize);
+    .slice(0, poolCap);
+}
+
+export function shouldSkipThumbnailLanguageCheck(isLocal: boolean): boolean {
+  if (isLocal) return true;
+  const flag = process.env.SCRAPE_SKIP_THUMBNAIL_CHECK?.trim().toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes';
+}
+
+export async function applyThumbnailLanguageFilter(
+  videos: YouTubeVideoItem[],
+  client: OpenAI,
+  model: string,
+  isLocal: boolean,
+): Promise<YouTubeVideoItem[]> {
+  if (shouldSkipThumbnailLanguageCheck(isLocal) || videos.length === 0) {
+    return videos;
+  }
+  const before = videos.length;
+  const filtered = await filterVideosByEnglishThumbnailText(client, model, videos);
+  logTimestamp(`Thumbnail language check: kept ${filtered.length}/${before} candidates`);
+  return filtered;
 }
 
 type AiClientConfig = {
@@ -745,16 +727,32 @@ export async function main(): Promise<void> {
     logTimestamp(
       `YouTube fetch starting (topic: ${SEARCH_TOPIC}${seasonalNote}, batch: ${BATCH_SIZE}, catalog: ${existingIds.size})…`,
     );
-    const videos = await getTrendingVideos(youtubeKey, existingIds);
-    if (videos.length === 0) {
+    const candidatePool = await getTrendingVideos(youtubeKey, existingIds);
+    if (candidatePool.length === 0) {
       logTimestamp(
         `Added 0 new patterns. Catalog now has total of ${existingIds.size} patterns.`,
       );
       return;
     }
-    logTimestamp(`YouTube fetch finished (${videos.length} new videos)`);
+    logTimestamp(`YouTube fetch finished (${candidatePool.length} text-filtered candidates)`);
 
     const { client, model } = buildAiClient(isLocal);
+
+    if (shouldSkipThumbnailLanguageCheck(isLocal)) {
+      logTimestamp('Skipping thumbnail language check (--local or SCRAPE_SKIP_THUMBNAIL_CHECK)');
+    } else {
+      logTimestamp(`Thumbnail language check starting (model: ${model})…`);
+    }
+    const screened = await applyThumbnailLanguageFilter(candidatePool, client, model, isLocal);
+    const batchSize = Number.isFinite(BATCH_SIZE) && BATCH_SIZE > 0 ? BATCH_SIZE : 10;
+    const videos = screened.slice(0, batchSize);
+    if (videos.length === 0) {
+      logTimestamp(
+        `Added 0 new patterns after filters. Catalog now has total of ${existingIds.size} patterns.`,
+      );
+      return;
+    }
+    logTimestamp(`Using ${videos.length} videos for extraction`);
 
     logTimestamp(`AI batch extraction starting (${videos.length} videos, model: ${model})…`);
     const aiStartedAt = Date.now();

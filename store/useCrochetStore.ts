@@ -68,7 +68,8 @@ import {
   applyUpdateStashItem,
   createId,
   elapsedSeconds,
-  mergeCatalogPatternsFromSeed,
+  collectReferencedPatternIds,
+  reconcilePatternCatalog,
   repairPersisted,
   type CreateProjectInput,
   type CrochetData,
@@ -248,8 +249,10 @@ export const useCrochetStore = create<CrochetStore>()(
       markHydrated = () => {
         enablePersistWrites();
         const data = readData(get());
-        const patterns = mergeCatalogPatternsFromSeed(data.patterns, createSeedData().patterns);
-        const withCatalog = patterns.length !== data.patterns.length ? { ...data, patterns } : data;
+        const bundled = createSeedData().patterns;
+        const retain = collectReferencedPatternIds(data);
+        const patterns = reconcilePatternCatalog(data.patterns, bundled, [], retain);
+        const withCatalog = { ...data, patterns };
         const reconciled = applyReconcileTimers(withCatalog, Date.now());
         set(reconciled ? { ...reconciled, hydrated: true } : { ...withCatalog, hydrated: true });
 
@@ -429,7 +432,8 @@ export const useCrochetStore = create<CrochetStore>()(
       merge: (persisted, current) => {
         const repaired = repairPersisted(persisted, Date.now());
         if (!repaired) return current;
-        const patterns = mergeCatalogPatternsFromSeed(repaired.patterns, current.patterns);
+        const retain = collectReferencedPatternIds(repaired);
+        const patterns = reconcilePatternCatalog(repaired.patterns, current.patterns, [], retain);
         return {
           ...current,
           ...repaired,

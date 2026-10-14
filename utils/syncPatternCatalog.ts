@@ -1,5 +1,6 @@
 import {
-  mergeCatalogPatternsFromSeed,
+  collectReferencedPatternIds,
+  reconcilePatternCatalog,
   type CrochetData,
   type CrochetPattern,
 } from '@/store/machine';
@@ -13,12 +14,12 @@ export async function pullPatternCatalogUpdates(
 ): Promise<number> {
   const data = readState();
   const before = data.patterns.length;
-  let merged = mergeCatalogPatternsFromSeed(data.patterns, bundledCatalog);
   const remote = await fetchRemotePatternCatalog();
-  if (remote.length > 0) {
-    merged = mergeCatalogPatternsFromSeed(merged, remote);
+  const retain = collectReferencedPatternIds(data);
+  const merged = reconcilePatternCatalog(data.patterns, bundledCatalog, remote, retain);
+  if (merged.length === data.patterns.length && merged.every((p, i) => p.id === data.patterns[i]?.id)) {
+    return 0;
   }
-  if (merged.length === data.patterns.length) return 0;
   apply({ ...data, patterns: merged });
   return merged.length - before;
 }

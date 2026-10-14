@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-14T07:45:49.841Z",
+  "generatedAt": "2026-10-14T22:36:18.951Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -74,54 +74,6 @@
       "bookmarks": []
     },
     {
-      "id": "pattern-fantastic-very-simple-and-beautiful-crochet-patt",
-      "title": "FANTASTIC!🧶💛Very Simple and Beautiful Crochet pattern/ Crochet baby blanket",
-      "creator": "Knitting Works",
-      "youtubeUrl": "https://www.youtube.com/watch?v=XR-U-4WmYF4",
-      "videoId": "XR-U-4WmYF4",
-      "thumbnailUrl": "https://i.ytimg.com/vi/XR-U-4WmYF4/maxresdefault.jpg",
-      "difficulty": "beginner",
-      "yarnWeight": "dk",
-      "hookSize": "4.0 mm",
-      "totalRows": 13,
-      "stitchesPerRow": 36,
-      "tags": [
-        "crochet",
-        "baby blanket",
-        "beginner",
-        "easy",
-        "blanket",
-        "wearables",
-        "bag",
-        "chain"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-easy-crochet-that-looks-expensive-try-this-styli",
-      "title": "Easy crochet that looks expensive! TRY this stylish crochet pattern: crochet tutorial for beginners",
-      "creator": "Easy Crochet Stitches",
-      "youtubeUrl": "https://www.youtube.com/watch?v=fV378JwXitw",
-      "videoId": "fV378JwXitw",
-      "thumbnailUrl": "https://i.ytimg.com/vi/fV378JwXitw/maxresdefault.jpg",
-      "difficulty": "beginner",
-      "yarnWeight": "worsted",
-      "hookSize": "5.5 mm",
-      "totalRows": 8,
-      "stitchesPerRow": 36,
-      "tags": [
-        "crochet",
-        "stylish",
-        "beginner",
-        "tutorial",
-        "wearables",
-        "halloween",
-        "blanket",
-        "chain"
-      ],
-      "bookmarks": []
-    },
-    {
       "id": "pattern-oh-my-good-this-is-incredible-very-easy-tunisian",
       "title": "Oh my good **!! This is incredible !! Very Easy Tunisian pattern #crochet",
       "creator": "Albi's Craft & Crochet",
@@ -138,98 +90,6 @@
         "crochet",
         "beginner",
         "easy",
-        "tunisian simple stitch",
-        "slip stitch"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-this-gorgeous-crochet-stitch-repeats-in-just-1-r",
-      "title": "THIS GORGEOUS CROCHET STITCH REPEATS IN JUST 1 ROW! CROCHET PATTERN",
-      "creator": "Minin Art",
-      "youtubeUrl": "https://www.youtube.com/watch?v=rQHJb5xkdRU",
-      "videoId": "rQHJb5xkdRU",
-      "thumbnailUrl": "https://i.ytimg.com/vi/rQHJb5xkdRU/maxresdefault.jpg",
-      "difficulty": "beginner",
-      "yarnWeight": "worsted",
-      "hookSize": "5mm",
-      "totalRows": 30,
-      "stitchesPerRow": 40,
-      "tags": [
-        "scarf",
-        "bag",
-        "beginner",
-        "single crochet",
-        "double crochet",
-        "wearables",
-        "blanket"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-just-1-row-so-simple-and-speedy-try-this-easy-cr",
-      "title": "Just 1 Row, SO simple and speedy! TRY this easy crochet pattern: crochet stitch You’ll Love to Make",
-      "creator": "Easy Crochet Stitches",
-      "youtubeUrl": "https://www.youtube.com/watch?v=DW6q8n40F98",
-      "videoId": "DW6q8n40F98",
-      "thumbnailUrl": "https://i.ytimg.com/vi/DW6q8n40F98/maxresdefault.jpg",
-      "difficulty": "easy",
-      "yarnWeight": "dk",
-      "hookSize": "4.5mm",
-      "totalRows": 25,
-      "stitchesPerRow": 35,
-      "tags": [
-        "texture",
-        "easy",
-        "fast",
-        "double crochet",
-        "wearables",
-        "blanket",
-        "chain"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-easy-crochet-luxe-results-try-this-elegant-croch",
-      "title": "Easy Crochet, Luxe Results: TRY this elegant crochet pattern! It's easier than you think!",
-      "creator": "Beautiful Crochet Pattern",
-      "youtubeUrl": "https://www.youtube.com/watch?v=ly4R7oULlLQ",
-      "videoId": "ly4R7oULlLQ",
-      "thumbnailUrl": "https://i.ytimg.com/vi/ly4R7oULlLQ/maxresdefault.jpg",
-      "difficulty": "intermediate",
-      "yarnWeight": "sport",
-      "hookSize": "4mm",
-      "totalRows": 50,
-      "stitchesPerRow": 45,
-      "tags": [
-        "elegant",
-        "luxe",
-        "intermediate",
-        "post stitches",
-        "wearables",
-        "halloween",
-        "blanket",
-        "bag"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-amazing-simple-tunusian-crochet-pattern-for-bags",
-      "title": "Amazing Simple Tunusian Crochet Pattern for Bags & Headbands 💚#crochet #bagideas #headband",
-      "creator": "Örgü Şenliği",
-      "youtubeUrl": "https://www.youtube.com/watch?v=uofOZ3YCtn8",
-      "videoId": "uofOZ3YCtn8",
-      "thumbnailUrl": "https://i.ytimg.com/vi/uofOZ3YCtn8/maxresdefault.jpg",
-      "difficulty": "beginner",
-      "yarnWeight": "worsted",
-      "hookSize": "5.5mm",
-      "totalRows": 20,
-      "stitchesPerRow": 25,
-      "tags": [
-        "bag",
-        "headband",
-        "tunisian",
-        "accessories",
         "tunisian simple stitch",
         "slip stitch"
       ],
@@ -255,98 +115,6 @@
         "double crochet",
         "chain",
         "slip stitch"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-wow-you-have-to-see-trendy-crochet-pattern-croch",
-      "title": "WOW, You Have to SEE! Trendy crochet pattern! Crochet tutorial for beginners: Easy crochet stitches",
-      "creator": "Easy Crochet Stitches",
-      "youtubeUrl": "https://www.youtube.com/watch?v=KlqEnbxkwj0",
-      "videoId": "KlqEnbxkwj0",
-      "thumbnailUrl": "https://i.ytimg.com/vi/KlqEnbxkwj0/maxresdefault.jpg",
-      "difficulty": "beginner",
-      "yarnWeight": "bulky",
-      "hookSize": "6.5mm",
-      "totalRows": 45,
-      "stitchesPerRow": 50,
-      "tags": [
-        "blanket",
-        "baby blanket",
-        "beginner",
-        "half double crochet",
-        "wearables",
-        "chain"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-luxe-looking-crochet-made-simple-this-easy-croch",
-      "title": "Luxe-Looking Crochet, Made Simple! This Easy Crochet Pattern Will Transform Your Crochet Projects",
-      "creator": "Crochet Knitting Time",
-      "youtubeUrl": "https://www.youtube.com/watch?v=sOe39cqHjOM",
-      "videoId": "sOe39cqHjOM",
-      "thumbnailUrl": "https://i.ytimg.com/vi/sOe39cqHjOM/maxresdefault.jpg",
-      "difficulty": "easy",
-      "yarnWeight": "bulky",
-      "hookSize": "7mm",
-      "totalRows": 40,
-      "stitchesPerRow": 45,
-      "tags": [
-        "blanket",
-        "baby blanket",
-        "luxe",
-        "cluster stitch",
-        "wearables",
-        "double crochet"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-one-of-a-kind-let-s-create-a-never-before-seen-c",
-      "title": "ONE-OF-A-KIND! Let's Create a NEVER-BEFORE-SEEN Crochet Pattern, SUPER EASY & Beginner Friendly",
-      "creator": "Knitting Works",
-      "youtubeUrl": "https://www.youtube.com/watch?v=KYVqo1au_Jo",
-      "videoId": "KYVqo1au_Jo",
-      "thumbnailUrl": "https://i.ytimg.com/vi/KYVqo1au_Jo/maxresdefault.jpg",
-      "difficulty": "beginner",
-      "yarnWeight": "worsted",
-      "hookSize": "5mm",
-      "totalRows": 30,
-      "stitchesPerRow": 35,
-      "tags": [
-        "beginner",
-        "unique",
-        "puff stitch",
-        "easy",
-        "wearables",
-        "blanket",
-        "bag",
-        "single crochet"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-8h0HLLDS3nc",
-      "title": "FANTASTIC!🧶🩷Very Simple and Beautiful Crochet pattern/ Crochet baby blanket",
-      "creator": "Knitting Works",
-      "youtubeUrl": "https://www.youtube.com/watch?v=8h0HLLDS3nc",
-      "videoId": "8h0HLLDS3nc",
-      "thumbnailUrl": "https://i.ytimg.com/vi/8h0HLLDS3nc/maxresdefault.jpg",
-      "difficulty": "beginner",
-      "yarnWeight": "dk",
-      "hookSize": "4mm",
-      "totalRows": 50,
-      "stitchesPerRow": 60,
-      "tags": [
-        "blanket",
-        "baby blanket",
-        "shell stitch",
-        "beginner",
-        "wearables",
-        "bag",
-        "double crochet",
-        "chain"
       ],
       "bookmarks": []
     },
@@ -845,29 +613,6 @@
       "bookmarks": []
     },
     {
-      "id": "pattern-crochet-top-down-cardigan-buttons-crochet-diy",
-      "title": "✨️ 싸개단추 만들기 | CROCHET TOP-DOWN CARDIGAN BUTTONS #crochet #코바늘 #diy",
-      "creator": "메이드인한코한코 made in hankohanko",
-      "youtubeUrl": "https://www.youtube.com/watch?v=wTxXl4KOWpA",
-      "videoId": "wTxXl4KOWpA",
-      "thumbnailUrl": "https://i.ytimg.com/vi/wTxXl4KOWpA/maxresdefault.jpg",
-      "difficulty": "intermediate",
-      "yarnWeight": "sport",
-      "hookSize": "3.0 mm",
-      "totalRows": 90,
-      "stitchesPerRow": 70,
-      "tags": [
-        "wearables",
-        "cardigan",
-        "top-down",
-        "buttons",
-        "ch",
-        "dc",
-        "sc"
-      ],
-      "bookmarks": []
-    },
-    {
       "id": "pattern-most-beautiful-lace-crochet-stitch-easy-pattern-",
       "title": "MOST BEAUTIFUL Lace Crochet Stitch! || Easy Pattern for Cardigan, Top & Shrug 🌸",
       "creator": "WooL Work",
@@ -887,53 +632,6 @@
         "ch",
         "dc",
         "sc",
-        "valentines"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-knitting-pattern-for-sweater-cardigan-skivvy-ves",
-      "title": "Knitting pattern for sweater/cardigan/skivvy/ vest/pullover design/sweater ka design",
-      "creator": "Knot & needles",
-      "youtubeUrl": "https://www.youtube.com/watch?v=84-l7K1HVRI",
-      "videoId": "84-l7K1HVRI",
-      "thumbnailUrl": "https://i.ytimg.com/vi/84-l7K1HVRI/maxresdefault.jpg",
-      "difficulty": "easy",
-      "yarnWeight": "sport",
-      "hookSize": "3.5 mm",
-      "totalRows": 50,
-      "stitchesPerRow": 50,
-      "tags": [
-        "wearables",
-        "sweater",
-        "cardigan",
-        "baby",
-        "knit",
-        "purl",
-        "valentines"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-knitting-pattern-for-sweater-cardigan-shawl-scar",
-      "title": "Knitting pattern for sweater/ cardigan/shawl/ scarf/ jacket/pullover design/sweater ka design",
-      "creator": "Bunai Gharana",
-      "youtubeUrl": "https://www.youtube.com/watch?v=5qBccM7Uj_w",
-      "videoId": "5qBccM7Uj_w",
-      "thumbnailUrl": "https://i.ytimg.com/vi/5qBccM7Uj_w/maxresdefault.jpg",
-      "difficulty": "easy",
-      "yarnWeight": "dk",
-      "hookSize": "4.0 mm",
-      "totalRows": 60,
-      "stitchesPerRow": 55,
-      "tags": [
-        "wearables",
-        "sweater",
-        "cardigan",
-        "scarf",
-        "shawl",
-        "knit",
-        "purl",
         "valentines"
       ],
       "bookmarks": []
@@ -959,77 +657,6 @@
         "ch",
         "sc",
         "dc"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-knitting-pattern-for-sweater-cardigan-jacket-sca",
-      "title": "Knitting pattern for sweater/ cardigan/ jacket/ scarf/skivvy design/double colour sweater design",
-      "creator": "KnitHub",
-      "youtubeUrl": "https://www.youtube.com/watch?v=xdaVAeadd2E",
-      "videoId": "xdaVAeadd2E",
-      "thumbnailUrl": "https://i.ytimg.com/vi/xdaVAeadd2E/maxresdefault.jpg",
-      "difficulty": "intermediate",
-      "yarnWeight": "sport",
-      "hookSize": "3.5 mm",
-      "totalRows": 55,
-      "stitchesPerRow": 50,
-      "tags": [
-        "wearables",
-        "sweater",
-        "cardigan",
-        "two-color",
-        "knit",
-        "purl",
-        "valentines"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-knitting-pattern-for-sweater-cardigan-shawl-jack",
-      "title": "Knitting pattern for sweater/ cardigan/ shawl/jacket/ skivvy design/two colour sweater design",
-      "creator": "KnitHub",
-      "youtubeUrl": "https://www.youtube.com/watch?v=7L40MLDlfGc",
-      "videoId": "7L40MLDlfGc",
-      "thumbnailUrl": "https://i.ytimg.com/vi/7L40MLDlfGc/maxresdefault.jpg",
-      "difficulty": "intermediate",
-      "yarnWeight": "dk",
-      "hookSize": "4.0 mm",
-      "totalRows": 65,
-      "stitchesPerRow": 60,
-      "tags": [
-        "wearables",
-        "sweater",
-        "cardigan",
-        "shawl",
-        "two-color",
-        "knit",
-        "purl",
-        "valentines"
-      ],
-      "bookmarks": []
-    },
-    {
-      "id": "pattern-giHYZI31xeM",
-      "title": "Knitting Pattern for sweater/cardigan/jacket/ scarf/vest/ skivvy design/two colour sweater design",
-      "creator": "KnitHub",
-      "youtubeUrl": "https://www.youtube.com/watch?v=giHYZI31xeM",
-      "videoId": "giHYZI31xeM",
-      "thumbnailUrl": "https://i.ytimg.com/vi/giHYZI31xeM/maxresdefault.jpg",
-      "difficulty": "intermediate",
-      "yarnWeight": "dk",
-      "hookSize": "4.0 mm",
-      "totalRows": 60,
-      "stitchesPerRow": 55,
-      "tags": [
-        "wearables",
-        "sweater",
-        "cardigan",
-        "vest",
-        "two-color",
-        "knit",
-        "purl",
-        "valentines"
       ],
       "bookmarks": []
     }
