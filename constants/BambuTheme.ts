@@ -29,6 +29,10 @@ export const Palette = {
   white: '#FFFFFF',
   gray: '#8E8E93',
   checkboxBorder: '#48484A',
+  /** Active screen item-spec card (zinc). */
+  itemSpecSurface: '#18181B',
+  itemSpecBorder: '#27272A',
+  itemSpecLabel: '#A1A1AA',
 } as const;
 
 /** Semantic color roles. */
@@ -67,6 +71,11 @@ export const Colors = {
   live: '#FF3B30',
   scrim: 'rgba(0, 0, 0, 0.6)',
   transparent: 'transparent',
+
+  /** Item specifications card on Active Project. */
+  itemSpecSurface: Palette.itemSpecSurface,
+  itemSpecBorder: Palette.itemSpecBorder,
+  itemSpecLabel: Palette.itemSpecLabel,
 } as const;
 
 export type ColorToken = keyof typeof Colors;

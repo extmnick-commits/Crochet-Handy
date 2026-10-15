@@ -23,6 +23,7 @@ import OpenAI from 'openai';
 
 import {
   extractVideoBookmarks,
+  resolveVideoBookmarksFromSources,
   type VideoBookmark,
 } from '../utils/chapters';
 import {
@@ -34,7 +35,7 @@ import {
 import { isValidEnglishYoutubeSnippet } from '../utils/patternEnglishFilter';
 import { derivePatternSummary } from '../utils/patternSummary';
 import { filterVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
-import { fetchTranscriptsForVideoIds } from '../utils/youtubeTranscript';
+import { fetchWatchEnrichmentForVideoIds } from '../utils/youtubeTranscript';
 
 type PatternDifficulty = 'beginner' | 'easy' | 'intermediate' | 'advanced';
 
@@ -527,6 +528,7 @@ export async function extractBatchPatterns(
 export function mapBatchPatternsToSeed(
   videos: YouTubeVideoItem[],
   batch: AiBatchPatternPayload[],
+  watchBookmarksByVideoId: ReadonlyMap<string, VideoBookmark[]> = new Map(),
 ): SeedPattern[] {
   const byIndex = new Map<number, AiPatternPayload>();
   for (const item of batch) {
@@ -535,7 +537,9 @@ export function mapBatchPatternsToSeed(
     }
   }
 
-  return videos.map((video, index) => mergePattern(video, byIndex.get(index) ?? {}));
+  return videos.map((video, index) =>
+    mergePattern(video, byIndex.get(index) ?? {}, watchBookmarksByVideoId.get(video.id ?? '') ?? []),
+  );
 }
 
 function bookmarksFromAiChapters(chapters: AiPatternPayload['chapters']): VideoBookmark[] {
@@ -562,24 +566,21 @@ function bookmarksFromAiChapters(chapters: AiPatternPayload['chapters']): VideoB
 function resolvePatternBookmarks(
   video: YouTubeVideoItem,
   ai: AiPatternPayload,
-  totalRows: number,
-  keyStitches: string[],
-  durationSeconds: number,
+  watchBookmarks: readonly VideoBookmark[],
 ): VideoBookmark[] {
   const description = video.snippet?.description ?? '';
-  let bookmarks = extractVideoBookmarks(description);
-  if (bookmarks.length === 0) {
-    bookmarks = extractVideoBookmarks(ai.description ?? '');
-  }
-  if (bookmarks.length === 0) {
-    bookmarks = bookmarksFromAiChapters(ai.chapters);
-  }
-  return bookmarks;
+  return resolveVideoBookmarksFromSources(
+    extractVideoBookmarks(description),
+    watchBookmarks,
+    extractVideoBookmarks(ai.description ?? ''),
+    bookmarksFromAiChapters(ai.chapters),
+  );
 }
 
 export function mergePattern(
   video: YouTubeVideoItem,
   ai: AiPatternPayload,
+  watchBookmarks: readonly VideoBookmark[] = [],
 ): SeedPattern {
   const videoId = video.id ?? '';
   const title = (video.snippet?.title ?? 'Untitled tutorial').trim();
@@ -631,13 +632,7 @@ export function mergePattern(
 
   const totalRows = clampInt(ai.totalRows ?? Math.round(estimatedMinutes / 12), 1, 9999);
   const stitchesPerRow = clampInt(ai.stitchesPerRow ?? 36, 1, 9999);
-  const bookmarks = resolvePatternBookmarks(
-    video,
-    ai,
-    totalRows,
-    keyStitches,
-    estimatedMinutes * 60,
-  );
+  const bookmarks = resolvePatternBookmarks(video, ai, watchBookmarks);
 
   return {
     id: slugifyId(title, videoId),
@@ -886,19 +881,25 @@ export async function main(): Promise<void> {
     }
     logTimestamp(`Using ${videos.length} videos for extraction`);
 
+    const ids = videos.map((video) => video.id ?? '').filter((id) => id.length > 0);
     let transcripts = new Map<string, string>();
+    const watchBookmarksByVideoId = new Map<string, VideoBookmark[]>();
     if (shouldSkipTranscriptFetch()) {
       logTimestamp('Skipping caption transcript fetch (SCRAPE_SKIP_TRANSCRIPT)');
+      logTimestamp(`Fetching watch-page chapter markers (${ids.length} videos)…`);
     } else {
-      const ids = videos.map((video) => video.id ?? '').filter((id) => id.length > 0);
-      logTimestamp(`Fetching English caption transcripts (${ids.length} videos)…`);
-      const transcriptStartedAt = Date.now();
-      transcripts = await fetchTranscriptsForVideoIds(ids);
-      const transcriptSeconds = ((Date.now() - transcriptStartedAt) / 1000).toFixed(1);
-      logTimestamp(
-        `Transcripts ready in ${transcriptSeconds}s (${transcripts.size}/${ids.length} with captions)`,
-      );
+      logTimestamp(`Fetching watch-page captions and chapter markers (${ids.length} videos)…`);
     }
+    const enrichmentStartedAt = Date.now();
+    const enrichments = await fetchWatchEnrichmentForVideoIds(ids);
+    for (const [videoId, enrichment] of enrichments) {
+      if (enrichment.transcript) transcripts.set(videoId, enrichment.transcript);
+      if (enrichment.bookmarks.length > 0) watchBookmarksByVideoId.set(videoId, enrichment.bookmarks);
+    }
+    const enrichmentSeconds = ((Date.now() - enrichmentStartedAt) / 1000).toFixed(1);
+    logTimestamp(
+      `Watch enrichment ready in ${enrichmentSeconds}s (${transcripts.size}/${ids.length} with captions, ${watchBookmarksByVideoId.size}/${ids.length} with chapters)`,
+    );
 
     logTimestamp(`AI batch extraction starting (${videos.length} videos, model: ${model})…`);
     const aiStartedAt = Date.now();
@@ -910,7 +911,7 @@ export async function main(): Promise<void> {
 
     const seen = new Set(existingIds);
     const patterns = withUniquePatternIds(
-      mapBatchPatternsToSeed(videos, batch).filter((pattern) => {
+      mapBatchPatternsToSeed(videos, batch, watchBookmarksByVideoId).filter((pattern) => {
         if (!pattern.videoId || seen.has(pattern.videoId)) return false;
         seen.add(pattern.videoId);
         return true;

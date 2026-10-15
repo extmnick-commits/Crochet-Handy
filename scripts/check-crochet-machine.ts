@@ -4,7 +4,13 @@
  */
 import { extractVideoBookmarks, formatBookmarkTime, isEstimatedBookmarkSet, sanitizeVideoBookmarks } from '../utils/chapters';
 import { parseYouTubeUrl } from '../utils/youtube';
-import { parseCaptionJson3, parseCaptionXml, trimTranscriptForPrompt } from '../utils/youtubeTranscript';
+import {
+  extractChapterBookmarksFromWatchHtml,
+  extractMacroMarkerBookmarksFromWatchJson,
+  parseCaptionJson3,
+  parseCaptionXml,
+  trimTranscriptForPrompt,
+} from '../utils/youtubeTranscript';
 import {
   activeProject,
   applyAddCheckpoint,
@@ -130,6 +136,30 @@ equal(extracted[1]?.label, 'Row 1: Foundation', 'row label');
 equal(extracted[2]?.seconds, 3735, 'hour timestamp');
 equal(formatBookmarkTime(75), '01:15', 'bookmark time format');
 equal(formatBookmarkTime(3735), '1:02:15', 'hour bookmark format');
+
+const inlineChapters = extractVideoBookmarks('0:00 Intro, 12:30 Row 1, 24:00 Finishing');
+equal(inlineChapters.length, 3, 'inline comma-separated chapters');
+equal(inlineChapters[1]?.label, 'Row 1', 'inline row label');
+
+const macroSample = {
+  contents: [
+    {
+      macroMarkersListItemRenderer: {
+        title: { simpleText: 'Foundation' },
+        timeDescription: { simpleText: '2:15' },
+        onTap: { innertubeCommand: { seekToCommand: { startTimeSeconds: 135 } } },
+      },
+    },
+  ],
+};
+const macroBookmarks = extractMacroMarkerBookmarksFromWatchJson(macroSample);
+equal(macroBookmarks.length, 1, 'macro marker chapter');
+equal(macroBookmarks[0]?.seconds, 135, 'macro marker seconds');
+equal(macroBookmarks[0]?.label, 'Foundation', 'macro marker label');
+
+const watchHtml = `<html><script>ytInitialData = ${JSON.stringify(macroSample)};</script></html>`;
+const fromWatch = extractChapterBookmarksFromWatchHtml(watchHtml);
+equal(fromWatch.length, 1, 'chapters from watch html');
 
 const seed = createSeedData();
 equal(seed.patterns.length, SEED_PATTERNS.length, 'seed catalog pattern count');

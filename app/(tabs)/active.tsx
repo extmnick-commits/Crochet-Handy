@@ -6,7 +6,7 @@
  * screen does not drift it.
  */
 import * as Haptics from 'expo-haptics';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Modal,
@@ -19,7 +19,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import { YouTubeEmbed } from '@/components/media/YouTubeEmbed';
 import { ProjectIcon } from '@/components/navigation/TabIcons';
@@ -39,12 +39,15 @@ import {
 } from '@/store/useCrochetStore';
 import { formatBookmarkTime, type VideoBookmark } from '@/utils/chapters';
 import {
+  difficultyLabel,
   formatHookMillimeters,
   formatHookSize,
   formatMillimeterHook,
+  getPatternExtendedMeta,
   HOOK_SIZE_OPTIONS,
   hookLetterSize,
   parseHookMillimeters,
+  yarnSizeLabel,
   yarnWeightMeta,
 } from '@/utils/patternDisplay';
 import { captureErrorMessage, captureProgressPhoto } from '@/utils/progressPhoto';
@@ -60,6 +63,10 @@ export default function ActiveProjectScreen() {
     return state.patterns.find((item) => item.id === current.patternId) ?? null;
   });
   const canUndo = useCrochetStore(selectCanUndo);
+  const progressPhotoCount = useCrochetStore((state) => {
+    if (!project) return 0;
+    return state.progressPhotos.filter((photo) => photo.projectId === project.id).length;
+  });
   const incrementStitch = useCrochetStore((state) => state.incrementStitch);
   const decrementStitch = useCrochetStore((state) => state.decrementStitch);
   const incrementRow = useCrochetStore((state) => state.incrementRow);
@@ -86,6 +93,7 @@ export default function ActiveProjectScreen() {
   const [fullscreen, setFullscreen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [captionsEnabled, setCaptionsEnabled] = useState(true);
 
   const live = project?.status === 'in-progress';
   const statusLabel = project == null ? 'Idle' : live ? 'Active' : 'Finished';
@@ -170,6 +178,12 @@ export default function ActiveProjectScreen() {
               videoId={videoId}
               seekRequest={seekRequest}
               fullscreen={fullscreen}
+              captionsEnabled={captionsEnabled}
+              progressPhotoCount={progressPhotoCount}
+              onToggleCaptions={() => {
+                tick();
+                setCaptionsEnabled((value) => !value);
+              }}
               onOpenLog={() => {
                 setDraftUri(null);
                 setPhotoNotice(null);
@@ -210,6 +224,17 @@ export default function ActiveProjectScreen() {
               onReopen={() => {
                 tick('impact');
                 reopenProject();
+              }}
+            />
+
+            <VideoBookmarksYarnCard
+              pattern={pattern}
+              project={project}
+              activeBookmarkId={activeBookmarkId}
+              onSelectBookmark={(bookmark) => {
+                tick('impact');
+                setActiveBookmarkId(bookmark.id);
+                setSeekRequest({ seconds: bookmark.seconds, nonce: Date.now() });
               }}
             />
 
@@ -255,18 +280,7 @@ export default function ActiveProjectScreen() {
               </View>
             </View>
 
-            <View style={styles.section}>
-              <VideoBookmarksYarnCard
-                pattern={pattern}
-                project={project}
-                activeBookmarkId={activeBookmarkId}
-                onSelectBookmark={(bookmark) => {
-                  tick('impact');
-                  setActiveBookmarkId(bookmark.id);
-                  setSeekRequest({ seconds: bookmark.seconds, nonce: Date.now() });
-                }}
-              />
-            </View>
+            <ItemSpecificationsCard project={project} pattern={pattern} />
           </>
         ) : (
           <EmptyStateCard
@@ -456,17 +470,39 @@ export default function ActiveProjectScreen() {
 
       <Modal visible={fullscreen} animationType="fade" onRequestClose={() => setFullscreen(false)} statusBarTranslucent>
         <View style={[styles.fullscreen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close fullscreen"
-            testID="fullscreen-close"
-            onPress={() => setFullscreen(false)}
-            style={({ pressed }) => [styles.fullscreenClose, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.fullscreenCloseText}>Close</Text>
-          </Pressable>
+          <View style={[styles.fullscreenToolbar, { top: insets.top + Spacing.lg }]}>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel="Closed captions"
+              accessibilityState={{ checked: captionsEnabled }}
+              testID="youtube-captions-toggle-fullscreen"
+              onPress={() => {
+                tick();
+                setCaptionsEnabled((value) => !value);
+              }}
+              style={({ pressed }) => [
+                styles.fullscreenCc,
+                !captionsEnabled && styles.ccButtonOff,
+                pressed && styles.pressed,
+                webCursor,
+              ]}
+            >
+              <Text style={[styles.ccButtonText, !captionsEnabled && styles.ccButtonTextOff]}>CC</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close fullscreen"
+              testID="fullscreen-close"
+              onPress={() => setFullscreen(false)}
+              style={({ pressed }) => [styles.fullscreenClose, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.fullscreenCloseText}>Close</Text>
+            </Pressable>
+          </View>
           <View style={styles.fullscreenPlayer}>
-            {videoId ? <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} /> : null}
+            {videoId ? (
+              <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} captionsEnabled={captionsEnabled} />
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -479,6 +515,9 @@ function PlayerCard({
   videoId,
   seekRequest,
   fullscreen,
+  captionsEnabled,
+  progressPhotoCount,
+  onToggleCaptions,
   onOpenLog,
   onSnapshot,
   onFullscreen,
@@ -487,35 +526,50 @@ function PlayerCard({
   videoId: string | null;
   seekRequest?: { seconds: number; nonce: number } | null;
   fullscreen: boolean;
+  captionsEnabled: boolean;
+  progressPhotoCount: number;
+  onToggleCaptions: () => void;
   onOpenLog: () => void;
   onSnapshot: () => void;
   onFullscreen: () => void;
 }) {
   const poster = pattern ? youtubeThumbnailUrl(pattern.videoId, 'hq') : null;
+  const logMeta =
+    progressPhotoCount === 0
+      ? 'No photos yet'
+      : `${progressPhotoCount} ${progressPhotoCount === 1 ? 'photo' : 'photos'}`;
   return (
-    <View style={styles.player} testID="youtube-player">
-      {poster ? <Image accessible={false} source={{ uri: poster }} style={styles.playerPoster} /> : null}
-      {videoId && !fullscreen ? <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} /> : null}
-      {!videoId ? (
-        <View style={styles.playerEmpty} pointerEvents="none">
-          <Text style={styles.playerEmptyText}>No tutorial linked</Text>
-        </View>
-      ) : null}
-      <View style={styles.playerOverlay} pointerEvents="box-none">
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Progress log"
-          testID="progress-log"
-          onPress={() => {
-            tick();
-            onOpenLog();
-          }}
-          style={({ pressed }) => [styles.logPill, pressed && styles.pressed, webCursor]}
-        >
-          <CameraIcon size={14} />
-          <Text style={styles.logPillText}>Progress Log &gt;</Text>
-        </Pressable>
-        <View style={styles.playerActions} pointerEvents="box-none">
+    <View style={styles.playerBlock}>
+      <View style={styles.player} testID="youtube-player">
+        {poster ? <Image accessible={false} source={{ uri: poster }} style={styles.playerPoster} /> : null}
+        {videoId && !fullscreen ? (
+          <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} captionsEnabled={captionsEnabled} />
+        ) : null}
+        {!videoId ? (
+          <View style={styles.playerEmpty} pointerEvents="none">
+            <Text style={styles.playerEmptyText}>No tutorial linked</Text>
+          </View>
+        ) : null}
+        <View style={styles.playerOverlay} pointerEvents="box-none">
+          <View style={styles.playerActions} pointerEvents="box-none">
+            <Pressable
+            accessibilityRole="switch"
+            accessibilityLabel="Closed captions"
+            accessibilityState={{ checked: captionsEnabled }}
+            accessibilityHint="Turns YouTube subtitles on or off for this tutorial."
+            testID="youtube-captions-toggle"
+            disabled={videoId == null}
+            onPress={onToggleCaptions}
+            style={({ pressed }) => [
+              styles.ccButton,
+              !captionsEnabled && styles.ccButtonOff,
+              videoId == null && styles.roundButtonDisabled,
+              pressed && styles.pressed,
+              webCursor,
+            ]}
+          >
+            <Text style={[styles.ccButtonText, !captionsEnabled && styles.ccButtonTextOff]}>CC</Text>
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={Platform.OS === 'web' ? 'Upload progress photo' : 'Snap progress photo'}
@@ -536,8 +590,26 @@ function PlayerCard({
           >
             <FullscreenIcon />
           </Pressable>
+          </View>
         </View>
       </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Progress log"
+        accessibilityHint="Opens your project photo timeline."
+        testID="progress-log"
+        onPress={() => {
+          tick();
+          onOpenLog();
+        }}
+        style={({ pressed }) => [styles.playerLogRow, pressed && styles.pressed, webCursor]}
+      >
+        <View style={styles.playerLogCopy}>
+          <Text style={styles.playerLogTitle}>Progress log</Text>
+          <Text style={styles.playerLogMeta}>{logMeta}</Text>
+        </View>
+        <CameraIcon size={18} />
+      </Pressable>
     </View>
   );
 }
@@ -1025,6 +1097,102 @@ function ProjectTimerCard() {
   );
 }
 
+function formatEstimatedMinutes(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours <= 0) return `${mins} min`;
+  if (mins === 0) return `${hours} h`;
+  return `${hours} h ${mins} min`;
+}
+
+function ItemSpecRow({ label, value, isLast }: { label: string; value: string; isLast?: boolean }) {
+  return (
+    <View style={[styles.itemSpecRow, isLast && styles.itemSpecRowLast]}>
+      <Text style={styles.itemSpecLabel}>{label}</Text>
+      <Text style={styles.itemSpecValue}>{value}</Text>
+    </View>
+  );
+}
+
+function ItemSpecificationsCard({
+  project,
+  pattern,
+}: {
+  project: CrochetProject;
+  pattern: CrochetPattern | null;
+}) {
+  const meta = useMemo(() => (pattern ? getPatternExtendedMeta(pattern) : null), [pattern]);
+  const yarnWeight = pattern?.yarnWeight ?? project.yarnWeight;
+  const hookSize = pattern?.hookSize ?? project.hookSize;
+  const totalRows = pattern?.totalRows ?? project.totalRows;
+  const stitchesPerRow = pattern?.stitchesPerRow ?? project.stitchesPerRow;
+  const estimatedMinutes = meta?.estimatedTimeMinutes ?? Math.max(30, project.totalRows * 8);
+  const difficulty = pattern ? difficultyLabel(pattern.difficulty) : 'Custom';
+  const materials = meta?.materials ?? [];
+  const tools = meta?.tools ?? [];
+  const showPack = materials.length > 0 || tools.length > 0;
+
+  return (
+    <View style={styles.itemSpecCard} testID="item-specifications">
+      <Text role="heading" aria-level={2} style={styles.itemSpecTitle}>
+        Item Specifications
+      </Text>
+      <View style={styles.itemSpecBody}>
+        <ItemSpecRow label="Yarn size" value={yarnSizeLabel(yarnWeight)} />
+        <ItemSpecRow label="Hook size" value={formatHookSize(hookSize)} />
+        <ItemSpecRow label="Total rows" value={String(totalRows)} />
+        <ItemSpecRow label="Stitches / row" value={String(stitchesPerRow)} />
+        <ItemSpecRow label="Est. time" value={formatEstimatedMinutes(estimatedMinutes)} />
+        <ItemSpecRow label="Difficulty" value={difficulty} isLast />
+      </View>
+      {showPack ? (
+        <>
+          <Text style={styles.itemSpecPackHeading}>Ready-to-Crochet Pack</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.itemSpecBomRow}>
+            {materials.map((material) => (
+              <View key={`${material.name}-${material.weight}`} style={styles.itemSpecBomCard}>
+                <PackYarnIcon />
+                <Text style={styles.itemSpecBomTitle} numberOfLines={2}>{material.name}</Text>
+                <Text style={styles.itemSpecBomMeta}>{material.weight}</Text>
+                <Text style={styles.itemSpecBomMeta}>{material.yardage} yds</Text>
+              </View>
+            ))}
+            {tools.map((tool) => (
+              <View key={`${tool.type}-${tool.size}`} style={styles.itemSpecBomCard}>
+                <PackHookIcon />
+                <Text style={styles.itemSpecBomTitle} numberOfLines={2}>{tool.type}</Text>
+                <Text style={styles.itemSpecBomMeta}>{tool.size}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function PackYarnIcon() {
+  return (
+    <Svg width={36} height={36} viewBox="0 0 36 36" fill="none">
+      <Circle cx={18} cy={18} r={12} stroke={Colors.accentPrimary} strokeWidth={1.6} />
+      <Path d="M10 14 C14 10 22 10 26 14 M10 22 C14 26 22 26 26 22" stroke={Colors.accentPrimary} strokeWidth={1.4} />
+    </Svg>
+  );
+}
+
+function PackHookIcon() {
+  return (
+    <Svg width={36} height={36} viewBox="0 0 36 36" fill="none">
+      <Path
+        d="M10 8 C10 8 10 20 18 20 C24 20 26 16 26 12 C26 8 22 6 18 8"
+        stroke={Colors.textSecondary}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
 function VideoBookmarksYarnCard({
   pattern,
   project,
@@ -1277,6 +1445,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.cardSurface,
   },
+  playerBlock: {
+    gap: Spacing.sm,
+  },
   player: {
     width: '100%',
     aspectRatio: 16 / 9,
@@ -1300,24 +1471,28 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     zIndex: 2,
   },
-  logPill: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
+  playerLogRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: Radius.pill,
-    backgroundColor: 'rgba(28, 28, 30, 0.72)',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.cardSurface,
   },
-  logPillText: {
-    fontFamily: FontFamily.medium,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: FontWeight.semibold,
+  playerLogCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  playerLogTitle: {
+    ...Typography.callout,
     color: Colors.textPrimary,
+    fontWeight: FontWeight.semibold,
+  },
+  playerLogMeta: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
   },
   playerActions: {
     position: 'absolute',
@@ -1335,6 +1510,33 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  ccButton: {
+    minWidth: 36,
+    height: 36,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    borderWidth: 1,
+    borderColor: Colors.accentPrimary,
+  },
+  ccButtonOff: {
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    opacity: 0.72,
+  },
+  ccButtonText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: FontWeight.bold,
+    color: Colors.accentPrimary,
+    letterSpacing: 0.4,
+  },
+  ccButtonTextOff: {
+    color: Colors.textPrimary,
+    textDecorationLine: 'line-through',
   },
   roundButtonDisabled: {
     opacity: 0.4,
@@ -1623,6 +1825,71 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cardSurface,
     padding: Spacing.md,
     gap: Spacing.sm,
+  },
+  itemSpecCard: {
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.itemSpecBorder,
+    backgroundColor: Colors.itemSpecSurface,
+    padding: Spacing.lg,
+    gap: Spacing.md,
+  },
+  itemSpecTitle: {
+    ...Typography.subhead,
+    color: Colors.textPrimary,
+  },
+  itemSpecBody: {
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.itemSpecBorder,
+  },
+  itemSpecRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: Layout.hairline,
+    borderBottomColor: Colors.itemSpecBorder,
+  },
+  itemSpecRowLast: {
+    borderBottomWidth: 0,
+  },
+  itemSpecLabel: {
+    ...Typography.callout,
+    color: Colors.itemSpecLabel,
+  },
+  itemSpecValue: {
+    ...Typography.callout,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.semibold,
+    textAlign: 'right',
+    flexShrink: 1,
+  },
+  itemSpecPackHeading: {
+    ...Typography.label,
+    color: Colors.textPrimary,
+  },
+  itemSpecBomRow: {
+    gap: Spacing.md,
+  },
+  itemSpecBomCard: {
+    width: 132,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.elevatedControl,
+    gap: Spacing.xs,
+    alignItems: 'flex-start',
+  },
+  itemSpecBomTitle: {
+    ...Typography.label,
+    color: Colors.textPrimary,
+  },
+  itemSpecBomMeta: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
   },
   bookmarksTitle: {
     ...Typography.subhead,
@@ -2052,11 +2319,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     justifyContent: 'center',
   },
-  fullscreenClose: {
+  fullscreenToolbar: {
     position: 'absolute',
-    top: Spacing.lg,
+    left: Spacing.lg,
     right: Spacing.lg,
     zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  fullscreenCc: {
+    minHeight: 36,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(28, 28, 30, 0.72)',
+    borderWidth: 1,
+    borderColor: Colors.accentPrimary,
+  },
+  fullscreenClose: {
     minHeight: 36,
     paddingHorizontal: Spacing.md,
     borderRadius: Radius.pill,

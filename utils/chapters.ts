@@ -9,6 +9,8 @@ export type VideoBookmark = {
 };
 
 const TIMESTAMP_RE = /(?<![:\d])(\d{1,2}):(\d{2})(?::(\d{2}))?(?![:\d])/g;
+const INLINE_CHAPTER_SPLIT_RE = /\s*[,;|]\s*(?=\d{1,2}:\d{2})/g;
+const YOUTUBE_URL_TIME_RE = /[?&]t=(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(?![a-z])/gi;
 const MAX_BOOKMARKS = 24;
 const MAX_LABEL_CHARS = 48;
 
@@ -27,14 +29,37 @@ function parseTimestampParts(h: number, m: number, s: number): number {
   return h * 3600 + m * 60 + s;
 }
 
+function normalizeChapterSourceText(text: string): string {
+  return text
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[：﹕]/g, ':')
+    .replace(/\u00a0/g, ' ');
+}
+
 export function parseTimestampToSeconds(raw: string): number {
-  const match = raw.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  const match = normalizeChapterSourceText(raw).match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!match) return 0;
   const a = Number(match[1]);
   const b = Number(match[2]);
   const c = match[3] != null ? Number(match[3]) : null;
   if (c == null) return parseTimestampParts(0, a, b);
   return parseTimestampParts(a, b, c);
+}
+
+function parseYoutubeUrlTimeToSeconds(raw: string): number {
+  const hms = raw.match(/[?&]t=(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/i);
+  if (hms) {
+    const hours = hms[1] ? Number(hms[1]) : 0;
+    const minutes = hms[2] ? Number(hms[2]) : 0;
+    const seconds = hms[3] ? Number(hms[3]) : 0;
+    if (Number.isFinite(hours) && Number.isFinite(minutes) && Number.isFinite(seconds)) {
+      if (hours > 0 || minutes > 0 || seconds > 0) {
+        return hours * 3600 + minutes * 60 + seconds;
+      }
+    }
+  }
+  const plain = raw.match(/[?&]t=(\d+)/i)?.[1];
+  return plain ? Math.max(0, Number(plain)) : 0;
 }
 
 function cleanLabel(raw: string): string {
@@ -69,25 +94,18 @@ function labelFromLine(line: string, timestamp: string, index: number): string {
   return `Chapter ${index + 1}`;
 }
 
-/**
- * Pull chapter markers from a YouTube description or any pasted tutorial text.
- */
-export function extractVideoBookmarks(text: string): VideoBookmark[] {
-  if (!text.trim()) return [];
+function ingestChapterLine(line: string, bySeconds: Map<number, VideoBookmark>): void {
+  if (!line.trim()) return;
 
-  const bySeconds = new Map<number, VideoBookmark>();
-  const lines = text.split(/\r?\n/);
-
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const matches = [...line.matchAll(TIMESTAMP_RE)];
-    if (matches.length === 0) continue;
-
-    matches.forEach((match, index) => {
+  const matches = [...line.matchAll(TIMESTAMP_RE)];
+  if (matches.length === 0) {
+    const urlTimeMatches = [...line.matchAll(YOUTUBE_URL_TIME_RE)];
+    urlTimeMatches.forEach((match, index) => {
       const token = match[0];
-      const seconds = parseTimestampToSeconds(token);
+      const seconds = parseYoutubeUrlTimeToSeconds(token);
+      if (seconds <= 0) return;
       const label = labelFromLine(line, token, index);
-      if (!label) return;
+      if (!label || /^https?:\/\//i.test(label)) return;
       const existing = bySeconds.get(seconds);
       if (existing && existing.label.length >= label.length) return;
       const rowHint = rowHintFromLabel(label);
@@ -98,11 +116,65 @@ export function extractVideoBookmarks(text: string): VideoBookmark[] {
         ...(rowHint != null ? { rowHint } : {}),
       });
     });
+    return;
   }
+
+  matches.forEach((match, index) => {
+    const token = match[0];
+    const seconds = parseTimestampToSeconds(token);
+    const label = labelFromLine(line, token, index);
+    if (!label) return;
+    const existing = bySeconds.get(seconds);
+    if (existing && existing.label.length >= label.length) return;
+    const rowHint = rowHintFromLabel(label);
+    bySeconds.set(seconds, {
+      id: slugForId(label, seconds),
+      label,
+      seconds,
+      ...(rowHint != null ? { rowHint } : {}),
+    });
+  });
+}
+
+function expandChapterLines(text: string): string[] {
+  const lines: string[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (INLINE_CHAPTER_SPLIT_RE.test(line) && (line.match(TIMESTAMP_RE)?.length ?? 0) > 1) {
+      for (const piece of line.split(INLINE_CHAPTER_SPLIT_RE)) {
+        const trimmed = piece.trim();
+        if (trimmed) lines.push(trimmed);
+      }
+      continue;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+/**
+ * Pull chapter markers from a YouTube description or any pasted tutorial text.
+ */
+export function extractVideoBookmarks(text: string): VideoBookmark[] {
+  const normalized = normalizeChapterSourceText(text);
+  if (!normalized.trim()) return [];
+
+  const bySeconds = new Map<number, VideoBookmark>();
+  const lines = expandChapterLines(normalized);
+
+  for (const line of lines) ingestChapterLine(line, bySeconds);
 
   return [...bySeconds.values()]
     .sort((a, b) => a.seconds - b.seconds || a.label.localeCompare(b.label))
     .slice(0, MAX_BOOKMARKS);
+}
+
+/** Merge chapter lists from description text, watch-page markers, and AI fallbacks. */
+export function resolveVideoBookmarksFromSources(
+  ...groups: readonly (readonly VideoBookmark[])[]
+): VideoBookmark[] {
+  return sanitizeVideoBookmarks(mergeVideoBookmarks(...groups));
 }
 
 /** `MM:SS` under one hour; `H:MM:SS` when needed. */

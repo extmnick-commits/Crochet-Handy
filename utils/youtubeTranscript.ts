@@ -1,6 +1,12 @@
 /**
- * Fetches public YouTube caption tracks (no Data API quota) for scraper enrichment.
+ * Fetches public YouTube watch-page data (captions, structured chapters) for scraper enrichment.
  */
+
+import {
+  extractVideoBookmarks,
+  mergeVideoBookmarks,
+  type VideoBookmark,
+} from '@/utils/chapters';
 
 const WATCH_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -71,16 +77,20 @@ export function parseCaptionPayload(payload: string): string {
   return trimmed.replace(/\s+/g, ' ').trim();
 }
 
-export function extractCaptionTracksFromWatchHtml(html: string): CaptionTrack[] {
-  const marker = 'ytInitialPlayerResponse = ';
+export function extractScriptVariableJson(html: string, variableName: string): unknown | null {
+  const marker = `${variableName} = `;
   const start = html.indexOf(marker);
-  if (start === -1) return [];
+  if (start === -1) return null;
   const jsonStart = start + marker.length;
-  if (html[jsonStart] !== '{') return [];
+  const opener = html[jsonStart];
+  if (opener !== '{' && opener !== '[') return null;
 
   let depth = 0;
   let inString = false;
   let escaped = false;
+  const openChar = opener;
+  const closeChar = opener === '{' ? '}' : ']';
+
   for (let i = jsonStart; i < html.length; i += 1) {
     const char = html[i];
     if (inString) {
@@ -93,25 +103,139 @@ export function extractCaptionTracksFromWatchHtml(html: string): CaptionTrack[] 
       inString = true;
       continue;
     }
-    if (char === '{') depth += 1;
-    else if (char === '}') {
+    if (char === openChar) depth += 1;
+    else if (char === closeChar) {
       depth -= 1;
       if (depth === 0) {
         try {
-          const parsed = JSON.parse(html.slice(jsonStart, i + 1)) as {
-            captions?: {
-              playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] };
-            };
-          };
-          return parsed.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+          return JSON.parse(html.slice(jsonStart, i + 1)) as unknown;
         } catch {
-          return [];
+          return null;
         }
       }
     }
   }
-  return [];
+  return null;
 }
+
+export function extractCaptionTracksFromWatchHtml(html: string): CaptionTrack[] {
+  const parsed = extractScriptVariableJson(html, 'ytInitialPlayerResponse') as {
+    captions?: {
+      playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] };
+    };
+  } | null;
+  return parsed?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+}
+
+function simpleTextFromRenderer(value: unknown): string {
+  if (!value || typeof value !== 'object') return '';
+  const record = value as Record<string, unknown>;
+  if (typeof record.simpleText === 'string') return record.simpleText.trim();
+  const runs = record.runs;
+  if (Array.isArray(runs)) {
+    return runs
+      .map((run) => {
+        if (!run || typeof run !== 'object') return '';
+        const text = (run as Record<string, unknown>).text;
+        return typeof text === 'string' ? text : '';
+      })
+      .join('')
+      .trim();
+  }
+  if (typeof record.content === 'string') return record.content.trim();
+  return '';
+}
+
+function walkJsonTree(node: unknown, visit: (obj: Record<string, unknown>) => void): void {
+  if (node == null) return;
+  if (Array.isArray(node)) {
+    for (const item of node) walkJsonTree(item, visit);
+    return;
+  }
+  if (typeof node !== 'object') return;
+  const obj = node as Record<string, unknown>;
+  visit(obj);
+  for (const value of Object.values(obj)) walkJsonTree(value, visit);
+}
+
+function bookmarkFromMacroMarker(renderer: Record<string, unknown>): VideoBookmark | null {
+  const title = simpleTextFromRenderer(renderer.title);
+  if (!title) return null;
+
+  const onTap = renderer.onTap;
+  let seconds = 0;
+  if (onTap && typeof onTap === 'object') {
+    const command = (onTap as Record<string, unknown>).innertubeCommand;
+    if (command && typeof command === 'object') {
+      const seek = (command as Record<string, unknown>).seekToCommand;
+      if (seek && typeof seek === 'object') {
+        const start = Number((seek as Record<string, unknown>).startTimeSeconds);
+        if (Number.isFinite(start) && start >= 0) seconds = Math.trunc(start);
+      }
+    }
+  }
+  if (seconds === 0) {
+    const timeLabel = simpleTextFromRenderer(renderer.timeDescription);
+    if (timeLabel) seconds = extractVideoBookmarks(`${timeLabel} ${title}`)[0]?.seconds ?? 0;
+  }
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24);
+  return {
+    id: `bm-${seconds}-${slug || 'mark'}`,
+    label: title,
+    seconds,
+  };
+}
+
+export function extractMacroMarkerBookmarksFromWatchJson(...roots: readonly unknown[]): VideoBookmark[] {
+  const found: VideoBookmark[] = [];
+  for (const root of roots) {
+    if (!root) continue;
+    walkJsonTree(root, (obj) => {
+      const marker = obj.macroMarkersListItemRenderer;
+      if (!marker || typeof marker !== 'object') return;
+      const bookmark = bookmarkFromMacroMarker(marker as Record<string, unknown>);
+      if (bookmark) found.push(bookmark);
+    });
+  }
+  return mergeVideoBookmarks(found);
+}
+
+function extractDescriptionBookmarkCandidatesFromWatchJson(...roots: readonly unknown[]): VideoBookmark[] {
+  const texts: string[] = [];
+  for (const root of roots) {
+    if (!root) continue;
+    walkJsonTree(root, (obj) => {
+      for (const key of ['attributedDescriptionBodyText', 'expandableVideoDescriptionBodyRenderer', 'descriptionBodyText']) {
+        const value = obj[key];
+        const text = simpleTextFromRenderer(value);
+        if (text.length >= 24 && /\d{1,2}:\d{2}/.test(text)) texts.push(text);
+      }
+      if (typeof obj.content === 'string' && obj.content.length >= 24 && /\d{1,2}:\d{2}/.test(obj.content)) {
+        texts.push(obj.content);
+      }
+    });
+  }
+  return mergeVideoBookmarks(...texts.map((text) => extractVideoBookmarks(text)));
+}
+
+export function extractChapterBookmarksFromWatchHtml(html: string): VideoBookmark[] {
+  const player = extractScriptVariableJson(html, 'ytInitialPlayerResponse');
+  const initialData = extractScriptVariableJson(html, 'ytInitialData');
+  const fromMarkers = extractMacroMarkerBookmarksFromWatchJson(player, initialData);
+  const fromDescriptions = extractDescriptionBookmarkCandidatesFromWatchJson(player, initialData);
+  return mergeVideoBookmarks(fromMarkers, fromDescriptions);
+}
+
+export type WatchPageEnrichment = {
+  transcript: string | null;
+  bookmarks: VideoBookmark[];
+};
 
 function pickEnglishCaptionTrack(tracks: CaptionTrack[]): CaptionTrack | null {
   if (tracks.length === 0) return null;
@@ -140,37 +264,65 @@ async function fetchText(url: string, timeoutMs: number): Promise<string> {
   return response.text();
 }
 
+async function fetchWatchPageHtml(videoId: string): Promise<string> {
+  const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+  return fetchText(watchUrl, 20_000);
+}
+
+export async function fetchYoutubeWatchPageEnrichment(
+  videoId: string,
+  maxChars = DEFAULT_TRANSCRIPT_MAX_CHARS,
+): Promise<WatchPageEnrichment> {
+  const id = videoId.trim();
+  if (!id) return { transcript: null, bookmarks: [] };
+  try {
+    const html = await fetchWatchPageHtml(id);
+    const bookmarks = extractChapterBookmarksFromWatchHtml(html);
+    const tracks = extractCaptionTracksFromWatchHtml(html);
+    const track = pickEnglishCaptionTrack(tracks);
+    const baseUrl = track?.baseUrl?.replace(/\\u0026/g, '&');
+    if (!baseUrl) return { transcript: null, bookmarks };
+
+    const captionUrl = baseUrl.includes('fmt=') ? baseUrl : `${baseUrl}&fmt=json3`;
+    const payload = await fetchText(captionUrl, 20_000);
+    const plain = parseCaptionPayload(payload);
+    if (!plain) return { transcript: null, bookmarks };
+    return {
+      transcript: trimTranscriptForPrompt(plain, maxChars),
+      bookmarks,
+    };
+  } catch {
+    return { transcript: null, bookmarks: [] };
+  }
+}
+
 /** Returns caption plain text or null when captions are unavailable. */
 export async function fetchYoutubeTranscriptExcerpt(
   videoId: string,
   maxChars = DEFAULT_TRANSCRIPT_MAX_CHARS,
 ): Promise<string | null> {
-  const id = videoId.trim();
-  if (!id) return null;
-  try {
-    const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
-    const html = await fetchText(watchUrl, 20_000);
-    const tracks = extractCaptionTracksFromWatchHtml(html);
-    const track = pickEnglishCaptionTrack(tracks);
-    const baseUrl = track?.baseUrl?.replace(/\\u0026/g, '&');
-    if (!baseUrl) return null;
-
-    const captionUrl = baseUrl.includes('fmt=') ? baseUrl : `${baseUrl}&fmt=json3`;
-    const payload = await fetchText(captionUrl, 20_000);
-    const plain = parseCaptionPayload(payload);
-    if (!plain) return null;
-    return trimTranscriptForPrompt(plain, maxChars);
-  } catch {
-    return null;
-  }
+  const enrichment = await fetchYoutubeWatchPageEnrichment(videoId, maxChars);
+  return enrichment.transcript;
 }
 
 export async function fetchTranscriptsForVideoIds(
   videoIds: readonly string[],
   concurrency = 4,
 ): Promise<Map<string, string>> {
-  const unique = [...new Set(videoIds.map((id) => id.trim()).filter(Boolean))];
+  const enrichment = await fetchWatchEnrichmentForVideoIds(videoIds, concurrency);
   const result = new Map<string, string>();
+  for (const [id, value] of enrichment) {
+    if (value.transcript) result.set(id, value.transcript);
+  }
+  return result;
+}
+
+export async function fetchWatchEnrichmentForVideoIds(
+  videoIds: readonly string[],
+  concurrency = 4,
+): Promise<Map<string, WatchPageEnrichment>> {
+  const unique = [...new Set(videoIds.map((id) => id.trim()).filter(Boolean))];
+  const result = new Map<string, WatchPageEnrichment>();
   if (unique.length === 0) return result;
 
   let index = 0;
@@ -179,8 +331,10 @@ export async function fetchTranscriptsForVideoIds(
       const current = unique[index];
       index += 1;
       if (!current) continue;
-      const excerpt = await fetchYoutubeTranscriptExcerpt(current);
-      if (excerpt) result.set(current, excerpt);
+      const enrichment = await fetchYoutubeWatchPageEnrichment(current);
+      if (enrichment.transcript || enrichment.bookmarks.length > 0) {
+        result.set(current, enrichment);
+      }
     }
   }
 

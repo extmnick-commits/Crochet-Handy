@@ -46,13 +46,56 @@ export function youtubeThumbnailUrl(videoId: string, quality: YouTubeThumbnailQu
   return `https://i.ytimg.com/vi/${videoId}/${THUMBNAIL_FILES[quality]}`;
 }
 
+export type YouTubeEmbedUrlOptions = {
+  startSeconds?: number;
+  /** When false, asks the player not to show closed captions (`cc_load_policy=0`). */
+  captionsEnabled?: boolean;
+  /** Required for IFrame API postMessage commands (seek, captions). */
+  origin?: string;
+};
+
+/** Origin string for `enablejsapi` embed commands (web vs native WebView). */
+export function youtubeEmbedPostMessageOrigin(): string {
+  if (typeof globalThis !== 'undefined') {
+    const location = (globalThis as { location?: { origin?: string } }).location;
+    if (location?.origin && location.origin !== 'null') return location.origin;
+  }
+  return 'https://www.youtube-nocookie.com';
+}
+
 /** Privacy-enhanced embed. `playsinline` keeps the player inside the 16:9 card on iOS. */
-export function youtubeEmbedUrl(videoId: string, startSeconds?: number): string {
+export function youtubeEmbedUrl(videoId: string, options?: YouTubeEmbedUrlOptions): string {
+  const startSeconds = options?.startSeconds;
   const start =
     startSeconds != null && Number.isFinite(startSeconds) && startSeconds > 0
       ? `&start=${Math.floor(startSeconds)}`
       : '';
-  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&rel=0&modestbranding=1&playsinline=1&controls=1${start}`;
+  const captions =
+    options?.captionsEnabled === false ? '&cc_load_policy=0' : '&cc_load_policy=1';
+  const origin = encodeURIComponent(options?.origin ?? youtubeEmbedPostMessageOrigin());
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&origin=${origin}&rel=0&modestbranding=1&playsinline=1&controls=1${captions}${start}`;
+}
+
+export function youtubeCaptionsCommand(enabled: boolean): {
+  event: 'command';
+  func: 'setOption';
+  args: ['captions', 'track', Record<string, string> | null];
+} {
+  return {
+    event: 'command',
+    func: 'setOption',
+    args: ['captions', 'track', enabled ? { languageCode: 'en' } : null],
+  };
+}
+
+/** IFrame API command payload to show or hide captions without reloading the embed. */
+export function youtubeCaptionsCommandPayload(enabled: boolean): string {
+  return JSON.stringify(youtubeCaptionsCommand(enabled));
+}
+
+export function buildYouTubeCaptionsScript(enabled: boolean, attempts = 6): string {
+  const payload = youtubeCaptionsCommandPayload(enabled);
+  return `(function(){function send(){var frame=document.getElementById('yt-player');if(!frame||!frame.contentWindow)return;frame.contentWindow.postMessage(${JSON.stringify(payload)},'*');}send();var n=0;var timer=setInterval(function(){send();n+=1;if(n>=${attempts})clearInterval(timer);},350);})();true;`;
 }
 
 export function parseYouTubeUrl(input: string): ParsedYouTube | null {

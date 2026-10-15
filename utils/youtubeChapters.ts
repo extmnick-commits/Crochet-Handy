@@ -6,7 +6,8 @@
  */
 import Constants from 'expo-constants';
 
-import { extractVideoBookmarks, type VideoBookmark } from '@/utils/chapters';
+import { extractVideoBookmarks, mergeVideoBookmarks, type VideoBookmark } from '@/utils/chapters';
+import { fetchWatchEnrichmentForVideoIds } from '@/utils/youtubeTranscript';
 
 const YOUTUBE_VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos';
 const MAX_IDS_PER_REQUEST = 50;
@@ -39,10 +40,24 @@ export async function fetchYouTubeChapterBookmarks(videoIds: readonly string[]):
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) return found;
     const payload = (await response.json()) as YouTubeVideosResponse;
+    const missing: string[] = [];
     for (const item of payload.items ?? []) {
       if (!item.id) continue;
       const bookmarks = extractVideoBookmarks(item.snippet?.description ?? '');
-      if (bookmarks.length > 0) found.set(item.id, bookmarks);
+      if (bookmarks.length > 0) {
+        found.set(item.id, bookmarks);
+      } else {
+        missing.push(item.id);
+      }
+    }
+    if (missing.length > 0) {
+      const fromWatch = await fetchWatchEnrichmentForVideoIds(missing, 3);
+      for (const id of missing) {
+        const watchBookmarks = fromWatch.get(id)?.bookmarks ?? [];
+        if (watchBookmarks.length > 0) {
+          found.set(id, mergeVideoBookmarks(found.get(id) ?? [], watchBookmarks));
+        }
+      }
     }
     return found;
   } catch {
