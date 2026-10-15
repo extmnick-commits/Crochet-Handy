@@ -1,11 +1,13 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { BrandMark } from '@/components/brand/BrandMark';
 import { Colors, Spacing, Typography } from '@/constants/BambuTheme';
 
 /** Shown while persistence and Firebase auth finish their first pass. */
 export function LaunchSplash() {
   return (
     <View style={styles.root}>
+      <BrandMark size={88} />
       <Text style={styles.title}>Crochet Handy</Text>
       <ActivityIndicator color={Colors.accentPrimary} style={styles.spinner} />
     </View>

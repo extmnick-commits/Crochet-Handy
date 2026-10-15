@@ -47,7 +47,9 @@
     "export-pattern-catalog": "npx tsx scripts/export-pattern-catalog.ts",
     "prune-non-english-patterns": "npx tsx scripts/prune-non-english-patterns.ts",
     "prune-non-english-thumbnails": "npx tsx scripts/prune-non-english-thumbnails.ts",
-    "clean-catalog": "npm run prune-non-english-patterns && npm run prune-non-english-thumbnails"
+    "clean-catalog": "npm run prune-non-english-patterns && npm run prune-non-english-thumbnails",
+    "sync-eas-env": "node scripts/sync-eas-production-env.mjs",
+    "ios:testflight": "powershell -ExecutionPolicy Bypass -File ./scripts/ios-testflight-build.ps1"
   },
   "private": true,
   "ts-node": {

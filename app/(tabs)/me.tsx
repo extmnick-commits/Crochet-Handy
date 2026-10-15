@@ -6,7 +6,9 @@ import * as Haptics from 'expo-haptics';
 import { signOut } from 'firebase/auth';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Image,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -25,6 +27,7 @@ import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { LegalUrls } from '@/constants/LegalUrls';
 import {
   elapsedSeconds,
   stitchesDone,
@@ -33,6 +36,7 @@ import {
   type IdeaFolder,
   type UserAccount,
 } from '@/store/useCrochetStore';
+import { deleteFirebaseAccount } from '@/utils/deleteFirebaseAccount';
 import { auth, isFirebaseConfigured } from '@/utils/firebase';
 import {
   creatorInitials,
@@ -179,6 +183,34 @@ export default function MeScreen() {
     setAccount(null);
   };
 
+  const onDeleteAccount = () => {
+    if (!account) return;
+    const cloudUser = Boolean(isFirebaseConfigured() && auth?.currentUser);
+    const message = cloudUser
+      ? 'This permanently deletes your cloud account and synced data. Projects saved on this device stay until you clear app data.'
+      : 'This removes your local profile from this device. Your projects and stash stay on this device.';
+    Alert.alert('Delete account?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            tick();
+            if (cloudUser) {
+              const result = await deleteFirebaseAccount();
+              if (result.status === 'error') {
+                Alert.alert('Could not delete account', result.message);
+                return;
+              }
+            }
+            setAccount(null);
+          })();
+        },
+      },
+    ]);
+  };
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <ScrollView
@@ -205,6 +237,7 @@ export default function MeScreen() {
             setAuthOpen(true);
           }}
           onSignOut={() => void onSignOut()}
+          onDeleteAccount={onDeleteAccount}
         />
 
         <LibraryHeaderBar
@@ -425,6 +458,26 @@ export default function MeScreen() {
             )}
           </View>
         ) : null}
+
+        <View style={styles.legalFooter}>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Privacy policy"
+            onPress={() => void Linking.openURL(LegalUrls.privacyPolicy)}
+            style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.legalLink}>Privacy</Text>
+          </Pressable>
+          <Text style={styles.legalDot}>·</Text>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Support"
+            onPress={() => void Linking.openURL(LegalUrls.support)}
+            style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.legalLink}>Support</Text>
+          </Pressable>
+        </View>
       </ScrollView>
 
       <BottomSheet
@@ -590,6 +643,7 @@ function ProfileAccountBar({
   onSignIn,
   onEdit,
   onSignOut,
+  onDeleteAccount,
 }: {
   account: UserAccount | null;
   firebaseReady: boolean;
@@ -599,6 +653,7 @@ function ProfileAccountBar({
   onSignIn: () => void;
   onEdit: () => void;
   onSignOut: () => void;
+  onDeleteAccount: () => void;
 }) {
   return (
     <View style={styles.profileBar}>
@@ -618,9 +673,19 @@ function ProfileAccountBar({
               <Text numberOfLines={1} style={styles.profileHandle}>@{account.username}</Text>
             </View>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={onSignOut} hitSlop={Layout.hitSlop}>
-            <Text style={styles.signOutLink}>Sign out</Text>
-          </Pressable>
+          <View style={styles.profileActions}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={onSignOut} hitSlop={Layout.hitSlop}>
+              <Text style={styles.signOutLink}>Sign out</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete account"
+              onPress={onDeleteAccount}
+              hitSlop={Layout.hitSlop}
+            >
+              <Text style={styles.deleteAccountLink}>Delete account</Text>
+            </Pressable>
+          </View>
         </View>
       ) : (
         <Pressable
@@ -866,10 +931,33 @@ const styles = StyleSheet.create({
     color: Colors.accentPrimary,
     fontWeight: FontWeight.semibold,
   },
+  profileActions: {
+    alignItems: 'flex-end',
+    gap: Spacing.xs,
+  },
   signOutLink: {
     ...Typography.caption,
     color: Colors.textSecondary,
-    alignSelf: 'flex-end',
+  },
+  deleteAccountLink: {
+    ...Typography.caption,
+    color: Colors.danger,
+  },
+  legalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.lg,
+  },
+  legalLink: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  legalDot: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
   },
   signInCta: {
     gap: 4,

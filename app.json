@@ -13,7 +13,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Crochet Handy uses the camera to snap progress photos of your crochet.",
-        "NSPhotoLibraryUsageDescription": "Crochet Handy uses your photos to keep a progress log of each make."
+        "NSPhotoLibraryUsageDescription": "Crochet Handy uses your photos to keep a progress log of each make.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -21,9 +22,7 @@
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#121212",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -33,7 +32,7 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/icon.png",
       "backgroundColor": "#121212",
       "themeColor": "#121212"
     },
@@ -65,12 +64,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
+          "image": "./assets/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#121212",
           "dark": {
-            "image": "./assets/splash-icon.png",
+            "image": "./assets/icon.png",
             "backgroundColor": "#121212"
           }
         }

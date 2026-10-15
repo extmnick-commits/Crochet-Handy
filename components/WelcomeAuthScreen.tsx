@@ -5,6 +5,7 @@ import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-na
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AuthAccountForm } from '@/components/AuthAccountForm';
+import { BrandMark } from '@/components/brand/BrandMark';
 import { WelcomePatternBackdrop } from '@/components/WelcomePatternBackdrop';
 import { Colors, FontWeight, Layout, Spacing, Typography } from '@/constants/BambuTheme';
 import { isFirebaseConfigured } from '@/utils/firebase';
@@ -32,6 +33,7 @@ export function WelcomeAuthScreen() {
       >
         <View style={styles.inner}>
           <View style={styles.hero}>
+            <BrandMark size={72} />
             <Text accessibilityRole="header" style={styles.brand}>
               Crochet Handy
             </Text>
