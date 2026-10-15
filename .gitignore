@@ -31,8 +31,13 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# IDE
+.idea/
+
 # local env files (never commit secrets)
 .env
+.env.*
+!.env.example
 .env*.local
 
 # typescript
