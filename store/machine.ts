@@ -1454,8 +1454,23 @@ export function overlayRemoteCatalogOnBundled(
 }
 
 /**
- * Published catalog = bundled seed with optional remote metadata refresh. Replaces
- * stale feed entries that linger in AsyncStorage, Firestore, or an old CDN snapshot.
+ * When the scraper publishes `catalog/pattern-catalog.json`, that file is a full
+ * export of seed — not a delta. Prefer it over the APK bundle so new patterns
+ * land without reinstalling. Offline / failed fetch keeps the bundled catalog.
+ */
+export function resolveCanonicalPatternCatalog(
+  bundledCatalog: CrochetPattern[],
+  remoteCatalog: CrochetPattern[],
+): CrochetPattern[] {
+  if (remoteCatalog.length > 0) {
+    return dedupeById([...remoteCatalog]);
+  }
+  return [...bundledCatalog];
+}
+
+/**
+ * Published catalog = remote JSON when available, else bundled seed. Replaces stale
+ * feed entries that linger in AsyncStorage, Firestore, or an old CDN snapshot.
  */
 export function reconcilePatternCatalog(
   persisted: CrochetPattern[],
@@ -1463,7 +1478,7 @@ export function reconcilePatternCatalog(
   remoteCatalog: CrochetPattern[] = [],
   retainPatternIds: ReadonlySet<string> = new Set(),
 ): CrochetPattern[] {
-  let canonical = overlayRemoteCatalogOnBundled(bundledCatalog, remoteCatalog);
+  let canonical = resolveCanonicalPatternCatalog(bundledCatalog, remoteCatalog);
   canonical = canonical.filter((pattern) =>
     isEnglishFeedPattern({
       title: pattern.title,

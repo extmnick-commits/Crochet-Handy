@@ -197,10 +197,23 @@ assert(
   !remoteOverlay.some((pattern) => pattern.videoId === remoteOnlyVideoId),
   'remote overlay ignores patterns not in bundled catalog',
 );
-const reconciledRemoteSpam = reconcilePatternCatalog([], seed.patterns, [remoteOnlyPattern], new Set());
+const bundledSubset = seed.patterns.slice(0, Math.max(1, seed.patterns.length - 3));
+const remoteFullCatalog = seed.patterns;
+const reconciledFromRemote = reconcilePatternCatalog(bundledSubset, bundledSubset, remoteFullCatalog, new Set());
+equal(
+  reconciledFromRemote.length,
+  seed.patterns.length,
+  'remote catalog expands feed beyond APK bundle',
+);
+const reconciledRemoteKnitting = reconcilePatternCatalog(
+  [],
+  seed.patterns,
+  [{ ...remoteOnlyPattern, title: 'Knitting pattern for sweater' }],
+  new Set(),
+);
 assert(
-  !reconciledRemoteSpam.some((pattern) => pattern.videoId === remoteOnlyVideoId),
-  'reconcile ignores remote-only catalog entries',
+  !reconciledRemoteKnitting.some((pattern) => pattern.videoId === remoteOnlyVideoId),
+  'reconcile filters invalid remote catalog entries',
 );
 equal(sanitizeVideoBookmarks(undefined).length, 0, 'no placeholder bookmarks');
 assert(!isEstimatedBookmarkSet(extracted), 'real chapters are not estimates');
