@@ -262,6 +262,7 @@ export const useCrochetStore = create<CrochetStore>()(
             const synced = applyReconcileTimers(next, Date.now());
             set((state) => ({ ...state, ...(synced ?? next) }));
           },
+          bundled,
         );
       };
 
@@ -443,7 +444,18 @@ export const useCrochetStore = create<CrochetStore>()(
           authSessionReady: current.authSessionReady,
         };
       },
-      migrate: (persisted) => persisted as CrochetPersistedSlice,
+      migrate: (persisted, fromVersion) => {
+        const slice = persisted as CrochetPersistedSlice;
+        if (fromVersion >= CROCHET_STORAGE_VERSION) return slice;
+        const repaired = repairPersisted(slice, Date.now());
+        if (!repaired) return slice;
+        const bundled = createSeedData().patterns;
+        const retain = collectReferencedPatternIds(repaired);
+        return {
+          ...repaired,
+          patterns: reconcilePatternCatalog(repaired.patterns, bundled, [], retain),
+        };
+      },
       onRehydrateStorage: () => (_state, error) => {
         if (error) enablePersistWrites();
         markHydrated?.();

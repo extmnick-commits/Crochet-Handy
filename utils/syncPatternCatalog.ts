@@ -24,10 +24,11 @@ export async function pullPatternCatalogUpdates(
   return merged.length - before;
 }
 
-/** Remote catalog only (after bundled seed was merged on hydrate). */
+/** Fetches CDN catalog and overlays metadata onto the bundled seed allowlist. */
 export async function syncRemotePatternCatalog(
   readState: () => CrochetData,
   apply: (next: CrochetData) => void,
+  bundledCatalog: CrochetPattern[],
 ): Promise<void> {
-  await pullPatternCatalogUpdates(readState, apply, []);
+  await pullPatternCatalogUpdates(readState, apply, bundledCatalog);
 }

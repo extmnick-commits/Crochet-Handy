@@ -14,7 +14,7 @@ import { Platform } from 'react-native';
 import type { StateStorage } from 'zustand/middleware';
 
 export const CROCHET_STORAGE_KEY = 'crochet-handy';
-export const CROCHET_STORAGE_VERSION = 4;
+export const CROCHET_STORAGE_VERSION = 5;
 
 const memory = new Map<string, string>();
 
