@@ -1434,8 +1434,28 @@ export function collectReferencedPatternIds(data: CrochetPersistedSlice): Set<st
 }
 
 /**
- * Published catalog = bundled seed + remote JSON. Replaces stale feed entries that
- * were removed from seed/catalog but linger in AsyncStorage or an old CDN snapshot.
+ * Overlays remote catalog fields onto bundled patterns (same YouTube video id).
+ * Remote JSON must not re-introduce patterns removed from the app bundle — only
+ * refreshes metadata for videos still in seed/catalog.
+ */
+export function overlayRemoteCatalogOnBundled(
+  bundledCatalog: CrochetPattern[],
+  remoteCatalog: CrochetPattern[],
+): CrochetPattern[] {
+  const remoteByVideoId = new Map<string, CrochetPattern>();
+  for (const pattern of remoteCatalog) {
+    if (!pattern.videoId) continue;
+    remoteByVideoId.set(pattern.videoId, pattern);
+  }
+  return bundledCatalog.map((pattern) => {
+    if (!pattern.videoId) return pattern;
+    return remoteByVideoId.get(pattern.videoId) ?? pattern;
+  });
+}
+
+/**
+ * Published catalog = bundled seed with optional remote metadata refresh. Replaces
+ * stale feed entries that linger in AsyncStorage, Firestore, or an old CDN snapshot.
  */
 export function reconcilePatternCatalog(
   persisted: CrochetPattern[],
@@ -1443,7 +1463,7 @@ export function reconcilePatternCatalog(
   remoteCatalog: CrochetPattern[] = [],
   retainPatternIds: ReadonlySet<string> = new Set(),
 ): CrochetPattern[] {
-  let canonical = mergeCatalogPatternsFromSeed(bundledCatalog, remoteCatalog);
+  let canonical = overlayRemoteCatalogOnBundled(bundledCatalog, remoteCatalog);
   canonical = canonical.filter((pattern) =>
     isEnglishFeedPattern({
       title: pattern.title,

@@ -51,6 +51,7 @@ import {
   formatElapsed,
   projectProgress,
   mergeCatalogPatternsFromSeed,
+  overlayRemoteCatalogOnBundled,
   reconcilePatternCatalog,
   repairPersisted,
   type CrochetData,
@@ -176,6 +177,31 @@ const reconciled = reconcilePatternCatalog(
 );
 assert(!reconciled.some((pattern) => pattern.videoId === staleVideoId), 'reconcile drops stale feed entries');
 equal(reconciled.length, seed.patterns.length, 'reconcile matches bundled catalog');
+const remoteOnlyVideoId = 'remoteOnlyVid01';
+const remoteOnlyPattern = {
+  ...seed.patterns[0]!,
+  id: 'pattern-remote-only-spam',
+  videoId: remoteOnlyVideoId,
+  title: 'WOW, You Have to SEE! Trendy crochet pattern!',
+};
+const remoteOverlay = overlayRemoteCatalogOnBundled(seed.patterns, [
+  { ...seed.patterns[0]!, title: 'Updated title from CDN' },
+  remoteOnlyPattern,
+]);
+equal(
+  remoteOverlay.find((pattern) => pattern.id === seed.patterns[0]?.id)?.title,
+  'Updated title from CDN',
+  'remote overlay updates bundled video metadata',
+);
+assert(
+  !remoteOverlay.some((pattern) => pattern.videoId === remoteOnlyVideoId),
+  'remote overlay ignores patterns not in bundled catalog',
+);
+const reconciledRemoteSpam = reconcilePatternCatalog([], seed.patterns, [remoteOnlyPattern], new Set());
+assert(
+  !reconciledRemoteSpam.some((pattern) => pattern.videoId === remoteOnlyVideoId),
+  'reconcile ignores remote-only catalog entries',
+);
 equal(sanitizeVideoBookmarks(undefined).length, 0, 'no placeholder bookmarks');
 assert(!isEstimatedBookmarkSet(extracted), 'real chapters are not estimates');
 const withRealChapters = applySetPatternBookmarks(dataFrom(createSeedData()), seed.patterns[0]!.id, extracted);
