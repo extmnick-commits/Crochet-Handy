@@ -79,7 +79,28 @@
       "typedRoutes": true
     },
     "extra": {
-      "patternCatalogUrl": "https://cdn.jsdelivr.net/gh/extmnick-commits/Crochet-Handy@main/catalog/pattern-catalog.json"
-    }
+      "patternCatalogUrl": "https://cdn.jsdelivr.net/gh/extmnick-commits/Crochet-Handy@main/catalog/pattern-catalog.json",
+      "youtubeApiKey": "",
+      "firebaseConfig": {
+        "apiKey": "",
+        "authDomain": "",
+        "projectId": "",
+        "storageBucket": "",
+        "messagingSenderId": "",
+        "appId": ""
+      },
+      "router": {},
+      "expo-status-bar": {
+        "style": "light"
+      },
+      "expo-navigation-bar": {
+        "enforceContrast": false,
+        "style": "light"
+      },
+      "eas": {
+        "projectId": "0cf0fd48-812f-42aa-bfed-3dca35282a2d"
+      }
+    },
+    "owner": "extmnick"
   }
 }
