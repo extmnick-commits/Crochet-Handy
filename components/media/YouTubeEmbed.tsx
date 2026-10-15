@@ -31,7 +31,7 @@ export function YouTubeEmbed({ videoId, seekRequest }: YouTubeEmbedProps) {
   useEffect(() => {
     if (!seekRequest) return;
     webViewRef.current?.injectJavaScript(buildSeekScript(seekRequest.seconds));
-  }, [seekRequest?.nonce, seekRequest?.seconds]);
+  }, [seekRequest]);
 
   return (
     <View style={styles.fill}>

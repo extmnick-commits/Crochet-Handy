@@ -9,7 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Platform } from 'react-native';
 
 const MAX_EDGE = 1280;
-const MAX_DATA_URL = 480_000;
+const MAX_DATA_URL = 1_000_000;
 
 export type CaptureSource = 'camera' | 'library';
 
@@ -30,7 +30,7 @@ export async function captureProgressPhoto(source: CaptureSource): Promise<Captu
 
     const options = {
       mediaTypes: ['images'] as ImagePicker.MediaType[],
-      quality: 0.4,
+      quality: 0.3,
       base64: true,
       exif: false,
     };
@@ -71,10 +71,9 @@ async function photoUriFromAsset(asset: ImagePicker.ImagePickerAsset): Promise<s
     const mime = asset.mimeType?.startsWith('image/') ? asset.mimeType : 'image/jpeg';
     const uri = `data:${mime};base64,${asset.base64}`;
     if (uri.length <= MAX_DATA_URL) return uri;
-    return null;
   }
 
-  if (asset.uri.startsWith('file://') || asset.uri.startsWith('content://') || asset.uri.startsWith('ph://')) {
+  if (asset.uri && (asset.uri.startsWith('file://') || asset.uri.startsWith('content://') || asset.uri.startsWith('ph://'))) {
     return asset.uri;
   }
   return null;

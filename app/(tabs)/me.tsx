@@ -4,7 +4,7 @@
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { signOut } from 'firebase/auth';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Platform,
@@ -25,7 +25,6 @@ import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
-import { normalizePatternTag } from '@/utils/patternDisplay';
 import {
   elapsedSeconds,
   stitchesDone,
@@ -39,6 +38,7 @@ import {
   creatorInitials,
   matchesPatternQuery,
   MASONRY_TEXT_BLOCK,
+  normalizePatternTag,
   packMasonryColumns,
 } from '@/utils/patternDisplay';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
@@ -131,11 +131,11 @@ export default function MeScreen() {
 
   const openFolder = openFolderId ? collectionFolders.find((folder) => folder.id === openFolderId) ?? null : null;
 
-  const filterPatterns = (list: CrochetPattern[]) => {
+  const filterPatterns = useCallback((list: CrochetPattern[]) => {
     const q = searchQuery.trim();
     if (!q) return list;
     return list.filter((pattern) => matchesPatternQuery(pattern, q));
-  };
+  }, [searchQuery]);
 
   const filterFolders = (list: IdeaFolder[]) => {
     const q = searchQuery.trim().toLowerCase();
@@ -152,19 +152,15 @@ export default function MeScreen() {
   };
 
   const masonryPatterns = useMemo(() => {
-    const q = searchQuery.trim();
-    const applyQuery = (list: CrochetPattern[]) =>
-      q ? list.filter((pattern) => matchesPatternQuery(pattern, q)) : list;
-
-    if (libraryPill === 'likes') return applyQuery(likedPatterns);
+    if (libraryPill === 'likes') return filterPatterns(likedPatterns);
     if (openFolder) {
       const inFolder = openFolder.patternIds
         .map((id) => patterns.find((pattern) => pattern.id === id))
         .filter((item): item is CrochetPattern => item != null);
-      return applyQuery(inFolder);
+      return filterPatterns(inFolder);
     }
     return [];
-  }, [libraryPill, likedPatterns, openFolder, patterns, searchQuery]);
+  }, [filterPatterns, libraryPill, likedPatterns, openFolder, patterns]);
 
   const innerWidth = Math.max(0, windowWidth - insets.left - insets.right);
   const columnWidth = Math.floor((innerWidth - Layout.screenGutter * 2 - Layout.cardGap) / 2);

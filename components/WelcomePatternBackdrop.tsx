@@ -2,7 +2,7 @@
  * Slow-scrolling, softly blurred pattern mosaic behind the welcome / sign-in screen.
  */
 import { BlurView } from 'expo-blur';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -89,7 +89,7 @@ export function WelcomePatternBackdrop() {
   const patterns = useCrochetStore((state) => state.patterns);
   const tiles = useMemo(() => pickBackdropPatterns(patterns, layout.tileCount), [patterns, layout.tileCount]);
   const [stripHeight, setStripHeight] = useState(0);
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const [scrollY] = useState(() => new Animated.Value(0));
 
   const { columns, gap, gridWidth, tileWidth, coverScale, fullBleed } = layout;
   const webCellStyle = fullBleed ? styles.cellWeb : null;

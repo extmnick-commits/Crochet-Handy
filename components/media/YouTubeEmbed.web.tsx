@@ -24,7 +24,7 @@ export function YouTubeEmbed({ videoId, seekRequest }: YouTubeEmbedProps) {
     if (!iframe) return;
     postPlayerCommand(iframe, 'seekTo', [seekRequest.seconds, true]);
     postPlayerCommand(iframe, 'playVideo', []);
-  }, [seekRequest?.nonce]);
+  }, [seekRequest]);
 
   const src = youtubeEmbedUrl(videoId);
 

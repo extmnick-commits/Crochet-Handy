@@ -3,7 +3,7 @@
  */
 import { AuthAccountForm } from '@/components/AuthAccountForm';
 import { BottomSheet } from '@/components/ui/BottomSheet';
-import { useCrochetStore, type UserAccount } from '@/store/useCrochetStore';
+import { useCrochetStore } from '@/store/useCrochetStore';
 
 type AuthMode = 'sign-in' | 'create' | 'edit';
 

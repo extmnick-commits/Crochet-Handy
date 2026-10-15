@@ -1,7 +1,7 @@
 /**
  * Floating "Added to …" toast after instant collect (Bambu Handy style).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -25,9 +25,21 @@ export function showCollectToast(payload: CollectToastPayload) {
 export function CollectToastHost() {
   const insets = useSafeAreaInsets();
   const [toast, setToast] = useState<CollectToastPayload | null>(null);
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(16)).current;
+  const [opacity] = useState(() => new Animated.Value(0));
+  const [translateY] = useState(() => new Animated.Value(16));
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const dismiss = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 12, duration: 160, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setToast(null);
+        pendingToast = null;
+      }
+    });
+  }, [opacity, translateY]);
 
   useEffect(() => {
     toastListener = (payload) => {
@@ -48,19 +60,7 @@ export function CollectToastHost() {
       toastListener = null;
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, [opacity, translateY]);
-
-  const dismiss = () => {
-    Animated.parallel([
-      Animated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 12, duration: 160, useNativeDriver: true }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        setToast(null);
-        pendingToast = null;
-      }
-    });
-  };
+  }, [dismiss, opacity, translateY]);
 
   if (!toast) return null;
 

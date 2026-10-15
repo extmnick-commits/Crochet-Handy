@@ -9,9 +9,15 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#121212",
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.crochethandy.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Crochet Handy uses the camera to snap progress photos of your crochet.",
+        "NSPhotoLibraryUsageDescription": "Crochet Handy uses your photos to keep a progress log of each make."
+      }
     },
     "android": {
+      "package": "com.crochethandy.app",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#121212",
