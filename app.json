@@ -38,6 +38,7 @@
       "themeColor": "#121212"
     },
     "plugins": [
+      "expo-updates",
       "expo-router",
       [
         "expo-status-bar",
