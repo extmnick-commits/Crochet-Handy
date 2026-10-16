@@ -17,6 +17,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -27,6 +28,7 @@ import { PhotoProgressModal } from '@/components/PhotoProgressModal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { EmptyStateCard } from '@/components/ui/ScreenScaffold';
 import { Colors, Elevation, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { useProjectVideoOrientation } from '@/hooks/useProjectVideoOrientation';
 import { useProjectTimer } from '@/hooks/useProjectTimer';
 import {
   MAX_COUNT,
@@ -109,6 +111,9 @@ export default function ActiveProjectScreen() {
   const [draftUri, setDraftUri] = useState<string | null>(null);
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const videoLandscape = windowWidth > windowHeight;
+  useProjectVideoOrientation(fullscreen);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const live = project?.status === 'in-progress';
@@ -480,9 +485,30 @@ export default function ActiveProjectScreen() {
         }}
       />
 
-      <Modal visible={fullscreen} animationType="fade" onRequestClose={() => setFullscreen(false)} statusBarTranslucent>
-        <View style={[styles.fullscreen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-          <View style={[styles.fullscreenToolbar, { top: insets.top + Spacing.lg }]}>
+      <Modal
+        visible={fullscreen}
+        animationType="fade"
+        onRequestClose={() => setFullscreen(false)}
+        statusBarTranslucent
+        presentationStyle="fullScreen"
+        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+      >
+        <View
+          style={[
+            styles.fullscreen,
+            videoLandscape
+              ? { paddingLeft: insets.left, paddingRight: insets.right }
+              : { paddingTop: insets.top, paddingBottom: insets.bottom },
+          ]}
+        >
+          <View
+            style={[
+              styles.fullscreenToolbar,
+              videoLandscape
+                ? { top: Spacing.lg, right: insets.right + Spacing.lg }
+                : { top: insets.top + Spacing.lg },
+            ]}
+          >
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close fullscreen"
@@ -493,7 +519,7 @@ export default function ActiveProjectScreen() {
               <Text style={styles.fullscreenCloseText}>Close</Text>
             </Pressable>
           </View>
-          <View style={styles.fullscreenPlayer}>
+          <View style={[styles.fullscreenPlayer, videoLandscape && styles.fullscreenPlayerLandscape]}>
             {videoId ? <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} /> : null}
           </View>
         </View>
@@ -2362,6 +2388,10 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 16 / 9,
     backgroundColor: '#000000',
+  },
+  fullscreenPlayerLandscape: {
+    flex: 1,
+    aspectRatio: undefined,
   },
   pressed: {
     opacity: 0.72,

@@ -11,6 +11,7 @@
     "ios": {
       "bundleIdentifier": "com.crochethandy.app",
       "supportsTablet": true,
+      "requireFullScreen": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Crochet Handy uses the camera to snap progress photos of your crochet.",
         "NSPhotoLibraryUsageDescription": "Crochet Handy uses your photos to keep a progress log of each make.",
@@ -74,6 +75,12 @@
             "image": "./assets/transparent-splash.png",
             "backgroundColor": "#121212"
           }
+        }
+      ],
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "DEFAULT"
         }
       ]
     ],
