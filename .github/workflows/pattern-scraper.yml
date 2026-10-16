@@ -16,6 +16,11 @@ on:
   schedule:
     # Weekly: scrape new patterns, then prune catalog (cron has no workflow inputs).
     - cron: '0 0 * * 0'
+  push:
+    branches: [main]
+    paths:
+      # Bump .github/scrape-trigger to run scrape-and-prune without workflow_dispatch.
+      - .github/scrape-trigger
   workflow_dispatch:
     inputs:
       action:
@@ -84,10 +89,10 @@ jobs:
           EVENT: ${{ github.event_name }}
           INPUT_ACTION: ${{ inputs.action }}
         run: |
-          if [ "$EVENT" = "schedule" ]; then
+          if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "push" ]; then
             echo "action=scrape-and-prune" >> "$GITHUB_OUTPUT"
           else
-            echo "action=$INPUT_ACTION" >> "$GITHUB_OUTPUT"
+            echo "action=${INPUT_ACTION:-scrape-and-prune}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify YouTube API secret (scrape)
