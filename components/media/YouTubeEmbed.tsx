@@ -10,7 +10,7 @@ import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 import type { YouTubeEmbedProps } from '@/components/media/YouTubeEmbed.types';
-import { buildYouTubeCaptionsScript, youtubeEmbedPostMessageOrigin, youtubeEmbedUrl } from '@/utils/youtube';
+import { youtubeEmbedPostMessageOrigin, youtubeEmbedUrl } from '@/utils/youtube';
 
 export type { YouTubeEmbedProps } from '@/components/media/YouTubeEmbed.types';
 
@@ -20,10 +20,10 @@ function buildSeekScript(seconds: number): string {
   return `(function(){var frame=document.getElementById('yt-player');if(!frame||!frame.contentWindow)return;frame.contentWindow.postMessage(${JSON.stringify(seekPayload)},'*');frame.contentWindow.postMessage(${JSON.stringify(playPayload)},'*');})();true;`;
 }
 
-export function YouTubeEmbed({ videoId, seekRequest, captionsEnabled = true }: YouTubeEmbedProps) {
+export function YouTubeEmbed({ videoId, seekRequest }: YouTubeEmbedProps) {
   const webViewRef = useRef<WebView>(null);
   const embedOrigin = youtubeEmbedPostMessageOrigin();
-  const src = youtubeEmbedUrl(videoId, { captionsEnabled, origin: embedOrigin });
+  const src = youtubeEmbedUrl(videoId, { origin: embedOrigin });
   const html = useMemo(
     () =>
       `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><style>html,body{margin:0;height:100%;background:#000}iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style></head><body><iframe id="yt-player" src="${src}" title="Pattern tutorial" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe></body></html>`,
@@ -34,14 +34,6 @@ export function YouTubeEmbed({ videoId, seekRequest, captionsEnabled = true }: Y
     if (!seekRequest) return;
     webViewRef.current?.injectJavaScript(buildSeekScript(seekRequest.seconds));
   }, [seekRequest]);
-
-  useEffect(() => {
-    webViewRef.current?.injectJavaScript(buildYouTubeCaptionsScript(captionsEnabled));
-  }, [captionsEnabled, videoId]);
-
-  const syncCaptions = () => {
-    webViewRef.current?.injectJavaScript(buildYouTubeCaptionsScript(captionsEnabled));
-  };
 
   return (
     <View style={styles.fill}>
@@ -60,7 +52,6 @@ export function YouTubeEmbed({ videoId, seekRequest, captionsEnabled = true }: Y
         originWhitelist={['*']}
         setSupportMultipleWindows={false}
         androidLayerType="hardware"
-        onLoadEnd={syncCaptions}
       />
     </View>
   );

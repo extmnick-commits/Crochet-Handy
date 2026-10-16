@@ -71,7 +71,11 @@ export function youtubeEmbedUrl(videoId: string, options?: YouTubeEmbedUrlOption
       ? `&start=${Math.floor(startSeconds)}`
       : '';
   const captions =
-    options?.captionsEnabled === false ? '&cc_load_policy=0' : '&cc_load_policy=1';
+    options?.captionsEnabled === true
+      ? '&cc_load_policy=1'
+      : options?.captionsEnabled === false
+        ? '&cc_load_policy=0'
+        : '';
   const origin = encodeURIComponent(options?.origin ?? youtubeEmbedPostMessageOrigin());
   return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&origin=${origin}&rel=0&modestbranding=1&playsinline=1&controls=1${captions}${start}`;
 }

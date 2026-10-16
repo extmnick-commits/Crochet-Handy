@@ -93,8 +93,6 @@ export default function ActiveProjectScreen() {
   const [fullscreen, setFullscreen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
-  const [captionsEnabled, setCaptionsEnabled] = useState(true);
-
   const live = project?.status === 'in-progress';
   const statusLabel = project == null ? 'Idle' : live ? 'Active' : 'Finished';
   const videoId = pattern?.videoId ?? null;
@@ -178,12 +176,7 @@ export default function ActiveProjectScreen() {
               videoId={videoId}
               seekRequest={seekRequest}
               fullscreen={fullscreen}
-              captionsEnabled={captionsEnabled}
               progressPhotoCount={progressPhotoCount}
-              onToggleCaptions={() => {
-                tick();
-                setCaptionsEnabled((value) => !value);
-              }}
               onOpenLog={() => {
                 setDraftUri(null);
                 setPhotoNotice(null);
@@ -472,24 +465,6 @@ export default function ActiveProjectScreen() {
         <View style={[styles.fullscreen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={[styles.fullscreenToolbar, { top: insets.top + Spacing.lg }]}>
             <Pressable
-              accessibilityRole="switch"
-              accessibilityLabel="Closed captions"
-              accessibilityState={{ checked: captionsEnabled }}
-              testID="youtube-captions-toggle-fullscreen"
-              onPress={() => {
-                tick();
-                setCaptionsEnabled((value) => !value);
-              }}
-              style={({ pressed }) => [
-                styles.fullscreenCc,
-                !captionsEnabled && styles.ccButtonOff,
-                pressed && styles.pressed,
-                webCursor,
-              ]}
-            >
-              <Text style={[styles.ccButtonText, !captionsEnabled && styles.ccButtonTextOff]}>CC</Text>
-            </Pressable>
-            <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close fullscreen"
               testID="fullscreen-close"
@@ -500,9 +475,7 @@ export default function ActiveProjectScreen() {
             </Pressable>
           </View>
           <View style={styles.fullscreenPlayer}>
-            {videoId ? (
-              <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} captionsEnabled={captionsEnabled} />
-            ) : null}
+            {videoId ? <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} /> : null}
           </View>
         </View>
       </Modal>
@@ -515,9 +488,7 @@ function PlayerCard({
   videoId,
   seekRequest,
   fullscreen,
-  captionsEnabled,
   progressPhotoCount,
-  onToggleCaptions,
   onOpenLog,
   onSnapshot,
   onFullscreen,
@@ -526,9 +497,7 @@ function PlayerCard({
   videoId: string | null;
   seekRequest?: { seconds: number; nonce: number } | null;
   fullscreen: boolean;
-  captionsEnabled: boolean;
   progressPhotoCount: number;
-  onToggleCaptions: () => void;
   onOpenLog: () => void;
   onSnapshot: () => void;
   onFullscreen: () => void;
@@ -543,7 +512,7 @@ function PlayerCard({
       <View style={styles.player} testID="youtube-player">
         {poster ? <Image accessible={false} source={{ uri: poster }} style={styles.playerPoster} /> : null}
         {videoId && !fullscreen ? (
-          <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} captionsEnabled={captionsEnabled} />
+          <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} />
         ) : null}
         {!videoId ? (
           <View style={styles.playerEmpty} pointerEvents="none">
@@ -553,24 +522,6 @@ function PlayerCard({
         <View style={styles.playerOverlay} pointerEvents="box-none">
           <View style={styles.playerActions} pointerEvents="box-none">
             <Pressable
-            accessibilityRole="switch"
-            accessibilityLabel="Closed captions"
-            accessibilityState={{ checked: captionsEnabled }}
-            accessibilityHint="Turns YouTube subtitles on or off for this tutorial."
-            testID="youtube-captions-toggle"
-            disabled={videoId == null}
-            onPress={onToggleCaptions}
-            style={({ pressed }) => [
-              styles.ccButton,
-              !captionsEnabled && styles.ccButtonOff,
-              videoId == null && styles.roundButtonDisabled,
-              pressed && styles.pressed,
-              webCursor,
-            ]}
-          >
-            <Text style={[styles.ccButtonText, !captionsEnabled && styles.ccButtonTextOff]}>CC</Text>
-          </Pressable>
-          <Pressable
             accessibilityRole="button"
             accessibilityLabel={Platform.OS === 'web' ? 'Upload progress photo' : 'Snap progress photo'}
             testID="camera-snapshot"
@@ -1511,33 +1462,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.18)',
   },
-  ccButton: {
-    minWidth: 36,
-    height: 36,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    borderWidth: 1,
-    borderColor: Colors.accentPrimary,
-  },
-  ccButtonOff: {
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    opacity: 0.72,
-  },
-  ccButtonText: {
-    fontFamily: FontFamily.medium,
-    fontSize: 12,
-    lineHeight: 14,
-    fontWeight: FontWeight.bold,
-    color: Colors.accentPrimary,
-    letterSpacing: 0.4,
-  },
-  ccButtonTextOff: {
-    color: Colors.textPrimary,
-    textDecorationLine: 'line-through',
-  },
   roundButtonDisabled: {
     opacity: 0.4,
   },
@@ -2326,18 +2250,8 @@ const styles = StyleSheet.create({
     zIndex: 2,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     gap: Spacing.sm,
-  },
-  fullscreenCc: {
-    minHeight: 36,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(28, 28, 30, 0.72)',
-    borderWidth: 1,
-    borderColor: Colors.accentPrimary,
   },
   fullscreenClose: {
     minHeight: 36,
