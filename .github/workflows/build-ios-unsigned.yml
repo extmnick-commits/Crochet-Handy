@@ -1,0 +1,114 @@
+# Unsigned iOS .ipa for local sideloading (Sideloadly / AltStore).
+# No Apple Developer Program or EAS Apple sign-in required — re-sign the artifact on your machine.
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native iOS project
+        env:
+          CI: 'true'
+        run: |
+          rm -rf ios
+          npx expo prebuild --platform ios
+
+      - name: Install CocoaPods
+        run: npx pod-install
+
+      - name: Resolve Xcode workspace and scheme
+        id: xcode
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(find ios -maxdepth 1 -name '*.xcworkspace' | head -n 1)
+          if [ -z "$WORKSPACE" ]; then
+            echo "No .xcworkspace found under ios/"
+            exit 1
+          fi
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" -json | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          schemes = data.get('workspace', {}).get('schemes', [])
+          if not schemes:
+              raise SystemExit('No schemes reported by xcodebuild')
+          # Prefer scheme matching app display name without spaces (Expo default).
+          import pathlib
+          name = pathlib.Path('app.json').read_text()
+          preferred = None
+          try:
+              import json as j
+              app_name = j.loads(name)['expo']['name'].replace(' ', '')
+              if app_name in schemes:
+                  preferred = app_name
+          except Exception:
+              pass
+          print(preferred or schemes[0])
+          ")
+          echo "workspace=$WORKSPACE" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+          echo "Using workspace: $WORKSPACE"
+          echo "Using scheme: $SCHEME"
+
+      - name: Build Release (unsigned)
+        env:
+          CODE_SIGNING_ALLOWED: 'NO'
+          CODE_SIGNING_REQUIRED: 'NO'
+          CODE_SIGN_IDENTITY: ''
+        run: |
+          set -euo pipefail
+          DERIVED="${{ github.workspace }}/build/ios-derived"
+          xcodebuild \
+            -workspace "${{ steps.xcode.outputs.workspace }}" \
+            -scheme "${{ steps.xcode.outputs.scheme }}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$DERIVED" \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+
+      - name: Package CrochetHandy.ipa
+        run: |
+          set -euo pipefail
+          DERIVED="${{ github.workspace }}/build/ios-derived"
+          PRODUCTS="$DERIVED/Build/Products/Release-iphoneos"
+          APP_PATH=$(find "$PRODUCTS" -maxdepth 1 -name '*.app' | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found under $PRODUCTS"
+            find "$DERIVED" -name '*.app' || true
+            exit 1
+          fi
+          STAGING="${{ github.workspace }}/ipa-staging"
+          rm -rf "$STAGING"
+          mkdir -p "$STAGING/Payload"
+          cp -R "$APP_PATH" "$STAGING/Payload/"
+          (cd "$STAGING" && zip -qr "${{ github.workspace }}/CrochetHandy.ipa" Payload)
+          ls -lh "${{ github.workspace }}/CrochetHandy.ipa"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrochetHandy-unsigned-ipa
+          path: CrochetHandy.ipa
+          if-no-files-found: error
+          retention-days: 14
