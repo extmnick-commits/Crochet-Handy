@@ -1,5 +1,6 @@
 # Unsigned iOS .ipa for local sideloading (Sideloadly / AltStore).
 # No Apple Developer Program or EAS Apple sign-in required — re-sign the artifact on your machine.
+# Expo SDK 57 / React Native 0.86 need Xcode 26.4+. macos-14 only ships Xcode 15.4.
 name: Build unsigned iOS IPA
 
 on:
@@ -7,7 +8,7 @@ on:
 
 jobs:
   build-ipa:
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 90
 
     steps:
@@ -24,15 +25,43 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Select Xcode 26.4 or newer
+        run: |
+          set -euo pipefail
+          selected=""
+          for app in \
+            /Applications/Xcode_26.6.app \
+            /Applications/Xcode_26.5.app \
+            /Applications/Xcode_26.4.1.app \
+            /Applications/Xcode_26.4.app
+          do
+            if [ -d "$app" ]; then
+              selected="$app"
+              break
+            fi
+          done
+          if [ -z "$selected" ]; then
+            echo "Xcode 26.4+ was not found. Installed Xcode apps:"
+            ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$selected"
+          xcodebuild -version
+
       - name: Generate native iOS project
         env:
           CI: 'true'
         run: |
           rm -rf ios
-          npx expo prebuild --platform ios
+          npx expo prebuild --platform ios --no-install
 
       - name: Install CocoaPods
-        run: npx pod-install
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: |
+          cd ios
+          pod install
 
       - name: Resolve Xcode workspace and scheme
         id: xcode
@@ -74,6 +103,8 @@ jobs:
           CODE_SIGN_IDENTITY: ''
         run: |
           set -euo pipefail
+          NODE_BIN="$(command -v node)"
+          printf 'export NODE_BINARY=%s\n' "$NODE_BIN" > ios/.xcode.env.local
           DERIVED="${{ github.workspace }}/build/ios-derived"
           xcodebuild \
             -workspace "${{ steps.xcode.outputs.workspace }}" \
@@ -85,6 +116,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             ONLY_ACTIVE_ARCH=NO \
             build
 
