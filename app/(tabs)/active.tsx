@@ -22,7 +22,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { YouTubeEmbed } from '@/components/media/YouTubeEmbed';
+import { PatternTutorialVideo } from '@/components/media/PatternTutorialVideo';
 import { ProjectIcon } from '@/components/navigation/TabIcons';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
@@ -54,7 +54,7 @@ import {
   yarnWeightMeta,
 } from '@/utils/patternDisplay';
 import { captureErrorMessage, captureProgressPhoto } from '@/utils/progressPhoto';
-import { youtubeThumbnailUrl } from '@/utils/youtube';
+import { patternPosterUri } from '@/utils/youtube';
 
 export default function ActiveProjectScreen() {
   const insets = useSafeAreaInsets();
@@ -119,7 +119,9 @@ export default function ActiveProjectScreen() {
   const [newName, setNewName] = useState('');
   const live = project?.status === 'in-progress';
   const statusLabel = project == null ? 'Idle' : live ? 'Active' : 'Finished';
-  const videoId = pattern?.videoId ?? null;
+  const videoId = pattern?.videoId || null;
+  const videoUrl = pattern?.videoUrl || null;
+  const hasTutorial = Boolean(videoId || videoUrl);
 
   const onSnapshot = async () => {
     if (!project) return;
@@ -198,6 +200,7 @@ export default function ActiveProjectScreen() {
             <PlayerCard
               pattern={pattern}
               videoId={videoId}
+              videoUrl={videoUrl}
               seekRequest={seekRequest}
               fullscreen={fullscreen}
               progressPhotoCount={progressPhotoCount}
@@ -210,7 +213,7 @@ export default function ActiveProjectScreen() {
               }}
               onSnapshot={() => void onSnapshot()}
               onFullscreen={() => {
-                if (!videoId) return;
+                if (!hasTutorial) return;
                 tick();
                 setFullscreen(true);
               }}
@@ -532,7 +535,9 @@ export default function ActiveProjectScreen() {
             </Pressable>
           </View>
           <View style={[styles.fullscreenPlayer, videoLandscape && styles.fullscreenPlayerLandscape]}>
-            {videoId ? <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} /> : null}
+            {hasTutorial ? (
+              <PatternTutorialVideo videoId={videoId} videoUrl={videoUrl} seekRequest={seekRequest} />
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -543,6 +548,7 @@ export default function ActiveProjectScreen() {
 function PlayerCard({
   pattern,
   videoId,
+  videoUrl,
   seekRequest,
   fullscreen,
   progressPhotoCount,
@@ -553,6 +559,7 @@ function PlayerCard({
 }: {
   pattern: CrochetPattern | null;
   videoId: string | null;
+  videoUrl: string | null;
   seekRequest?: { seconds: number; nonce: number } | null;
   fullscreen: boolean;
   progressPhotoCount: number;
@@ -561,7 +568,8 @@ function PlayerCard({
   onSnapshot: () => void;
   onFullscreen: () => void;
 }) {
-  const poster = pattern ? youtubeThumbnailUrl(pattern.videoId, 'hq') : null;
+  const poster = patternPosterUri(pattern?.videoId, 'hq');
+  const hasTutorial = Boolean(videoId || videoUrl);
   const logMeta =
     progressPhotoCount === 0
       ? 'No photos yet'
@@ -570,10 +578,10 @@ function PlayerCard({
     <View style={styles.playerBlock}>
       <View style={styles.player} testID="youtube-player">
         {poster ? <Image accessible={false} source={{ uri: poster }} style={styles.playerPoster} /> : null}
-        {videoId && !fullscreen ? (
-          <YouTubeEmbed videoId={videoId} seekRequest={seekRequest} />
+        {hasTutorial && !fullscreen ? (
+          <PatternTutorialVideo videoId={videoId} videoUrl={videoUrl} seekRequest={seekRequest} />
         ) : null}
-        {!videoId ? (
+        {!hasTutorial ? (
           <View style={styles.playerEmpty} pointerEvents="none">
             <Text style={styles.playerEmptyText}>No tutorial linked</Text>
           </View>
@@ -592,11 +600,11 @@ function PlayerCard({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Fullscreen"
-            accessibilityState={{ disabled: videoId == null }}
-            disabled={videoId == null}
+            accessibilityState={{ disabled: !hasTutorial }}
+            disabled={!hasTutorial}
             testID="camera-fullscreen"
             onPress={onFullscreen}
-            style={({ pressed }) => [styles.roundButton, videoId == null && styles.roundButtonDisabled, pressed && styles.pressed, webCursor]}
+            style={({ pressed }) => [styles.roundButton, !hasTutorial && styles.roundButtonDisabled, pressed && styles.pressed, webCursor]}
           >
             <FullscreenIcon />
           </Pressable>
@@ -677,7 +685,7 @@ function ProgressCard({
     (project.currentStitch >= project.stitchesPerRow && (!autoAdvance || project.currentRow >= project.totalRows));
   const rowBlocked = finished || atGoal;
   const undoBlocked = finished || (!canUndo && project.currentStitch <= 0 && project.currentRow <= 1);
-  const poster = pattern ? youtubeThumbnailUrl(pattern.videoId, 'hq') : null;
+  const poster = patternPosterUri(pattern?.videoId, 'hq');
   const finishEarly = useArmed();
 
   const onFinishPress = () => {

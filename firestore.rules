@@ -1,9 +1,106 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: Firebase Auth uid
+    // Fields: the signed-in maker's synced app slice (patterns, projects, stash).
+    // Access: the signed-in user may read and write only their own document.
+    //
+    // Collection: community_submissions
+    // Document ID: auto-id
+    // Fields:
+    //   - title: string (required, 1-120) - cleaned pattern name
+    //   - steps: list of strings (required, 1-16 items, each 1-180) - stitch lines
+    //   - hookSize: string (required, 0-32)
+    //   - yarnWeight: string (required, one of the app yarn weights)
+    //   - source: string (required, "facebook" | "web" | "youtube")
+    //   - videoUrl: string (required, https URL, 12-500 chars)
+    //   - submittedAt: timestamp (required)
+    //   - status: string (required, clients may only create "pending")
+    // Clients cannot read or update submissions. The catalog job uses a
+    // service account, which bypasses these rules, to mark status "approved".
+    // Account ids, email, and display names are not fields on this document.
+    //
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function communityKeys() {
+      return request.resource.data.keys().hasOnly([
+        'title',
+        'steps',
+        'hookSize',
+        'yarnWeight',
+        'source',
+        'videoUrl',
+        'submittedAt',
+        'status'
+      ]);
+    }
+
+    function stepAt(i) {
+      return i >= request.resource.data.steps.size()
+        || (
+          request.resource.data.steps[i] is string
+          && request.resource.data.steps[i].size() > 0
+          && request.resource.data.steps[i].size() <= 180
+        );
+    }
+
+    function isValidCommunitySubmission() {
+      return communityKeys()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.steps is list
+        && request.resource.data.steps.size() > 0
+        && request.resource.data.steps.size() <= 16
+        && stepAt(0) && stepAt(1) && stepAt(2) && stepAt(3)
+        && stepAt(4) && stepAt(5) && stepAt(6) && stepAt(7)
+        && stepAt(8) && stepAt(9) && stepAt(10) && stepAt(11)
+        && stepAt(12) && stepAt(13) && stepAt(14) && stepAt(15)
+        && request.resource.data.hookSize is string
+        && request.resource.data.hookSize.size() <= 32
+        && request.resource.data.yarnWeight in [
+          'lace',
+          'fingering',
+          'sport',
+          'dk',
+          'worsted',
+          'aran',
+          'bulky',
+          'super-bulky',
+          'jumbo'
+        ]
+        && request.resource.data.source in ['facebook', 'web', 'youtube']
+        && request.resource.data.videoUrl is string
+        && request.resource.data.videoUrl.matches('^https://[^\\s]{8,480}$')
+        && request.resource.data.submittedAt is timestamp
+        && request.resource.data.status == 'pending';
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
+      allow delete: if isOwner(userId);
+    }
+
+    match /community_submissions/{submissionId} {
+      allow create: if isValidCommunitySubmission();
+      allow update: if isValidCommunitySubmission() && false;
+      allow read: if false;
+      allow delete: if false;
     }
   }
 }

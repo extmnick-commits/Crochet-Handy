@@ -17,8 +17,12 @@ import {
 } from '@/store/useCrochetStore';
 import { extractVideoBookmarks, formatBookmarkTime, mergeVideoBookmarks, type VideoBookmark } from '@/utils/chapters';
 import { fetchYouTubeChapterBookmarks, youtubeChaptersConfigured } from '@/utils/youtubeChapters';
+import { submitCommunityPattern } from '@/utils/communitySubmission';
+import { reviewCrochetPattern } from '@/utils/crochetReview';
+import { isFirebaseConfigured } from '@/utils/firebase';
+import { detectPatternVideo, extractPatternSteps } from '@/utils/patternAiParser';
 import { difficultyLabel, parseWholeCount, yarnWeightMeta } from '@/utils/patternDisplay';
-import { parseYouTubeUrl, youtubeThumbnailUrl } from '@/utils/youtube';
+import { youtubeThumbnailUrl } from '@/utils/youtube';
 
 const DIFFICULTIES: PatternDifficulty[] = ['beginner', 'easy', 'intermediate', 'advanced'];
 
@@ -40,7 +44,7 @@ export function AddPatternModal({ visible, onClose, onSaved }: AddPatternModalPr
               <Text role="heading" aria-level={2} style={styles.title}>
                 New pattern
               </Text>
-              <Text style={styles.subtitle}>Save a YouTube tutorial to your library</Text>
+              <Text style={styles.subtitle}>Save a YouTube, Facebook, or web tutorial</Text>
             </View>
             <Pressable
               accessibilityRole="button"
@@ -73,11 +77,13 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
   const [difficulty, setDifficulty] = useState<PatternDifficulty>('easy');
   const [tags, setTags] = useState('');
   const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedLocally, setSavedLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [youtubeBookmarks, setYoutubeBookmarks] = useState<VideoBookmark[]>([]);
   const [chapterLookup, setChapterLookup] = useState<'idle' | 'loading' | 'ready'>('idle');
 
-  const parsed = parseYouTubeUrl(url);
+  const detected = useMemo(() => detectPatternVideo({ url, text: notes }), [url, notes]);
   const noteBookmarks = useMemo(() => extractVideoBookmarks(notes), [notes]);
   const detectedBookmarks = useMemo(
     () => mergeVideoBookmarks(youtubeBookmarks, noteBookmarks),
@@ -85,30 +91,34 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
   );
 
   useEffect(() => {
-    if (!parsed || !youtubeChaptersConfigured()) {
+    if (!detected || detected.source !== 'youtube' || !youtubeChaptersConfigured()) {
       setYoutubeBookmarks([]);
-      setChapterLookup(parsed ? 'ready' : 'idle');
+      setChapterLookup(detected ? 'ready' : 'idle');
       return;
     }
     let cancelled = false;
     setChapterLookup('loading');
     setYoutubeBookmarks([]);
-    void fetchYouTubeChapterBookmarks([parsed.videoId]).then((found) => {
+    void fetchYouTubeChapterBookmarks([detected.videoId]).then((found) => {
       if (cancelled) return;
-      setYoutubeBookmarks(found.get(parsed.videoId) ?? []);
+      setYoutubeBookmarks(found.get(detected.videoId) ?? []);
       setChapterLookup('ready');
     });
     return () => {
       cancelled = true;
     };
-  }, [parsed?.videoId]);
+  }, [detected?.source, detected?.videoId]);
 
-  const onSave = () => {
-    if (!parsed) {
-      setError('Paste a full YouTube link.');
+  const onSave = async () => {
+    if (!detected) {
+      setError('Paste a YouTube, Facebook, or web tutorial link.');
       return;
     }
-    if (chapterLookup === 'loading') return;
+    if (savedLocally) {
+      onClose();
+      return;
+    }
+    if (chapterLookup === 'loading' || saving) return;
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setError('Add a title for this pattern.');
@@ -116,21 +126,27 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
     }
     const rows = parseWholeCount(totalRows);
     const stitches = parseWholeCount(stitchesPerRow);
-    if (rows === null || stitches === null) {
+    if (rows == null || stitches == null) {
       setError('Rows and stitches need to be whole numbers from 1 to 9999.');
       return;
     }
 
-    const alreadySaved = useCrochetStore.getState().patterns.some((pattern) => pattern.videoId === parsed.videoId);
+    const library = useCrochetStore.getState().patterns;
+    const alreadySaved = detected.videoId
+      ? library.some((pattern) => pattern.videoId === detected.videoId)
+      : library.some((pattern) => pattern.videoUrl === detected.videoUrl);
     if (alreadySaved) {
       setError('That video is already in your library.');
       return;
     }
 
+    const steps = stepsForImport(notes, detectedBookmarks, rows, stitches, hookSize);
     const id = addPatternFromYouTube({
       title: trimmedTitle,
       creator: creator.trim() || undefined,
-      youtubeUrl: parsed.canonicalUrl,
+      youtubeUrl: detected.youtubeUrl || detected.videoUrl,
+      videoUrl: detected.videoUrl,
+      source: detected.source,
       yarnWeight,
       hookSize: hookSize.trim() || undefined,
       totalRows: rows,
@@ -141,11 +157,38 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
         .map((tag) => tag.trim())
         .filter(Boolean),
       bookmarks: detectedBookmarks,
+      steps,
     });
 
     if (!id) {
       setError('Could not save that pattern.');
       return;
+    }
+
+    const review = reviewCrochetPattern({ title: trimmedTitle, steps });
+    if (!review.ok) {
+      setSavedLocally(true);
+      setError('Saved on this device. Community catalog only takes crochet patterns.');
+      onSaved?.(id);
+      return;
+    }
+
+    if (isFirebaseConfigured()) {
+      setSaving(true);
+      try {
+        await submitCommunityPattern({
+          title: trimmedTitle,
+          steps,
+          hookSize: hookSize.trim(),
+          yarnWeight,
+          source: detected.source,
+          videoUrl: detected.videoUrl,
+        });
+      } catch {
+        // The pattern is already in the local library. A failed relay stays anonymous.
+      } finally {
+        setSaving(false);
+      }
     }
 
     onSaved?.(id);
@@ -154,14 +197,14 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
 
   return (
     <View style={styles.form}>
-        <Field label="YouTube link">
+        <Field label="Tutorial link">
           <TextInput
             value={url}
             onChangeText={(value) => {
               setUrl(value);
               setError(null);
             }}
-            placeholder="https://www.youtube.com/watch?v=…"
+            placeholder="YouTube, Facebook, or a blog video link"
             placeholderTextColor={Colors.textTertiary}
             autoCapitalize="none"
             autoCorrect={false}
@@ -171,21 +214,33 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
           />
         </Field>
 
-        {parsed && (
+        {detected && (
           <View style={styles.preview}>
-            <Image
-              accessible={false}
-              source={{ uri: youtubeThumbnailUrl(parsed.videoId, 'hq') }}
-              style={styles.previewImage}
-            />
+            {detected.videoId ? (
+              <Image
+                accessible={false}
+                source={{ uri: youtubeThumbnailUrl(detected.videoId, 'hq') }}
+                style={styles.previewImage}
+              />
+            ) : (
+              <View style={styles.previewFallback}>
+                <Text style={styles.previewKind}>{detected.source === 'facebook' ? 'Facebook' : 'Web'}</Text>
+              </View>
+            )}
             <Text style={styles.previewCaption}>Link ready</Text>
           </View>
         )}
 
-        {parsed && chapterLookup === 'loading' && (
+        {detected ? (
+          <Text style={styles.shareCaption}>
+            Crochet patterns are sent for review and added to the community catalog after that check.
+          </Text>
+        ) : null}
+
+        {detected?.source === 'youtube' && chapterLookup === 'loading' && (
           <Text style={styles.detectTitle}>Checking YouTube for chapters…</Text>
         )}
-        {parsed && chapterLookup === 'ready' && youtubeChaptersConfigured() && youtubeBookmarks.length === 0 && noteBookmarks.length === 0 && (
+        {detected?.source === 'youtube' && chapterLookup === 'ready' && youtubeChaptersConfigured() && youtubeBookmarks.length === 0 && noteBookmarks.length === 0 && (
           <Text style={styles.lookupEmpty}>No chapter timestamps on this video. Paste them below if the creator listed them in the description.</Text>
         )}
 
@@ -343,17 +398,35 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Save pattern"
-          accessibilityState={{ disabled: chapterLookup === 'loading' }}
-          disabled={chapterLookup === 'loading'}
+          accessibilityLabel={savedLocally ? 'Done' : 'Save pattern'}
+          accessibilityState={{ disabled: chapterLookup === 'loading' || saving }}
+          disabled={chapterLookup === 'loading' || saving}
           testID="add-pattern-save"
-          onPress={onSave}
-          style={({ pressed }) => [styles.save, chapterLookup === 'loading' && styles.saveWaiting, pressed && styles.pressed, webCursor]}
+          onPress={() => {
+            void onSave();
+          }}
+          style={({ pressed }) => [styles.save, (chapterLookup === 'loading' || saving) && styles.saveWaiting, pressed && styles.pressed, webCursor]}
         >
-          <Text style={styles.saveText}>Save pattern</Text>
+          <Text style={styles.saveText}>{saving ? 'Saving…' : savedLocally ? 'Done' : 'Save pattern'}</Text>
         </Pressable>
       </View>
   );
+}
+
+function stepsForImport(
+  notes: string,
+  bookmarks: VideoBookmark[],
+  rows: number,
+  stitches: number,
+  hookSize: string,
+): string[] {
+  const parsed = extractPatternSteps(notes);
+  if (parsed.length > 0) return parsed;
+  if (bookmarks.length > 0) {
+    return bookmarks.map((bookmark) => `${formatBookmarkTime(bookmark.seconds)} ${bookmark.label}`);
+  }
+  const hook = hookSize.trim() || 'the listed hook';
+  return [`Work ${rows} rows of ${stitches} stitches with ${hook}.`];
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -434,9 +507,26 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     backgroundColor: Colors.elevatedControl,
   },
+  previewFallback: {
+    width: 96,
+    height: 54,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.elevatedControl,
+  },
+  previewKind: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    fontWeight: FontWeight.semibold,
+  },
   previewCaption: {
     ...Typography.callout,
     color: Colors.accentPrimary,
+  },
+  shareCaption: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
   },
   notesInput: {
     minHeight: 88,

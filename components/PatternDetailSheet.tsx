@@ -24,6 +24,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
+import { PatternTutorialVideo } from '@/components/media/PatternTutorialVideo';
 import { HeartIcon } from '@/components/HeartIcon';
 import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { SaveToFolderSheet } from '@/components/SaveToFolderSheet';
@@ -56,7 +57,7 @@ import {
   yarnSizeLabel,
 } from '@/utils/patternDisplay';
 import { patternDescriptionAddsDetail } from '@/utils/patternSummary';
-import { youtubeThumbnailUrl } from '@/utils/youtube';
+import { patternPosterUri } from '@/utils/youtube';
 
 type PatternDetailSheetProps = {
   patternId: string | null;
@@ -147,10 +148,11 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
 
   const heroSlides = useMemo(() => {
     if (!pattern) return [];
-    const hq = youtubeThumbnailUrl(pattern.videoId, 'hq');
-    const slides = [pattern.thumbnailUrl, hq].filter((uri, index, list) => list.indexOf(uri) === index);
+    const poster = patternPosterUri(pattern.videoId, 'hq');
+    const slides = [pattern.thumbnailUrl, poster ?? ''].filter((uri, index, list) => uri.length > 0 && list.indexOf(uri) === index);
     return slides;
   }, [pattern]);
+  const showTutorial = Boolean(pattern?.videoId || pattern?.videoUrl);
 
   useEffect(() => {
     if (!patternId) return;
@@ -321,33 +323,43 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
               }}
             >
               <View style={styles.heroWrap}>
-                <ScrollView
-                  horizontal
-                  pagingEnabled
-                  showsHorizontalScrollIndicator={false}
-                  onMomentumScrollEnd={(event) => {
-                    const index = Math.round(event.nativeEvent.contentOffset.x / windowWidth);
-                    setHeroIndex(index);
-                  }}
-                >
-                  {heroSlides.map((uri) => (
-                    <Image
-                      key={uri}
-                      accessible={false}
-                      source={{ uri }}
-                      style={[styles.heroImage, { width: windowWidth }]}
-                    />
+                {showTutorial ? (
+                  <View style={[styles.heroVideo, { width: windowWidth }]}>
+                    <PatternTutorialVideo videoId={pattern.videoId} videoUrl={pattern.videoUrl} />
+                  </View>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    onMomentumScrollEnd={(event) => {
+                      const index = Math.round(event.nativeEvent.contentOffset.x / windowWidth);
+                      setHeroIndex(index);
+                    }}
+                  >
+                    {heroSlides.map((uri) => (
+                      <Image
+                        key={uri}
+                        accessible={false}
+                        source={{ uri }}
+                        style={[styles.heroImage, { width: windowWidth }]}
+                      />
+                    ))}
+                  </ScrollView>
+                )}
+                {!showTutorial && heroSlides.length > 1 ? (
+                  <View style={styles.heroBadge}>
+                    <Text style={styles.heroBadgeText}>{heroIndex + 1}/{heroSlides.length}</Text>
+                  </View>
+                ) : null}
+              </View>
+              {!showTutorial && heroSlides.length > 1 ? (
+                <View style={styles.dotsRow}>
+                  {heroSlides.map((uri, index) => (
+                    <View key={uri} style={[styles.dot, index === heroIndex && styles.dotOn]} />
                   ))}
-                </ScrollView>
-                <View style={styles.heroBadge}>
-                  <Text style={styles.heroBadgeText}>{heroIndex + 1}/{heroSlides.length}</Text>
                 </View>
-              </View>
-              <View style={styles.dotsRow}>
-                {heroSlides.map((uri, index) => (
-                  <View key={uri} style={[styles.dot, index === heroIndex && styles.dotOn]} />
-                ))}
-              </View>
+              ) : null}
 
               <Text role="heading" aria-level={2} style={styles.title}>{pattern.title}</Text>
               <View style={styles.statsRow}>
@@ -374,11 +386,13 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
                     </View>
                   ) : null}
                   <View style={styles.tutorialCard}>
-                    <Image
-                      accessible={false}
-                      source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-                      style={styles.tutorialThumb}
-                    />
+                    {patternPosterUri(pattern.videoId, 'hq') ? (
+                      <Image
+                        accessible={false}
+                        source={{ uri: patternPosterUri(pattern.videoId, 'hq') ?? '' }}
+                        style={styles.tutorialThumb}
+                      />
+                    ) : null}
                     <View style={styles.tutorialCopy}>
                       <Text style={styles.tutorialTitle}>Tutorial preview</Text>
                       <Text style={styles.tutorialMeta} numberOfLines={2}>{pattern.title}</Text>
@@ -416,6 +430,14 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
                           </Pressable>
                         ))}
                       </View>
+                    </View>
+                  ) : null}
+                  {pattern.steps && pattern.steps.length > 0 ? (
+                    <View style={styles.stepsBlock}>
+                      <Text style={styles.sectionHeading}>Stitch steps</Text>
+                      {pattern.steps.map((step, index) => (
+                        <Text key={`${index}-${step}`} style={styles.bodyText}>{step}</Text>
+                      ))}
                     </View>
                   ) : null}
                   {pattern.bookmarks.length > 0 ? (
@@ -873,6 +895,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: { gap: Spacing.lg },
   heroWrap: { position: 'relative' },
+  heroVideo: { aspectRatio: 16 / 9, backgroundColor: Colors.backgroundPrimary, overflow: 'hidden' },
   heroImage: { aspectRatio: 16 / 9, backgroundColor: Colors.elevatedControl },
   heroBadge: {
     position: 'absolute',
@@ -976,6 +999,7 @@ const styles = StyleSheet.create({
   },
   tagText: { ...Typography.caption, color: Colors.textPrimary },
   tagTextInteractive: { color: Colors.accentPrimary, fontWeight: FontWeight.semibold },
+  stepsBlock: { gap: Spacing.xs },
   chapterWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   chapterChip: {
     flexDirection: 'row',

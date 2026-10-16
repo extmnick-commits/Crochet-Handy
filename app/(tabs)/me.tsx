@@ -45,7 +45,7 @@ import {
   normalizePatternTag,
   packMasonryColumns,
 } from '@/utils/patternDisplay';
-import { youtubeThumbnailUrl } from '@/utils/youtube';
+import { patternPosterUri } from '@/utils/youtube';
 
 type LibraryPill = 'collections' | 'likes';
 type CollectionSubTab = 'folders' | 'stories';
@@ -595,11 +595,15 @@ export default function MeScreen() {
                     }}
                     style={({ pressed }) => [styles.addPatternRow, inFolder && styles.addPatternRowOn, pressed && styles.pressed, webCursor]}
                   >
-                    <Image
-                      accessible={false}
-                      source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-                      style={styles.addPatternThumb}
-                    />
+                    {patternPosterUri(pattern.videoId, 'hq') ? (
+                      <Image
+                        accessible={false}
+                        source={{ uri: patternPosterUri(pattern.videoId, 'hq') ?? '' }}
+                        style={styles.addPatternThumb}
+                      />
+                    ) : (
+                      <View style={styles.addPatternThumb} />
+                    )}
                     <Text numberOfLines={2} style={styles.addPatternTitle}>
                       {pattern.title}
                     </Text>
@@ -832,14 +836,20 @@ function FolderTile({
         {thumbs.length === 0 ? (
           <View style={styles.folderCollageEmpty} />
         ) : (
-          thumbs.map((pattern, index) => (
-            <Image
-              key={pattern.id}
-              accessible={false}
-              source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-              style={[styles.folderCollageCell, index % 2 === 1 && styles.folderCollageCellRight]}
-            />
-          ))
+          thumbs.map((pattern, index) => {
+            const poster = patternPosterUri(pattern.videoId, 'hq');
+            const cellStyle = [styles.folderCollageCell, index % 2 === 1 && styles.folderCollageCellRight];
+            return poster ? (
+              <Image
+                key={pattern.id}
+                accessible={false}
+                source={{ uri: poster }}
+                style={cellStyle}
+              />
+            ) : (
+              <View key={pattern.id} style={cellStyle} />
+            );
+          })
         )}
       </View>
       <Text numberOfLines={2} style={styles.folderTileTitle}>{folder.name}</Text>

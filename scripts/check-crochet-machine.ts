@@ -3,7 +3,11 @@
  * Run with: npx tsx scripts/check-crochet-machine.ts
  */
 import { extractVideoBookmarks, formatBookmarkTime, isEstimatedBookmarkSet, sanitizeVideoBookmarks } from '../utils/chapters';
+import { reviewCrochetPattern } from '../utils/crochetReview';
+import { detectPatternVideo, embeddedTutorialUrl, extractPatternSteps } from '../utils/patternAiParser';
 import { parseYouTubeUrl } from '../utils/youtube';
+import { parseCommunityDocument } from './communityCatalogFirestore';
+import { assemblePatternCatalog } from './export-pattern-catalog';
 import {
   extractChapterBookmarksFromWatchHtml,
   extractMacroMarkerBookmarksFromWatchJson,
@@ -62,7 +66,9 @@ import {
   progressPhotoCreatedAtIso,
   projectProgress,
   mergeCatalogPatternsFromSeed,
+  mergeCommunityPatterns,
   overlayRemoteCatalogOnBundled,
+  patternFromCommunitySubmission,
   reconcilePatternCatalog,
   repairPersisted,
   type CrochetData,
@@ -942,5 +948,158 @@ assert(
 );
 assert(parseCaptionJson3('{"events":[{"segs":[{"utf8":"Row one"}]}]}') === 'Row one', 'caption json3 parse');
 assert(trimTranscriptForPrompt('a'.repeat(50), 20).endsWith('…'), 'transcript trim');
+
+assert(seed.patterns.every((pattern) => pattern.source == null && pattern.videoUrl == null), 'seed patterns keep the original catalog shape');
+
+const youtubeInPost = detectPatternVideo({
+  url: 'https://example.com/free-pattern',
+  text: 'Watch the clip https://youtu.be/YED4ZOWimsE and https://www.facebook.com/watch/?v=123',
+});
+equal(youtubeInPost?.videoId, 'YED4ZOWimsE', 'youtube link wins inside a post');
+equal(youtubeInPost?.source, 'youtube', 'detected source is youtube');
+
+const facebookClip = detectPatternVideo({ url: 'https://www.facebook.com/watch/?v=998877', text: '' });
+equal(facebookClip?.source, 'facebook', 'facebook watch url');
+equal(facebookClip?.videoId, '', 'facebook clip has no youtube id');
+assert(detectPatternVideo({ url: 'javascript:alert(1)', text: '' }) == null, 'script url is ignored');
+
+const stitchLines = extractPatternSteps('Email me at maker@example.com\nRow 1: ch 12\nRow 2: sc in each st across\nThanks!');
+equal(stitchLines.length, 2, 'stitch lines extracted');
+assert(!stitchLines.join(' ').includes('@'), 'extracted steps drop email addresses');
+
+const facebookSaved = applyAddPattern(dataFrom(seed), 'pattern-fb-market', {
+  title: 'Market bag',
+  youtubeUrl: 'https://www.facebook.com/watch/?v=998877',
+  videoUrl: 'https://www.facebook.com/watch/?v=998877',
+  source: 'facebook',
+  steps: ['Row 1: ch 30', 'Row 2: dc across'],
+});
+assert(facebookSaved, 'facebook import saves');
+const facebookPattern = facebookSaved?.patterns.find((pattern) => pattern.id === 'pattern-fb-market');
+equal(facebookPattern?.source, 'facebook', 'facebook source stored');
+equal(facebookPattern?.videoId, '', 'facebook pattern does not invent a youtube id');
+assert(
+  applyAddPattern(facebookSaved!, 'pattern-fb-copy', {
+    title: 'Market bag again',
+    youtubeUrl: 'https://www.facebook.com/watch/?v=998877',
+  }) == null,
+  'duplicate facebook url rejected',
+);
+const secondClip = applyAddPattern(facebookSaved!, 'pattern-fb-other', {
+  title: 'Other market clip',
+  youtubeUrl: 'https://fb.watch/zzzzzzzz/',
+});
+assert(secondClip, 'a different facebook clip still saves');
+
+const communityPattern = patternFromCommunitySubmission('community-market-bag', {
+  title: 'Crochet market bag',
+  steps: ['Row 1: ch 30', 'Row 2: sc across', 'maker@example.com'],
+  hookSize: '5.0 mm',
+  yarnWeight: 'worsted',
+  source: 'facebook',
+  videoUrl: 'https://www.facebook.com/watch/?v=445566',
+  status: 'pending',
+});
+assert(communityPattern, 'valid community submission becomes a pattern');
+assert(
+  patternFromCommunitySubmission('community-zoo', {
+    title: 'Me at the zoo',
+    steps: ['Row 1: ch 12', 'Row 2: sc across'],
+    hookSize: '5.0 mm',
+    yarnWeight: 'worsted',
+    source: 'youtube',
+    videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    status: 'pending',
+  }) == null,
+  'unrelated video stays out of the community catalog',
+);
+assert(
+  reviewCrochetPattern({ title: 'Knitting pattern for a sweater', steps: ['Row 1: k2 p2'] }).ok === false,
+  'knitting submission is rejected',
+);
+assert(
+  reviewCrochetPattern({ title: 'Market bag', steps: ['Row 1: ch 30', 'Row 2: dc across'] }).ok === true,
+  'crochet project with stitch rows passes review',
+);
+const facebookEmbed = embeddedTutorialUrl('https://www.facebook.com/watch/?v=998877');
+assert(facebookEmbed?.includes('facebook.com/plugins/video.php') === true, 'facebook watch url uses the video plugin');
+assert(
+  facebookEmbed?.includes(encodeURIComponent('https://www.facebook.com/watch/?v=998877')) === true,
+  'facebook plugin keeps the watch link',
+);
+assert(!communityPattern?.steps?.some((step) => step.includes('@')), 'community steps drop email addresses');
+assert(
+  patternFromCommunitySubmission('community-empty', {
+    title: 'Missing steps',
+    steps: [],
+    hookSize: '5.0 mm',
+    yarnWeight: 'worsted',
+    source: 'web',
+    videoUrl: 'https://example.com/pattern.mp4',
+    status: 'pending',
+  }) == null,
+  'submission without steps is rejected',
+);
+
+const mergedCommunity = mergeCommunityPatterns(seed.patterns, [communityPattern!, communityPattern!]);
+equal(mergedCommunity.length, seed.patterns.length + 1, 'community merge adds one new pattern');
+equal(mergeCommunityPatterns(mergedCommunity, [communityPattern!]).length, mergedCommunity.length, 'community merge dedupes');
+const assembled = assemblePatternCatalog(seed.patterns, mergedCommunity, [communityPattern!]);
+equal(assembled.length, seed.patterns.length + 1, 'catalog assembly keeps community rows and dedupes');
+
+const repairedFacebook = repairPersisted(
+  {
+    patterns: [
+      {
+        id: 'community-bobble',
+        title: 'Bobble border',
+        creator: 'Community',
+        youtubeUrl: '',
+        videoId: '',
+        thumbnailUrl: '',
+        difficulty: 'easy',
+        yarnWeight: 'worsted',
+        hookSize: '5.0 mm',
+        totalRows: 2,
+        stitchesPerRow: 10,
+        tags: ['community'],
+        bookmarks: [],
+        videoUrl: 'https://www.facebook.com/watch/?v=123456',
+        source: 'facebook',
+        steps: ['Row 1: ch 20', 'Row 2: sc across'],
+      },
+    ],
+  },
+  t0,
+);
+equal(repairedFacebook?.patterns[0]?.source, 'facebook', 'repair keeps a non-youtube tutorial');
+equal(repairedFacebook?.patterns[0]?.steps?.[0], 'Row 1: ch 20', 'repair keeps stitch steps');
+const repairedSeed = repairPersisted({ patterns: [seed.patterns[0]] }, t0);
+equal(repairedSeed?.patterns[0]?.videoId, seed.patterns[0]?.videoId, 'repair still accepts bundled youtube patterns');
+
+const keptImport = reconcilePatternCatalog(
+  [communityPattern!, ...seed.patterns],
+  seed.patterns,
+  seed.patterns,
+  new Set(),
+);
+assert(keptImport.some((pattern) => pattern.id === communityPattern!.id), 'local community import survives catalog refresh');
+
+const parsedSubmission = parseCommunityDocument('projects/demo/databases/(default)/documents/community_submissions/abc', {
+  title: { stringValue: 'Shared market bag' },
+  steps: { arrayValue: { values: [{ stringValue: 'Row 1: ch 30' }] } },
+  hookSize: { stringValue: '5.0 mm' },
+  yarnWeight: { stringValue: 'worsted' },
+  source: { stringValue: 'facebook' },
+  videoUrl: { stringValue: 'https://www.facebook.com/watch/?v=445566' },
+  status: { stringValue: 'pending' },
+});
+equal(parsedSubmission?.title, 'Shared market bag', 'firestore submission parser reads title');
+assert(parseCommunityDocument('projects/demo/databases/(default)/documents/community_submissions/nope', {
+  title: { stringValue: '' },
+  steps: { arrayValue: { values: [] } },
+  source: { stringValue: 'web' },
+  videoUrl: { stringValue: 'https://example.com/a.mp4' },
+}) == null, 'firestore parser rejects a title-less submission');
 
 console.log('crochet machine checks passed');

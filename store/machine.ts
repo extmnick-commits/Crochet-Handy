@@ -15,8 +15,18 @@
  * `totalRows`. Turn auto-advance off to stop at the end of the row.
  */
 import { formatBookmarkTime, isEstimatedBookmarkSet, sanitizeVideoBookmarks, type VideoBookmark } from '../utils/chapters';
+import {
+  cleanPatternText,
+  detectPatternVideo,
+  isPatternVideoSource,
+  normalizeHttpUrl,
+  type PatternVideoSource,
+} from '../utils/patternAiParser';
+import { reviewCrochetPattern } from '../utils/crochetReview';
 import { isEnglishFeedPattern } from '../utils/patternEnglishFilter';
 import { parseYouTubeUrl } from '../utils/youtube';
+
+export type { PatternVideoSource } from '../utils/patternAiParser';
 
 export type { VideoBookmark } from '../utils/chapters';
 
@@ -174,6 +184,12 @@ export type CrochetPattern = {
   summary?: string;
   /** Seek points parsed from the tutorial description or generated for the pattern. */
   bookmarks: VideoBookmark[];
+  /** Facebook, blog, or file URL when the tutorial is not only a YouTube id. */
+  videoUrl?: string;
+  /** Set on imports and community catalog entries. Omitted on bundled seed rows. */
+  source?: PatternVideoSource;
+  /** Cleaned stitch lines shared with the community catalog. */
+  steps?: string[];
 };
 
 export type PatternComment = {
@@ -264,6 +280,19 @@ export type NewPatternInput = {
   tags?: string[];
   summary?: string;
   bookmarks?: VideoBookmark[];
+  videoUrl?: string;
+  source?: PatternVideoSource;
+  steps?: string[];
+};
+
+export type CommunityCatalogSubmission = {
+  title: string;
+  steps: readonly string[];
+  hookSize: string;
+  yarnWeight: string;
+  source: PatternVideoSource;
+  videoUrl: string;
+  status?: string;
 };
 
 export type CreateProjectInput = {
@@ -722,8 +751,16 @@ export function applyDeleteProject(data: CrochetData, projectId: string): Croche
 export function applyAddPattern(data: CrochetData, id: string, input: NewPatternInput): CrochetData | null {
   const pattern = buildPattern(id, input);
   if (!pattern) return null;
-  if (data.patterns.some((item) => item.videoId === pattern.videoId)) return null;
+  if (duplicatesPattern(data.patterns, pattern)) return null;
   return { ...data, patterns: [...data.patterns, pattern] };
+}
+
+function duplicatesPattern(patterns: CrochetPattern[], pattern: CrochetPattern): boolean {
+  return patterns.some((item) => {
+    if (pattern.videoId && item.videoId === pattern.videoId) return true;
+    if (pattern.videoUrl && item.videoUrl && item.videoUrl === pattern.videoUrl) return true;
+    return false;
+  });
 }
 
 export function applySetPatternBookmarks(
@@ -1286,9 +1323,13 @@ export function applyRemoveCheckpoint(data: CrochetData, checkpointId: string, n
 
 export function buildPattern(id: string, input: NewPatternInput): CrochetPattern | null {
   if (!isSafeId(id)) return null;
-  const parsed = parseYouTubeUrl(input.youtubeUrl);
   const title = sanitizeText(input.title, 120);
-  if (!parsed || !title) return null;
+  if (!title) return null;
+  const detected = detectPatternVideo({
+    url: input.videoUrl?.trim() || input.youtubeUrl,
+    text: `${input.youtubeUrl}\n${input.videoUrl ?? ''}`,
+  });
+  if (!detected) return null;
   const tags = (input.tags ?? [])
     .map((tag) => sanitizeText(tag, 24))
     .filter((tag): tag is string => Boolean(tag))
@@ -1296,13 +1337,16 @@ export function buildPattern(id: string, input: NewPatternInput): CrochetPattern
   const totalRows = clampInt(input.totalRows ?? 10, 1, MAX_COUNT);
   const bookmarks = sanitizeVideoBookmarks(input.bookmarks);
   const summaryRaw = typeof input.summary === 'string' ? sanitizeText(input.summary, 200) : null;
+  const steps = sanitizePatternSteps(input.steps);
+  const source = isPatternVideoSource(input.source) ? input.source : detected.videoId ? undefined : detected.source;
+  const includeVideoUrl = Boolean(input.videoUrl) || !detected.videoId;
   return {
     id,
     title,
     creator: sanitizeText(input.creator ?? '', 80) || 'Unknown',
-    youtubeUrl: parsed.canonicalUrl,
-    videoId: parsed.videoId,
-    thumbnailUrl: parsed.thumbnailUrl,
+    youtubeUrl: detected.youtubeUrl,
+    videoId: detected.videoId,
+    thumbnailUrl: detected.thumbnailUrl,
     difficulty: input.difficulty && DIFFICULTIES.has(input.difficulty) ? input.difficulty : 'easy',
     yarnWeight: isYarnWeight(input.yarnWeight) ? input.yarnWeight : 'worsted',
     hookSize: sanitizeHook(input.hookSize ?? ''),
@@ -1311,7 +1355,74 @@ export function buildPattern(id: string, input: NewPatternInput): CrochetPattern
     tags,
     ...(summaryRaw ? { summary: summaryRaw } : {}),
     bookmarks,
+    ...(includeVideoUrl ? { videoUrl: detected.videoUrl } : {}),
+    ...(source ? { source } : {}),
+    ...(steps.length > 0 ? { steps } : {}),
   };
+}
+
+/** Turns a pending community submission into a catalog pattern, or null when it is incomplete. */
+export function patternFromCommunitySubmission(
+  id: string,
+  input: CommunityCatalogSubmission,
+): CrochetPattern | null {
+  if (input.status && input.status !== 'pending' && input.status !== 'approved') return null;
+  if (!isPatternVideoSource(input.source) || !isYarnWeight(input.yarnWeight)) return null;
+  if (!Array.isArray(input.steps) || input.steps.length === 0) return null;
+  const pattern = buildPattern(id, {
+    title: input.title,
+    creator: 'Community',
+    youtubeUrl: input.videoUrl,
+    videoUrl: input.videoUrl,
+    source: input.source,
+    yarnWeight: input.yarnWeight,
+    hookSize: input.hookSize,
+    steps: [...input.steps],
+    tags: ['community'],
+    totalRows: Math.max(1, Math.min(input.steps.length, MAX_COUNT)),
+  });
+  if (!pattern?.steps || pattern.steps.length === 0) return null;
+  if (!reviewCrochetPattern({ title: pattern.title, steps: pattern.steps }).ok) return null;
+  return pattern;
+}
+
+/** Appends community patterns that are not already in the catalog by video or title. */
+export function mergeCommunityPatterns(existing: CrochetPattern[], incoming: CrochetPattern[]): CrochetPattern[] {
+  const next = [...existing];
+  const seen = new Set(existing.map((pattern) => catalogDedupeKey(pattern)));
+  const titles = new Set(existing.map((pattern) => pattern.title.trim().toLowerCase()));
+  for (const pattern of incoming) {
+    const key = catalogDedupeKey(pattern);
+    const title = pattern.title.trim().toLowerCase();
+    if (seen.has(key) || titles.has(title)) continue;
+    seen.add(key);
+    titles.add(title);
+    next.push(pattern);
+  }
+  return next.length === existing.length ? existing : next;
+}
+
+export function catalogDedupeKey(pattern: Pick<CrochetPattern, 'videoId' | 'videoUrl' | 'title'>): string {
+  if (pattern.videoId) return `yt:${pattern.videoId}`;
+  if (pattern.videoUrl) {
+    const normalized = normalizeHttpUrl(pattern.videoUrl);
+    if (normalized) return `url:${normalized}`;
+  }
+  return `title:${pattern.title.trim().toLowerCase()}`;
+}
+
+export function findExistingPatternId(patterns: CrochetPattern[], input: NewPatternInput): string | null {
+  const detected = detectPatternVideo({
+    url: input.videoUrl?.trim() || input.youtubeUrl,
+    text: `${input.youtubeUrl}\n${input.videoUrl ?? ''}`,
+  });
+  if (!detected) return null;
+  const existing = patterns.find((pattern) => {
+    if (detected.videoId && pattern.videoId === detected.videoId) return true;
+    if (detected.videoUrl && pattern.videoUrl === detected.videoUrl) return true;
+    return false;
+  });
+  return existing?.id ?? null;
 }
 
 export function buildStashItem(id: string, input: NewYarnInput): YarnStashItem | null {
@@ -1595,16 +1706,13 @@ export function reconcilePatternCatalog(
       creator: pattern.creator,
     }),
   );
-  const canonicalVideoIds = new Set(
-    canonical.map((pattern) => pattern.videoId).filter((id) => id.length > 0),
-  );
+  const canonicalKeys = new Set(canonical.map((pattern) => catalogDedupeKey(pattern)));
 
-  const orphanKeep = persisted.filter(
-    (pattern) =>
-      pattern.videoId.length > 0 &&
-      !canonicalVideoIds.has(pattern.videoId) &&
-      retainPatternIds.has(pattern.id),
-  );
+  const orphanKeep = persisted.filter((pattern) => {
+    if (canonicalKeys.has(catalogDedupeKey(pattern))) return false;
+    if (pattern.source) return true;
+    return pattern.videoId.length > 0 && retainPatternIds.has(pattern.id);
+  });
 
   return dedupeById([...canonical, ...orphanKeep]);
 }
@@ -1755,7 +1863,8 @@ function repairPattern(input: unknown): CrochetPattern | null {
   const title = typeof input.title === 'string' ? sanitizeText(input.title, 120) : null;
   const videoId = typeof input.videoId === 'string' ? input.videoId : '';
   const parsed = parseYouTubeUrl(typeof input.youtubeUrl === 'string' ? input.youtubeUrl : videoId);
-  if (!title || !parsed) return null;
+  const pageUrl = typeof input.videoUrl === 'string' ? normalizeHttpUrl(input.videoUrl) : null;
+  if (!title || (!parsed && !pageUrl)) return null;
   const tags = Array.isArray(input.tags)
     ? input.tags.map((tag) => (typeof tag === 'string' ? sanitizeText(tag, 24) : null)).filter(isPresent).slice(0, 8)
     : [];
@@ -1778,13 +1887,21 @@ function repairPattern(input: unknown): CrochetPattern | null {
   if (isEstimatedBookmarkSet(bookmarks)) bookmarks = [];
   const summary =
     typeof input.summary === 'string' ? sanitizeText(input.summary, 200) : null;
+  const steps = sanitizePatternSteps(
+    Array.isArray(input.steps) ? input.steps.filter((step): step is string => typeof step === 'string') : undefined,
+  );
+  const source = isPatternVideoSource(input.source) ? input.source : undefined;
+  const storedThumb =
+    typeof input.thumbnailUrl === 'string' && input.thumbnailUrl.startsWith('https://')
+      ? input.thumbnailUrl.slice(0, 500)
+      : '';
   return {
     id: input.id,
     title,
     creator: (typeof input.creator === 'string' && sanitizeText(input.creator, 80)) || 'Unknown',
-    youtubeUrl: parsed.canonicalUrl,
-    videoId: parsed.videoId,
-    thumbnailUrl: parsed.thumbnailUrl,
+    youtubeUrl: parsed ? parsed.canonicalUrl : '',
+    videoId: parsed ? parsed.videoId : '',
+    thumbnailUrl: parsed ? parsed.thumbnailUrl : storedThumb,
     difficulty: typeof input.difficulty === 'string' && DIFFICULTIES.has(input.difficulty) ? (input.difficulty as PatternDifficulty) : 'easy',
     yarnWeight: isYarnWeight(input.yarnWeight) ? input.yarnWeight : 'worsted',
     hookSize: typeof input.hookSize === 'string' ? sanitizeHook(input.hookSize) : '',
@@ -1793,6 +1910,9 @@ function repairPattern(input: unknown): CrochetPattern | null {
     tags,
     ...(summary ? { summary } : {}),
     bookmarks,
+    ...(pageUrl ? { videoUrl: pageUrl } : {}),
+    ...(source ? { source } : {}),
+    ...(steps.length > 0 ? { steps } : {}),
   };
 }
 
@@ -1958,6 +2078,22 @@ function sanitizeOptionalCaption(value: string | undefined): string | undefined 
 
 function sanitizeHook(value: string): string {
   return value.replace(/\s+/g, ' ').trim().slice(0, 32);
+}
+
+function sanitizePatternSteps(steps: readonly string[] | undefined): string[] {
+  if (!steps) return [];
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const step of steps) {
+    const clean = cleanPatternText(step, 180);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(clean);
+    if (result.length >= 16) break;
+  }
+  return result;
 }
 
 function numberOr(value: unknown, fallback: number): number {

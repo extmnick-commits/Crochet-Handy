@@ -13,7 +13,6 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { crochetStateStorage, CROCHET_STORAGE_KEY, CROCHET_STORAGE_VERSION, enablePersistWrites } from '@/utils/storage';
 import { isFirebaseConfigured } from '@/utils/firebase';
 import { pullPatternCatalogUpdates, syncRemotePatternCatalog } from '@/utils/syncPatternCatalog';
-import { parseYouTubeUrl } from '@/utils/youtube';
 import {
   activeProject,
   applyAddCheckpoint,
@@ -68,6 +67,7 @@ import {
   applyUpdateStashItem,
   createId,
   elapsedSeconds,
+  findExistingPatternId,
   collectReferencedPatternIds,
   reconcilePatternCatalog,
   repairPersisted,
@@ -317,11 +317,7 @@ export const useCrochetStore = create<CrochetStore>()(
         addPatternFromYouTube: (input) => {
           const id = createId('pattern');
           const next = applyAddPattern(readData(get()), id, input);
-          if (!next) {
-            const parsedId = parseYouTubeUrl(input.youtubeUrl)?.videoId ?? null;
-            const existing = parsedId ? get().patterns.find((pattern) => pattern.videoId === parsedId) : undefined;
-            return existing?.id ?? null;
-          }
+          if (!next) return findExistingPatternId(get().patterns, input);
           set(next);
           return id;
         },

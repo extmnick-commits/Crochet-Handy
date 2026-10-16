@@ -8,6 +8,8 @@
 #   prune-thumbnails-only — Gemini thumbnail vision only
 #
 # Secrets: GitHub Environment ".env" → YOUTUBE_API_KEY, GEMINI_API_KEY, optional GEMINI_MODEL
+# Community sync (optional): FIREBASE_SERVICE_ACCOUNT (service account JSON) or
+# FIREBASE_ACCESS_TOKEN + FIREBASE_PROJECT_ID. Never put these on the mobile client.
 # Scrape env (set on scrape step): SCRAPE_SEARCH_MAX_PAGES=20, SCRAPE_LOOKBACK_DAYS=30 — skip known video ids across pages
 
 name: Pattern catalog
@@ -34,6 +36,7 @@ on:
           - prune-all-only
           - prune-text-only
           - prune-thumbnails-only
+          - sync-community
       topic:
         description: 'Scrape topic (scrape modes only)'
         required: true
@@ -70,6 +73,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: .env
     timeout-minutes: 45
+    env:
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      FIREBASE_ACCESS_TOKEN: ${{ secrets.FIREBASE_ACCESS_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -140,6 +147,10 @@ jobs:
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
         run: npm run prune-non-english-thumbnails
 
+      - name: Sync community catalog submissions
+        if: steps.plan.outputs.action == 'sync-community'
+        run: npm run export-pattern-catalog
+
       - name: Commit and push catalog updates
         env:
           ACTION: ${{ steps.plan.outputs.action }}
@@ -157,6 +168,7 @@ jobs:
             prune-all-only) MSG="chore: pattern catalog prune (text + thumbnails)" ;;
             prune-text-only) MSG="chore: pattern catalog prune (text)" ;;
             prune-thumbnails-only) MSG="chore: pattern catalog prune (thumbnails)" ;;
+            sync-community) MSG="chore: merge community pattern submissions" ;;
             *) MSG="chore: pattern catalog update" ;;
           esac
           git commit -m "$MSG"

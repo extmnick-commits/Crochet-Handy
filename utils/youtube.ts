@@ -46,6 +46,15 @@ export function youtubeThumbnailUrl(videoId: string, quality: YouTubeThumbnailQu
   return `https://i.ytimg.com/vi/${videoId}/${THUMBNAIL_FILES[quality]}`;
 }
 
+/** Poster for a library pattern. Empty when the tutorial is not a YouTube video. */
+export function patternPosterUri(
+  videoId: string | null | undefined,
+  quality: YouTubeThumbnailQuality = 'hq',
+): string | null {
+  if (!videoId || !VIDEO_ID_PATTERN.test(videoId)) return null;
+  return youtubeThumbnailUrl(videoId, quality);
+}
+
 export type YouTubeEmbedUrlOptions = {
   startSeconds?: number;
   /** When false, asks the player not to show closed captions (`cc_load_policy=0`). */

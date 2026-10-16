@@ -18,7 +18,7 @@ import {
   formatLikeCount,
   formatSpecBadge,
 } from '@/utils/patternDisplay';
-import { youtubeThumbnailUrl } from '@/utils/youtube';
+import { patternPosterUri } from '@/utils/youtube';
 
 type PatternFeedCardProps = {
   pattern: CrochetPattern;
@@ -44,11 +44,15 @@ export function PatternFeedCard({ pattern, imageHeight, onPress, forceLikedVisua
         style={({ pressed }) => [pressed && styles.pressed, webCursor]}
       >
         <View style={[styles.cardImageWrap, { height: imageHeight }]}>
-          <Image
-            accessible={false}
-            source={{ uri: youtubeThumbnailUrl(pattern.videoId, 'hq') }}
-            style={styles.cardImage}
-          />
+          {patternPosterUri(pattern.videoId, 'hq') ? (
+            <Image
+              accessible={false}
+              source={{ uri: patternPosterUri(pattern.videoId, 'hq') ?? '' }}
+              style={styles.cardImage}
+            />
+          ) : (
+            <View style={styles.cardImage} />
+          )}
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{formatSpecBadge(pattern)}</Text>
           </View>
