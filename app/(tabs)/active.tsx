@@ -98,6 +98,7 @@ export default function ActiveProjectScreen() {
   const finishProject = useCrochetStore((state) => state.finishProject);
   const reopenProject = useCrochetStore((state) => state.reopenProject);
   const deleteProject = useCrochetStore((state) => state.deleteProject);
+  const account = useCrochetStore((state) => state.account);
   const setTotalRows = useCrochetStore((state) => state.setTotalRows);
   const setStitchesPerRow = useCrochetStore((state) => state.setStitchesPerRow);
 
@@ -469,6 +470,17 @@ export default function ActiveProjectScreen() {
                 );
               })}
             </View>
+            <RemoveActiveProjectControl
+              key={project.id}
+              projectName={project.name}
+              signedIn={account != null}
+              onRemove={() => {
+                tick('impact');
+                deleteProject(project.id);
+                setToolingOpen(false);
+                setFullscreen(false);
+              }}
+            />
           </View>
         ) : null}
       </BottomSheet>
@@ -791,8 +803,6 @@ function ProjectOption({
   onDelete: () => void;
 }) {
   const finished = project.status === 'finished';
-  // The make on the hook is protected unless it's already finished.
-  const deletable = !selected || finished;
   const confirm = useArmed();
 
   return (
@@ -815,27 +825,74 @@ function ProjectOption({
         </View>
         {selected ? <View style={[styles.statusDot, !finished && styles.statusDotLive]} /> : null}
       </Pressable>
-      {deletable ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={confirm.armed ? `Confirm delete ${project.name}` : `Delete ${project.name}`}
-          accessibilityHint="Also removes its progress photos."
-          testID={`project-delete-${project.id}`}
-          hitSlop={Layout.hitSlop}
-          onPress={() => {
-            if (!confirm.armed) {
-              tick('impact');
-              confirm.arm();
-              return;
-            }
-            confirm.disarm();
-            onDelete();
-          }}
-          style={({ pressed }) => [styles.deleteButton, confirm.armed && styles.deleteButtonArmed, pressed && styles.pressed, webCursor]}
-        >
-          {confirm.armed ? <Text style={styles.deleteText}>Delete?</Text> : <TrashIcon />}
-        </Pressable>
-      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={confirm.armed ? `Confirm remove ${project.name}` : `Remove ${project.name}`}
+        accessibilityHint="Also removes its progress photos."
+        testID={`project-delete-${project.id}`}
+        hitSlop={Layout.hitSlop}
+        onPress={() => {
+          if (!confirm.armed) {
+            tick('impact');
+            confirm.arm();
+            return;
+          }
+          confirm.disarm();
+          onDelete();
+        }}
+        style={({ pressed }) => [styles.deleteButton, confirm.armed && styles.deleteButtonArmed, pressed && styles.pressed, webCursor]}
+      >
+        {confirm.armed ? <Text style={styles.deleteText}>Remove?</Text> : <TrashIcon />}
+      </Pressable>
+    </View>
+  );
+}
+
+function RemoveActiveProjectControl({
+  projectName,
+  signedIn,
+  onRemove,
+}: {
+  projectName: string;
+  signedIn: boolean;
+  onRemove: () => void;
+}) {
+  const confirm = useArmed();
+  const title = signedIn ? 'Remove from account' : 'Remove project';
+  const body = signedIn
+    ? 'Deletes this make, its counter, timer, and progress photos from your account and this device.'
+    : 'Deletes this make and its progress photos from this device.';
+
+  return (
+    <View style={styles.removeProjectBlock}>
+      <Text style={styles.sheetSection}>{title}</Text>
+      <Text style={styles.removeProjectHint}>{body}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={
+          confirm.armed ? `Confirm ${title.toLowerCase()} for ${projectName}` : `${title} for ${projectName}`
+        }
+        testID="remove-active-project"
+        onPress={() => {
+          if (!confirm.armed) {
+            tick('impact');
+            confirm.arm();
+            return;
+          }
+          confirm.disarm();
+          onRemove();
+        }}
+        style={({ pressed }) => [
+          styles.removeProjectButton,
+          confirm.armed && styles.removeProjectButtonArmed,
+          pressed && styles.pressed,
+          webCursor,
+        ]}
+      >
+        <Text style={[styles.removeProjectButtonText, confirm.armed && styles.removeProjectButtonTextArmed]}>
+          {confirm.armed ? `Remove "${projectName}"?` : title}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -2129,6 +2186,43 @@ const styles = StyleSheet.create({
     color: Colors.accentPrimary,
   },
   slotPillTextDanger: {
+    color: Colors.danger,
+  },
+  removeProjectBlock: {
+    marginTop: Spacing.lg,
+    paddingTop: Spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.divider,
+    gap: Spacing.sm,
+  },
+  removeProjectHint: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  removeProjectButton: {
+    minHeight: 48,
+    marginTop: Spacing.xs,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.divider,
+    backgroundColor: Colors.elevatedControl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  removeProjectButtonArmed: {
+    backgroundColor: 'rgba(255, 90, 78, 0.14)',
+    borderColor: Colors.danger,
+  },
+  removeProjectButtonText: {
+    ...Typography.callout,
+    fontFamily: FontFamily.medium,
+    fontWeight: FontWeight.semibold,
+    color: Colors.danger,
+    textAlign: 'center',
+  },
+  removeProjectButtonTextArmed: {
     color: Colors.danger,
   },
   stashRow: {
