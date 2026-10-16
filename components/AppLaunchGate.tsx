@@ -8,51 +8,42 @@ import { AppLaunchSplashContext } from '@/hooks/useAppLaunchSplash';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
-const LOGO_READY_FALLBACK_MS = 400;
+/** Never block the app if the animation stalls on device. */
+const SPLASH_MAX_MS = 3200;
 
 type Props = { children: ReactNode };
 
 /**
- * Native splash → in-app yarn animation → app content.
- * Does not wait on Firebase or storage; only on layout and the animation itself.
+ * Dark native splash → in-app yarn motion (no duplicate static logo) → app content.
  */
 export function AppLaunchGate({ children }: Props) {
-  const [layoutReady, setLayoutReady] = useState(false);
-  const [logoReady, setLogoReady] = useState(false);
-  const [phase, setPhase] = useState<'native' | 'animating' | 'done'>('native');
+  const [phase, setPhase] = useState<'animating' | 'done'>('animating');
   const hideStarted = useRef(false);
 
   const isSplashDone = phase === 'done';
 
   useEffect(() => {
-    const timeout = setTimeout(() => setLogoReady(true), LOGO_READY_FALLBACK_MS);
-    return () => clearTimeout(timeout);
+    const maxSplash = setTimeout(() => setPhase('done'), SPLASH_MAX_MS);
+    return () => clearTimeout(maxSplash);
   }, []);
 
-  useEffect(() => {
-    if (!layoutReady || !logoReady || hideStarted.current) return;
+  const onLayout = useCallback(() => {
+    if (hideStarted.current) return;
     hideStarted.current = true;
-    setPhase('animating');
-
     requestAnimationFrame(() => {
       void SplashScreen.hideAsync().catch(() => {});
     });
-  }, [layoutReady, logoReady]);
+  }, []);
 
-  const onLogoReady = useCallback(() => setLogoReady(true), []);
   const onAnimFinished = useCallback(() => setPhase('done'), []);
 
   return (
     <AppLaunchSplashContext.Provider value={isSplashDone}>
-      <View style={styles.root} onLayout={() => setLayoutReady(true)}>
+      <View style={styles.root} onLayout={onLayout}>
         {children}
         {phase !== 'done' && (
           <View style={styles.splashLayer} pointerEvents="auto">
-            <LogoLaunch
-              active={phase === 'animating'}
-              onReady={onLogoReady}
-              onFinished={onAnimFinished}
-            />
+            <LogoLaunch active onFinished={onAnimFinished} />
           </View>
         )}
       </View>

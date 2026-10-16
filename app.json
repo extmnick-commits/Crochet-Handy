@@ -37,6 +37,8 @@
       "themeColor": "#121212"
     },
     "plugins": [
+      "expo-build-properties",
+      "./plugins/withAndroidGradleFixes.js",
       "expo-updates",
       "expo-router",
       [
@@ -64,12 +66,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/logo-cutout.png",
-          "imageWidth": 300,
+          "image": "./assets/transparent-splash.png",
+          "imageWidth": 1,
           "resizeMode": "contain",
           "backgroundColor": "#121212",
           "dark": {
-            "image": "./assets/logo-cutout.png",
+            "image": "./assets/transparent-splash.png",
             "backgroundColor": "#121212"
           }
         }

@@ -4,6 +4,7 @@ import {
   Animated,
   AppState,
   Easing,
+  Platform,
   StyleSheet,
   useWindowDimensions,
   View,
@@ -11,23 +12,22 @@ import {
 
 import { Colors } from '@/constants/BambuTheme';
 
-// Tuning controls: milliseconds and logical points.
 const SPRING = {
   mass: 1,
-  stiffness: 230,
-  damping: 2 * Math.sqrt(230), // Critical damping.
+  stiffness: 280,
+  damping: 2 * Math.sqrt(280),
   restDisplacementThreshold: 0.001,
   restSpeedThreshold: 0.001,
 };
 const TIMING = {
-  anticipationMs: 160,
-  liftMs: 220,
-  hookDelayMs: 100,
-  hookDipMs: 205,
-  hookPullMs: 230,
-  layerFadeMs: 100,
-  settleHoldMs: 140,
-  reducedHoldMs: 180,
+  anticipationMs: 100,
+  liftMs: 150,
+  hookDelayMs: 60,
+  hookDipMs: 140,
+  hookPullMs: 160,
+  settleHoldMs: 50,
+  exitFadeMs: 70,
+  reducedHoldMs: 120,
 };
 const MOTION = {
   logoPt: 300,
@@ -47,34 +47,26 @@ const MOTION = {
   hookDipRotationDeg: -5,
   hookPullRotationDeg: 3.5,
 };
-const ORIGINAL = require('@/assets/logo-cutout.png');
 const BALL = require('@/assets/yarn-ball.png');
 const HOOK = require('@/assets/crochet-hook.png');
+const ORIGINAL = require('@/assets/logo-cutout.png');
 
-type Props = { active: boolean; onReady: () => void; onFinished: () => void };
+const USE_NATIVE_DRIVER = Platform.OS !== 'android';
+const ANIMATION_WATCHDOG_MS = 1500;
 
-export default function LogoLaunch({ active, onReady, onFinished }: Props) {
+type Props = { active: boolean; onFinished: () => void };
+
+export default function LogoLaunch({ active, onFinished }: Props) {
   const { width, height } = useWindowDimensions();
   const size = Math.max(1, Math.min(MOTION.logoPt, width * MOTION.widthRatio, height * MOTION.heightRatio));
   const progress = useRef(new Animated.Value(0)).current;
   const hookProgress = useRef(new Animated.Value(0)).current;
-  const reveal = useRef(new Animated.Value(0)).current;
+  const exit = useRef(new Animated.Value(1)).current;
   const finished = useRef(false);
-  const readySent = useRef(false);
-  const callback = useRef({ onReady, onFinished });
-  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
+  const callback = useRef({ onFinished });
+  const [reduceMotion, setReduceMotion] = useState(false);
   const [foreground, setForeground] = useState(AppState.currentState !== 'background');
-  callback.current = { onReady, onFinished };
-
-  const signalReady = () => {
-    if (readySent.current) return;
-    readySent.current = true;
-    callback.current.onReady();
-  };
-
-  useEffect(() => {
-    signalReady();
-  }, []);
+  callback.current = { onFinished };
 
   useEffect(() => {
     let live = true;
@@ -87,9 +79,10 @@ export default function LogoLaunch({ active, onReady, onFinished }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!active || !foreground || reduceMotion === null || finished.current) return;
+    if (!active || !foreground || finished.current) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     const finish = () => {
       if (!live || finished.current) return;
       finished.current = true;
@@ -97,27 +90,27 @@ export default function LogoLaunch({ active, onReady, onFinished }: Props) {
     };
     progress.setValue(0);
     hookProgress.setValue(0);
-    reveal.setValue(0);
+    exit.setValue(1);
     if (reduceMotion) {
       timer = setTimeout(finish, TIMING.reducedHoldMs);
       return () => { live = false; clearTimeout(timer); };
     }
+    watchdog = setTimeout(finish, ANIMATION_WATCHDOG_MS);
     const timing = (value: Animated.Value, toValue: number, duration: number) =>
       Animated.timing(value, {
         toValue,
         duration,
         easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
+        useNativeDriver: USE_NATIVE_DRIVER,
         isInteraction: false,
       });
     const animation = Animated.sequence([
-      timing(reveal, 1, TIMING.layerFadeMs),
       Animated.parallel([
         Animated.sequence([
           timing(progress, 1, TIMING.anticipationMs),
           timing(progress, 2, TIMING.liftMs),
           Animated.spring(progress, {
-            ...SPRING, toValue: 3, useNativeDriver: true, isInteraction: false,
+            ...SPRING, toValue: 3, useNativeDriver: USE_NATIVE_DRIVER, isInteraction: false,
           }),
         ]),
         Animated.sequence([
@@ -125,22 +118,26 @@ export default function LogoLaunch({ active, onReady, onFinished }: Props) {
           timing(hookProgress, 1, TIMING.hookDipMs),
           timing(hookProgress, 2, TIMING.hookPullMs),
           Animated.spring(hookProgress, {
-            ...SPRING, toValue: 3, useNativeDriver: true, isInteraction: false,
+            ...SPRING, toValue: 3, useNativeDriver: USE_NATIVE_DRIVER, isInteraction: false,
           }),
         ]),
       ]),
       Animated.delay(TIMING.settleHoldMs),
-      timing(reveal, 0, TIMING.layerFadeMs),
+      timing(exit, 0, TIMING.exitFadeMs),
     ]);
-    animation.start(({ finished: complete }) => {
-      if (complete && live) finish();
+    animation.start(() => {
+      if (live) finish();
     });
-    return () => { live = false; clearTimeout(timer); animation.stop(); };
-  }, [active, foreground, reduceMotion, progress, hookProgress, reveal]);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+      clearTimeout(watchdog);
+      animation.stop();
+    };
+  }, [active, foreground, reduceMotion, progress, hookProgress, exit]);
 
-  const originalOpacity = reveal.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const ballMotion = {
-    opacity: reveal,
+    opacity: exit,
     transform: [
       { translateY: progress.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [0, MOTION.dipY, MOTION.liftY, 0] }) },
       { rotate: progress.interpolate({ inputRange: [0, 1, 2, 3], outputRange: ['0deg', `${MOTION.dipRotationDeg}deg`, `${MOTION.liftRotationDeg}deg`, '0deg'] }) },
@@ -149,7 +146,7 @@ export default function LogoLaunch({ active, onReady, onFinished }: Props) {
     ],
   };
   const hookMotion = {
-    opacity: reveal,
+    opacity: exit,
     transform: [
       { translateX: hookProgress.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [0, MOTION.hookDipX, MOTION.hookPullX, 0] }) },
       { translateY: hookProgress.interpolate({ inputRange: [0, 1, 2, 3], outputRange: [0, MOTION.hookDipY, MOTION.hookPullY, 0] }) },
@@ -161,12 +158,18 @@ export default function LogoLaunch({ active, onReady, onFinished }: Props) {
   return (
     <View style={styles.overlay} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <View style={layer}>
-        <Animated.Image source={BALL} onLoad={signalReady}
-          resizeMode="contain" style={[styles.layer, layer, ballMotion]} />
-        <Animated.Image source={HOOK} onLoad={signalReady}
-          resizeMode="contain" style={[styles.layer, layer, hookMotion]} />
-        <Animated.Image source={ORIGINAL} onLoad={signalReady}
-          resizeMode="contain" style={[styles.layer, layer, { opacity: originalOpacity }]} />
+        {reduceMotion ? (
+          <Animated.Image
+            source={ORIGINAL}
+            resizeMode="contain"
+            style={[styles.layer, layer, { opacity: exit }]}
+          />
+        ) : (
+          <>
+            <Animated.Image source={BALL} resizeMode="contain" style={[styles.layer, layer, ballMotion]} />
+            <Animated.Image source={HOOK} resizeMode="contain" style={[styles.layer, layer, hookMotion]} />
+          </>
+        )}
       </View>
     </View>
   );
