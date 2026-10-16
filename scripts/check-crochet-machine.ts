@@ -23,6 +23,10 @@ import {
   applyToggleCollectPattern,
   applyCreateProject,
   applyHydrateCloudSlice,
+  fitCrochetPersistedSliceForFirestore,
+  fitProgressPhotosForFirestore,
+  mergeProgressPhotosById,
+  mergeProjectsByUpdatedAt,
   applySetAccount,
   applyAddPatternComment,
   applyRemovePatternComment,
@@ -55,6 +59,7 @@ import {
   elapsedSeconds,
   formatCheckpointTime,
   formatElapsed,
+  progressPhotoCreatedAtIso,
   projectProgress,
   mergeCatalogPatternsFromSeed,
   overlayRemoteCatalogOnBundled,
@@ -556,7 +561,12 @@ const shot = applyAddProgressPhoto(
 );
 equal(shot?.progressPhotos.length, 1, 'progress photo stored');
 equal(shot?.progressPhotos[0]?.percent, 70, 'sticker percent frozen');
+equal(shot?.progressPhotos[0]?.rowNumber, 28, 'row snapshot mirrors the counter');
+equal(shot?.progressPhotos[0]?.sessionDurationSeconds, 4 * 3600 + 18 * 60, 'timer snapshot mirrors elapsed');
 assert(shot?.progressPhotos[0]?.caption === undefined, 'photo without caption omits field');
+assert(shot?.progressPhotos[0]?.note === undefined, 'photo without note omits field');
+assert(shot?.progressPhotos[0]?.stitchCount === undefined, 'stitch snapshot omitted until provided');
+assert(shot?.progressPhotos[0]?.milestoneTag === undefined, 'milestone omitted until chosen');
 assert(applyAddProgressPhoto(dataFrom(seed), 'photo-x', { ...shot!.progressPhotos[0]!, projectId: 'missing', uri: 'data:image/jpeg;base64,aaaa' }, t0) == null, 'photo needs a project');
 
 const note =
@@ -609,7 +619,82 @@ const repairedPhotos = repairPersisted(
 );
 assert(repairedPhotos, 'photos repair');
 equal(repairedPhotos?.progressPhotos.find((photo) => photo.id === 'photo-2')?.caption, savedCaption, 'caption survives repair');
-assert(repairedPhotos?.progressPhotos.find((photo) => photo.id === 'photo-legacy')?.caption === undefined, 'legacy photo without caption');
+equal(repairedPhotos?.progressPhotos.find((photo) => photo.id === 'photo-2')?.note, savedCaption, 'note mirrored from caption survives repair');
+equal(repairedPhotos?.progressPhotos.find((photo) => photo.id === 'photo-2')?.rowNumber, 29, 'row snapshot survives repair');
+const legacyPhoto = repairedPhotos?.progressPhotos.find((photo) => photo.id === 'photo-legacy');
+assert(legacyPhoto?.caption === undefined, 'legacy photo without caption');
+assert(legacyPhoto?.note === undefined, 'legacy photo without note');
+assert(legacyPhoto?.rowNumber === undefined, 'legacy photo without row snapshot');
+assert(legacyPhoto?.stitchCount === undefined, 'legacy photo without stitch snapshot');
+assert(legacyPhoto?.sessionDurationSeconds === undefined, 'legacy photo without session duration');
+assert(legacyPhoto?.milestoneTag === undefined, 'legacy photo without milestone');
+
+const richStamp = '2026-10-15T17:06:00.000Z';
+const rich = applyAddProgressPhoto(
+  captioned!,
+  'photo-rich',
+  {
+    projectId: 'project-bambi',
+    uri: 'data:image/jpeg;base64,dddd',
+    projectName: 'Bambi Amigurumi Plush',
+    row: 30,
+    rowNumber: 30,
+    totalRows: 40,
+    percent: 75,
+    elapsedSeconds: 1200,
+    sessionDurationSeconds: 900,
+    stitchCount: 12,
+    hookSize: '4.0 mm',
+    caption: 'Ears catching the light',
+    note: 'Switching yarn after the color change',
+    milestoneTag: 'Color Change',
+    createdAt: richStamp,
+  },
+  t0 + 2,
+);
+const richPhoto = rich?.progressPhotos.find((photo) => photo.id === 'photo-rich');
+equal(richPhoto?.rowNumber, 30, 'rich row snapshot stored');
+equal(richPhoto?.stitchCount, 12, 'stitch snapshot stored');
+equal(richPhoto?.sessionDurationSeconds, 900, 'session duration stored');
+equal(richPhoto?.milestoneTag, 'Color Change', 'milestone tag stored');
+equal(richPhoto?.note, 'Switching yarn after the color change', 'note stored beside caption');
+equal(richPhoto?.createdAt, Date.parse(richStamp), 'iso createdAt repairs to epoch');
+equal(progressPhotoCreatedAtIso(richPhoto?.createdAt ?? 0), new Date(Date.parse(richStamp)).toISOString(), 'iso helper round-trips');
+
+const droppedTag = applyAddProgressPhoto(
+  captioned!,
+  'photo-tag',
+  {
+    projectId: 'project-bambi',
+    uri: 'data:image/jpeg;base64,eeee',
+    projectName: 'Bambi Amigurumi Plush',
+    row: 30,
+    totalRows: 40,
+    percent: 75,
+    elapsedSeconds: 10,
+    hookSize: '4.0 mm',
+    milestoneTag: 'Not a real chip',
+    createdAt: t0 + 3,
+  },
+  t0 + 3,
+);
+assert(droppedTag?.progressPhotos.find((photo) => photo.id === 'photo-tag')?.milestoneTag === undefined, 'unknown milestone dropped');
+
+const repairedRich = repairPersisted(
+  {
+    patterns: seed.patterns,
+    yarnStash: seed.yarnStash,
+    activeProjectId: 'project-bambi',
+    projects: seed.projects,
+    progressPhotos: [richPhoto],
+  },
+  t0,
+);
+const healedRich = repairedRich?.progressPhotos.find((photo) => photo.id === 'photo-rich');
+equal(healedRich?.stitchCount, 12, 'stitch snapshot survives repair');
+equal(healedRich?.milestoneTag, 'Color Change', 'milestone survives repair');
+equal(healedRich?.sessionDurationSeconds, 900, 'session duration survives repair');
+equal(healedRich?.createdAt, Date.parse(richStamp), 'iso timestamp survives repair');
 
 const legacyStash = repairPersisted(
   {
@@ -699,6 +784,100 @@ const cloudSlice = applyHydrateCloudSlice(
 assert(cloudSlice?.likedPatternIds.includes(patternId), 'hydrate keeps valid likes');
 equal(cloudSlice?.collectionFolders.length, 1, 'hydrate repairs folders');
 assert(!cloudSlice?.likedPatternIds.includes('missing-like'), 'hydrate drops unknown likes');
+
+const localProject = seed.projects[0]!;
+const advancedLocal = applyIncrementRow(dataFrom(seed), t0 + 50)!;
+assert(advancedLocal, 'increment row for merge test');
+const localRow = activeProject(advancedLocal)?.currentRow ?? 0;
+const localPhoto = applyAddProgressPhoto(
+  advancedLocal,
+  'photo-local-only',
+  {
+    projectId: localProject.id,
+    uri: 'data:image/jpeg;base64,local',
+    projectName: localProject.name,
+    row: localRow,
+    totalRows: localProject.totalRows,
+    percent: 10,
+    elapsedSeconds: 30,
+    hookSize: localProject.hookSize,
+    createdAt: t0 + 60,
+  },
+  t0 + 60,
+)!;
+const cloudProject = {
+  ...localProject,
+  currentRow: 1,
+  updatedAt: t0,
+};
+const cloudPhoto = {
+  id: 'photo-cloud-only',
+  projectId: localProject.id,
+  uri: 'data:image/jpeg;base64,cloud',
+  projectName: localProject.name,
+  row: 1,
+  totalRows: localProject.totalRows,
+  percent: 3,
+  elapsedSeconds: 10,
+  hookSize: localProject.hookSize,
+  createdAt: t0 + 10,
+};
+const mergedSlice = applyHydrateCloudSlice(
+  localPhoto!,
+  {
+    patterns: seed.patterns,
+    projects: [cloudProject],
+    activeProjectId: localProject.id,
+    yarnStash: [],
+    progressPhotos: [cloudPhoto],
+    account: null,
+    likedPatternIds: [],
+    collectedPatternIds: [],
+    collectionFolders: [],
+    patternComments: [],
+    followedCreators: [],
+  },
+  seed.patterns,
+  t0 + 100,
+);
+assert(mergedSlice, 'hydrate merges local and cloud');
+equal(activeProject(mergedSlice)?.currentRow, localRow, 'hydrate keeps newer local row progress');
+equal(mergedSlice.progressPhotos.length, 2, 'hydrate unions local and cloud progress photos');
+assert(mergedSlice.progressPhotos.some((photo) => photo.id === 'photo-local-only'), 'local progress photo kept');
+assert(mergedSlice.progressPhotos.some((photo) => photo.id === 'photo-cloud-only'), 'cloud progress photo kept');
+
+const mergedProjects = mergeProjectsByUpdatedAt([{ ...localProject, currentRow: 5, updatedAt: 200 }], [
+  { ...localProject, currentRow: 2, updatedAt: 100 },
+]);
+equal(mergedProjects[0]?.currentRow, 5, 'merge projects prefers newer updatedAt');
+
+const mergedPhotos = mergeProgressPhotosById(
+  [{ ...cloudPhoto, id: 'a', createdAt: 1 }],
+  [{ ...cloudPhoto, id: 'b', createdAt: 2 }],
+);
+equal(mergedPhotos.length, 2, 'merge photos unions ids');
+
+const trimmed = fitProgressPhotosForFirestore([
+  { ...cloudPhoto, id: 'big', uri: 'data:image/jpeg;base64,' + 'a'.repeat(500_000) },
+  { ...cloudPhoto, id: 'small', uri: 'data:image/jpeg;base64,aa' },
+]);
+assert(trimmed.some((photo) => photo.id === 'small'), 'firestore fit keeps small stills');
+assert(!trimmed.some((photo) => photo.id === 'big'), 'firestore fit drops oversized stills');
+
+const slice = fitCrochetPersistedSliceForFirestore({
+  patterns: seed.patterns,
+  projects: seed.projects,
+  activeProjectId: seed.activeProjectId,
+  yarnStash: seed.yarnStash,
+  progressPhotos: trimmed,
+  account: null,
+  likedPatternIds: [],
+  collectedPatternIds: [],
+  collectionFolders: [],
+  patternComments: [],
+  followedCreators: [],
+});
+equal(slice.progressPhotos.length, trimmed.length, 'firestore slice keeps trimmed photos');
 
 const removedPattern = applyRemovePattern(
   applyToggleLikePattern(

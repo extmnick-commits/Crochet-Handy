@@ -84,9 +84,23 @@ export type VideoCheckpoint = {
   timestampSeconds: number;
 };
 
+/** Quick chips stamped on a progress still. Unknown values are dropped on save. */
+export const MILESTONE_TAGS = [
+  'First Row',
+  'Color Change',
+  'Halfway',
+  'Bind Off',
+  'Finished Piece',
+  'WIP Check',
+  'Finished!',
+] as const;
+
+export type MilestoneTag = (typeof MILESTONE_TAGS)[number];
+
 /**
- * One still in a project's Snapchat-style progress reel.
+ * One still in a project's progress journal.
  * The sticker fields are frozen at capture time so later rows don't rewrite the past.
+ * Newer journal fields are optional so photos saved before them still load.
  */
 export type ProgressPhoto = {
   id: string;
@@ -99,9 +113,22 @@ export type ProgressPhoto = {
   percent: number;
   elapsedSeconds: number;
   hookSize: string;
+  /**
+   * Epoch milliseconds. ISO strings are accepted on input and repaired back to this
+   * number; read them with `progressPhotoCreatedAtIso`.
+   */
   createdAt: number;
-  /** Optional note frozen at capture time (e.g. yarn change). */
+  /** Short reflection frozen at capture time. */
   caption?: string;
+  /** Same reflection when the maker wrote a note. Omitted on legacy stills. */
+  note?: string;
+  /** Row counter snapshot. Mirrors `row` on new stills; omitted on legacy stills. */
+  rowNumber?: number;
+  /** Stitch counter snapshot. Omitted when the still was saved before this field. */
+  stitchCount?: number;
+  /** Project timer snapshot in seconds. Omitted on legacy stills. */
+  sessionDurationSeconds?: number;
+  milestoneTag?: MilestoneTag;
 };
 
 export type UserAccount = {
@@ -274,8 +301,14 @@ export type NewProgressPhotoInput = {
   percent: number;
   elapsedSeconds: number;
   hookSize: string;
-  createdAt?: number;
+  /** Epoch ms, or an ISO timestamp repaired to epoch ms. */
+  createdAt?: number | string;
   caption?: string;
+  note?: string;
+  rowNumber?: number;
+  stitchCount?: number;
+  sessionDurationSeconds?: number;
+  milestoneTag?: string;
 };
 
 export type YarnStashPatch = Partial<Omit<YarnStashItem, 'id'>>;
@@ -1042,6 +1075,67 @@ export function applyTogglePatternInFolder(
   return { ...data, collectionFolders, collectedPatternIds };
 }
 
+/** Firestore doc size guard — keep newest progress stills that fit under this budget. */
+export const MAX_FIRESTORE_PROGRESS_PHOTO_BYTES = 450_000;
+
+export function mergeProjectsByUpdatedAt(local: CrochetProject[], cloud: CrochetProject[]): CrochetProject[] {
+  const byId = new Map<string, CrochetProject>();
+  for (const project of local) byId.set(project.id, project);
+  for (const project of cloud) {
+    const existing = byId.get(project.id);
+    if (!existing || project.updatedAt >= existing.updatedAt) byId.set(project.id, project);
+  }
+  return dedupeById([...byId.values()]);
+}
+
+export function mergeYarnStashById(local: YarnStashItem[], cloud: YarnStashItem[]): YarnStashItem[] {
+  const byId = new Map<string, YarnStashItem>();
+  for (const item of local) byId.set(item.id, item);
+  for (const item of cloud) byId.set(item.id, item);
+  return dedupeById([...byId.values()]);
+}
+
+export function mergeProgressPhotosById(local: ProgressPhoto[], cloud: ProgressPhoto[]): ProgressPhoto[] {
+  const byId = new Map<string, ProgressPhoto>();
+  for (const photo of local) byId.set(photo.id, photo);
+  for (const photo of cloud) byId.set(photo.id, photo);
+  return sortPhotos(dedupeById([...byId.values()])).slice(-MAX_PROGRESS_PHOTOS * 8);
+}
+
+function resolveActiveProjectId(
+  localId: string | null,
+  cloudId: string | null,
+  projects: CrochetProject[],
+): string | null {
+  const ids = new Set(projects.map((project) => project.id));
+  if (cloudId && ids.has(cloudId)) return cloudId;
+  if (localId && ids.has(localId)) return localId;
+  return projects.find((project) => project.status === 'in-progress')?.id ?? projects[0]?.id ?? null;
+}
+
+/** Trim progress stills so a Firestore user doc stays under the 1 MiB cap. */
+export function fitProgressPhotosForFirestore(
+  photos: ProgressPhoto[],
+  maxBytes = MAX_FIRESTORE_PROGRESS_PHOTO_BYTES,
+): ProgressPhoto[] {
+  const ordered = [...sortPhotos(photos)].reverse();
+  const kept: ProgressPhoto[] = [];
+  let bytes = 0;
+  for (const photo of ordered) {
+    const estimate = photo.uri.length + 320;
+    if (bytes + estimate > maxBytes && kept.length > 0) continue;
+    if (estimate > maxBytes) continue;
+    kept.push(photo);
+    bytes += estimate;
+  }
+  return sortPhotos(kept);
+}
+
+export function fitCrochetPersistedSliceForFirestore(slice: CrochetPersistedSlice): CrochetPersistedSlice {
+  const progressPhotos = fitProgressPhotosForFirestore(slice.progressPhotos);
+  return progressPhotos.length === slice.progressPhotos.length ? slice : { ...slice, progressPhotos };
+}
+
 export function applyHydrateCloudSlice(
   data: CrochetData,
   cloudRaw: unknown,
@@ -1059,13 +1153,17 @@ export function applyHydrateCloudSlice(
     ...folder,
     patternIds: folder.patternIds.filter((id) => patternIds.has(id)),
   }));
+  const projects = mergeProjectsByUpdatedAt(data.projects, repaired.projects);
+  const progressPhotos = mergeProgressPhotosById(data.progressPhotos, repaired.progressPhotos);
+  const yarnStash = mergeYarnStashById(data.yarnStash, repaired.yarnStash);
+  const activeProjectId = resolveActiveProjectId(data.activeProjectId, repaired.activeProjectId, projects);
   const merged: CrochetData = {
     ...data,
     patterns,
-    projects: repaired.projects,
-    activeProjectId: repaired.activeProjectId,
-    yarnStash: repaired.yarnStash,
-    progressPhotos: repaired.progressPhotos,
+    projects,
+    activeProjectId,
+    yarnStash,
+    progressPhotos,
     account: repaired.account ?? data.account,
     likedPatternIds,
     collectedPatternIds,
@@ -1270,13 +1368,21 @@ export function applyRemoveProgressPhoto(data: CrochetData, photoId: string): Cr
   return { ...data, progressPhotos: data.progressPhotos.filter((photo) => photo.id !== photoId) };
 }
 
+/** ISO-8601 form of a progress still's epoch timestamp. */
+export function progressPhotoCreatedAtIso(createdAt: number): string {
+  const ms = typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0;
+  return new Date(ms).toISOString();
+}
+
 export function buildProgressPhoto(id: string, input: NewProgressPhotoInput, now = Date.now()): ProgressPhoto | null {
   if (!isSafeId(id) || !isSafeId(input.projectId) || !isProgressPhotoUri(input.uri)) return null;
   const projectName = sanitizeText(input.projectName, 80);
   if (!projectName) return null;
   const totalRows = clampInt(input.totalRows, 1, MAX_COUNT);
   const row = clampInt(input.row, 1, totalRows);
-  const caption = sanitizeOptionalCaption(input.caption);
+  const reflection = reflectionFields(input.caption, input.note, true);
+  const milestoneTag = sanitizeMilestone(input.milestoneTag);
+  const stitchCount = optionalCount(input.stitchCount, 0, MAX_COUNT);
   return {
     id,
     projectId: input.projectId,
@@ -1287,8 +1393,12 @@ export function buildProgressPhoto(id: string, input: NewProgressPhotoInput, now
     percent: clampPercent(input.percent),
     elapsedSeconds: bankSeconds(input.elapsedSeconds),
     hookSize: sanitizeHook(input.hookSize),
-    createdAt: finiteTimestamp(input.createdAt, now),
-    ...(caption ? { caption } : {}),
+    createdAt: photoTimestamp(input.createdAt, now),
+    rowNumber: clampInt(input.rowNumber ?? row, 1, totalRows),
+    sessionDurationSeconds: bankSeconds(input.sessionDurationSeconds ?? input.elapsedSeconds),
+    ...reflection,
+    ...(stitchCount !== undefined ? { stitchCount } : {}),
+    ...(milestoneTag ? { milestoneTag } : {}),
   };
 }
 
@@ -1505,19 +1615,37 @@ function repairProgressPhoto(input: unknown): ProgressPhoto | null {
   const projectName = typeof input.projectName === 'string' ? sanitizeText(input.projectName, 80) : null;
   if (!projectName) return null;
   const totalRows = clampInt(numberOr(input.totalRows, 1), 1, MAX_COUNT);
-  const caption = typeof input.caption === 'string' ? sanitizeOptionalCaption(input.caption) : undefined;
+  const rowSource = typeof input.row === 'number' ? input.row : typeof input.rowNumber === 'number' ? input.rowNumber : 1;
+  const row = clampInt(rowSource, 1, totalRows);
+  const reflection = reflectionFields(
+    typeof input.caption === 'string' ? input.caption : undefined,
+    typeof input.note === 'string' ? input.note : undefined,
+    false,
+  );
+  const milestoneTag = sanitizeMilestone(input.milestoneTag);
+  const stitchCount = optionalCount(input.stitchCount, 0, MAX_COUNT);
+  const elapsedSeconds = bankSeconds(
+    numberOr(input.elapsedSeconds, numberOr(input.sessionDurationSeconds, 0)),
+  );
+  const sessionDurationSeconds =
+    typeof input.sessionDurationSeconds === 'number' ? bankSeconds(input.sessionDurationSeconds) : undefined;
+  const rowNumber = typeof input.rowNumber === 'number' ? clampInt(input.rowNumber, 1, totalRows) : undefined;
   return {
     id: input.id,
     projectId: input.projectId,
     uri: input.uri,
     projectName,
-    row: clampInt(numberOr(input.row, 1), 1, totalRows),
+    row,
     totalRows,
     percent: clampPercent(numberOr(input.percent, 0)),
-    elapsedSeconds: bankSeconds(numberOr(input.elapsedSeconds, 0)),
+    elapsedSeconds,
     hookSize: typeof input.hookSize === 'string' ? sanitizeHook(input.hookSize) : '',
-    createdAt: finiteTimestamp(input.createdAt, 1),
-    ...(caption ? { caption } : {}),
+    createdAt: photoTimestamp(input.createdAt, 1),
+    ...(rowNumber !== undefined ? { rowNumber } : {}),
+    ...(sessionDurationSeconds !== undefined ? { sessionDurationSeconds } : {}),
+    ...reflection,
+    ...(stitchCount !== undefined ? { stitchCount } : {}),
+    ...(milestoneTag ? { milestoneTag } : {}),
   };
 }
 
@@ -1838,6 +1966,47 @@ function numberOr(value: unknown, fallback: number): number {
 
 function finiteTimestamp(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** Epoch ms from a number or an ISO string. Falls back when the value is empty or invalid. */
+function photoTimestamp(value: unknown, fallback: number): number {
+  const numeric = finiteTimestamp(value, 0);
+  if (numeric > 0) return numeric;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return fallback;
+}
+
+function optionalCount(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return clampInt(value, min, max);
+}
+
+function sanitizeMilestone(value: unknown): MilestoneTag | undefined {
+  if (typeof value !== 'string') return undefined;
+  return (MILESTONE_TAGS as readonly string[]).includes(value) ? (value as MilestoneTag) : undefined;
+}
+
+/**
+ * Keep caption and note independent when both were written. New stills mirror a
+ * single reflection into both fields; repair leaves a missing alias absent so
+ * older photos are not rewritten.
+ */
+function reflectionFields(
+  caption: string | undefined,
+  note: string | undefined,
+  mirror: boolean,
+): { caption?: string; note?: string } {
+  const cleanCaption = sanitizeOptionalCaption(caption);
+  const cleanNote = sanitizeOptionalCaption(note);
+  const captionOut = cleanCaption ?? (mirror ? cleanNote : undefined);
+  const noteOut = cleanNote ?? (mirror ? cleanCaption : undefined);
+  return {
+    ...(captionOut ? { caption: captionOut } : {}),
+    ...(noteOut ? { note: noteOut } : {}),
+  };
 }
 
 function isSafeId(value: unknown): value is string {

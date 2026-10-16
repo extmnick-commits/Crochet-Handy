@@ -32,6 +32,7 @@ import {
   MAX_COUNT,
   selectActiveProject,
   selectCanUndo,
+  rowPercent,
   useCrochetStore,
   YARN_WEIGHTS,
   type CrochetPattern,
@@ -64,8 +65,25 @@ export default function ActiveProjectScreen() {
   });
   const canUndo = useCrochetStore(selectCanUndo);
   const progressPhotoCount = useCrochetStore((state) => {
-    if (!project) return 0;
-    return state.progressPhotos.filter((photo) => photo.projectId === project.id).length;
+    const current = selectActiveProject(state);
+    if (!current) return 0;
+    let count = 0;
+    for (const photo of state.progressPhotos) {
+      if (photo.projectId === current.id) count += 1;
+    }
+    return count;
+  });
+  const latestProgressUri = useCrochetStore((state) => {
+    const current = selectActiveProject(state);
+    if (!current) return null;
+    let latestUri: string | null = null;
+    let latestAt = -1;
+    for (const photo of state.progressPhotos) {
+      if (photo.projectId !== current.id || photo.createdAt < latestAt) continue;
+      latestAt = photo.createdAt;
+      latestUri = photo.uri;
+    }
+    return latestUri;
   });
   const incrementStitch = useCrochetStore((state) => state.incrementStitch);
   const decrementStitch = useCrochetStore((state) => state.decrementStitch);
@@ -177,6 +195,7 @@ export default function ActiveProjectScreen() {
               seekRequest={seekRequest}
               fullscreen={fullscreen}
               progressPhotoCount={progressPhotoCount}
+              latestProgressUri={latestProgressUri}
               onOpenLog={() => {
                 setDraftUri(null);
                 setPhotoNotice(null);
@@ -489,6 +508,7 @@ function PlayerCard({
   seekRequest,
   fullscreen,
   progressPhotoCount,
+  latestProgressUri,
   onOpenLog,
   onSnapshot,
   onFullscreen,
@@ -498,6 +518,7 @@ function PlayerCard({
   seekRequest?: { seconds: number; nonce: number } | null;
   fullscreen: boolean;
   progressPhotoCount: number;
+  latestProgressUri: string | null;
   onOpenLog: () => void;
   onSnapshot: () => void;
   onFullscreen: () => void;
@@ -559,8 +580,30 @@ function PlayerCard({
           <Text style={styles.playerLogTitle}>Progress log</Text>
           <Text style={styles.playerLogMeta}>{logMeta}</Text>
         </View>
-        <CameraIcon size={18} />
+        <MiniProgressStack uri={latestProgressUri} count={progressPhotoCount} />
       </Pressable>
+    </View>
+  );
+}
+
+function MiniProgressStack({ uri, count }: { uri: string | null; count: number }) {
+  return (
+    <View style={styles.miniStack}>
+      {uri ? (
+        <View style={styles.miniFrame}>
+          <Image accessible={false} source={{ uri }} style={styles.miniImage} />
+          <View style={styles.miniChin} />
+        </View>
+      ) : (
+        <View style={styles.miniFrameEmpty}>
+          <CameraIcon size={16} />
+        </View>
+      )}
+      {count > 0 ? (
+        <View style={styles.miniBadge}>
+          <Text style={styles.miniBadgeText}>{count > 99 ? '99+' : String(count)}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1235,11 +1278,6 @@ function PillSwitch({ on }: { on: boolean }) {
   );
 }
 
-function rowPercent(project: CrochetProject): number {
-  if (project.totalRows <= 0) return 0;
-  return Math.min(100, Math.max(0, Math.round((project.currentRow / project.totalRows) * 100)));
-}
-
 function specLine(project: CrochetProject): string {
   const size = yarnWeightMeta(project.yarnWeight).number;
   const hook = formatHookSize(project.hookSize);
@@ -1445,6 +1483,60 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textSecondary,
   },
+  miniStack: {
+    width: 48,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniFrame: {
+    width: 34,
+    height: 42,
+    paddingTop: 3,
+    paddingHorizontal: 3,
+    paddingBottom: 8,
+    borderRadius: Radius.xs,
+    backgroundColor: Colors.elevatedControl,
+    borderWidth: Layout.hairline,
+    transform: [{ rotate: '-6deg' }],
+    ...Elevation.floating,
+  },
+  miniImage: {
+    flex: 1,
+    width: '100%',
+    borderRadius: Radius.xs,
+    backgroundColor: Colors.backgroundPrimary,
+  },
+  miniChin: {
+    height: Spacing.xs,
+  },
+  miniFrameEmpty: {
+    width: 34,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.xs,
+    backgroundColor: Colors.elevatedControl,
+    borderWidth: Layout.hairline,
+    transform: [{ rotate: '-6deg' }],
+  },
+  miniBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.accentPrimary,
+  },
+  miniBadgeText: {
+    ...Typography.tab,
+    color: Colors.onAccent,
+    fontWeight: FontWeight.bold,
+  },
   playerActions: {
     position: 'absolute',
     right: 10,
@@ -1519,13 +1611,14 @@ const styles = StyleSheet.create({
   track: {
     height: 8,
     borderRadius: Radius.pill,
-    backgroundColor: '#3A3A3C',
+    backgroundColor: Colors.elevatedControl,
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
+    minWidth: 2,
     borderRadius: Radius.pill,
-    backgroundColor: '#00E676',
+    backgroundColor: Colors.accentPrimary,
   },
   counterLine: {
     ...Typography.callout,

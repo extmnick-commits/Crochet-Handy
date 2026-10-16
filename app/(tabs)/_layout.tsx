@@ -1,12 +1,13 @@
 import { Redirect } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { CollectToastHost } from '@/components/CollectToast';
 import { LaunchSplash } from '@/components/LaunchSplash';
 import { BambuTabBar } from '@/components/navigation/BambuTabBar';
 import { MeIcon, PatternsIcon, ProjectIcon } from '@/components/navigation/TabIcons';
 import { Colors } from '@/constants/BambuTheme';
+import { useAppLaunchSplashDone } from '@/hooks/useAppLaunchSplash';
 import { useAuthGateReady } from '@/hooks/useAuthGateReady';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { useCrochetStore } from '@/store/useCrochetStore';
@@ -21,9 +22,13 @@ import { useCrochetStore } from '@/store/useCrochetStore';
 export default function TabLayout() {
   const { navPosition, contentMaxWidth } = useResponsiveLayout();
   const gateReady = useAuthGateReady();
+  const splashDone = useAppLaunchSplashDone();
   const account = useCrochetStore((state) => state.account);
 
   if (!gateReady) {
+    if (!splashDone) {
+      return <View style={styles.placeholder} />;
+    }
     return <LaunchSplash />;
   }
 
@@ -75,6 +80,10 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     alignSelf: 'center',
+    backgroundColor: Colors.backgroundPrimary,
+  },
+  placeholder: {
+    flex: 1,
     backgroundColor: Colors.backgroundPrimary,
   },
 });

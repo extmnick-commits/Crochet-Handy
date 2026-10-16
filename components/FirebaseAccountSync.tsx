@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-import { type CrochetData } from '@/store/machine';
+import { fitCrochetPersistedSliceForFirestore, type CrochetData } from '@/store/machine';
 import { createSeedData } from '@/store/seed';
 import {
   partializeCrochetState,
@@ -23,6 +23,16 @@ function readCrochetDataFromStore(): CrochetData {
   return {
     ...partializeCrochetState(state),
     tapHistory: state.tapHistory,
+  };
+}
+
+function firestorePayloadFromStore(account?: UserAccount | null) {
+  const state = useCrochetStore.getState();
+  const slice = fitCrochetPersistedSliceForFirestore(partializeCrochetState(state));
+  return {
+    ...slice,
+    account: account ?? state.account,
+    updatedAt: Date.now(),
   };
 }
 
@@ -110,17 +120,14 @@ export function FirebaseAccountSync() {
           const raw = snap.data() as Record<string, unknown>;
           hydrateFromCloud(raw);
           reconcilePatternsAfterCloudHydrate();
-          setAccount(cloudAccountFromDoc(raw, user));
+          const account = cloudAccountFromDoc(raw, user);
+          setAccount(account);
+          await setDoc(ref, firestorePayloadFromStore(account), { merge: true });
         } else {
           const state = useCrochetStore.getState();
           const account = accountFromUser(user, state.account ?? undefined);
           setAccount(account);
-          const payload = {
-            ...partializeCrochetState(state),
-            account,
-            updatedAt: Date.now(),
-          };
-          await setDoc(ref, payload, { merge: true });
+          await setDoc(ref, firestorePayloadFromStore(account), { merge: true });
           reconcilePatternsAfterCloudHydrate();
         }
 
@@ -141,14 +148,7 @@ export function FirebaseAccountSync() {
         const latest = useCrochetStore.getState();
         if (!latest.account || latest.account.uid !== uid) return;
         const ref = doc(firestore, 'users', uid);
-        void setDoc(
-          ref,
-          {
-            ...partializeCrochetState(latest),
-            updatedAt: Date.now(),
-          },
-          { merge: true },
-        );
+        void setDoc(ref, firestorePayloadFromStore(latest.account), { merge: true });
       }, SYNC_DEBOUNCE_MS);
     });
 
