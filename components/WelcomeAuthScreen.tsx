@@ -1,7 +1,7 @@
 /**
  * Full-screen welcome + sign-in shown before the main app when there is no account.
  */
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AuthAccountForm } from '@/components/AuthAccountForm';
@@ -15,11 +15,7 @@ export function WelcomeAuthScreen() {
   const firebaseReady = isFirebaseConfigured();
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'web' ? undefined : 'padding'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + Spacing.sm : 0}
-    >
+    <View style={styles.root}>
       <WelcomePatternBackdrop />
       <View
         style={[
@@ -47,7 +43,7 @@ export function WelcomeAuthScreen() {
               layout="screen"
               initialMode="sign-in"
               account={null}
-              bottomInset={0}
+              bottomInset={Math.max(insets.bottom, Spacing.lg)}
               onSuccess={() => {
                 // Navigation is driven by account state in welcome.tsx / tab guard.
               }}
@@ -55,7 +51,7 @@ export function WelcomeAuthScreen() {
           </View>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

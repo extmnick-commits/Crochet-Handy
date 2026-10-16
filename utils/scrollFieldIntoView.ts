@@ -3,23 +3,37 @@ import { Platform, type ScrollView } from 'react-native';
 
 import { Spacing } from '@/constants/BambuTheme';
 
-/** Scroll a parent ScrollView so a field registered with `y` offset stays above the keyboard. */
+export type FieldLayout = {
+  y: number;
+  height: number;
+};
+
+type ScrollFieldOptions = {
+  viewportHeight: number;
+  keyboardInset: number;
+  /** Space to leave between the field and the keyboard / bottom edge. */
+  bottomGap?: number;
+};
+
+/** Scroll a parent ScrollView so a registered field stays above the keyboard. */
 export function scrollFieldIntoView(
   scrollRef: RefObject<ScrollView | null>,
-  fieldOffsets: Record<string, number>,
+  fieldLayouts: Record<string, FieldLayout>,
   key: string,
-  keyboardInset = 0,
+  { viewportHeight, keyboardInset, bottomGap = Spacing.lg }: ScrollFieldOptions,
 ) {
   if (Platform.OS === 'web') return;
-  const y = fieldOffsets[key];
-  if (y == null) return;
-  const targetY = Math.max(0, y - Spacing.lg);
-  requestAnimationFrame(() => {
-    scrollRef.current?.scrollTo({ y: targetY, animated: true });
-    if (keyboardInset > 0) {
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({ y: targetY + Spacing.md, animated: true });
-      }, Platform.OS === 'ios' ? 120 : 80);
-    }
-  });
+  const field = fieldLayouts[key];
+  if (!field || viewportHeight <= 0) return;
+
+  const visibleHeight = Math.max(120, viewportHeight - keyboardInset);
+  const fieldBottom = field.y + field.height;
+  const targetY = Math.max(0, fieldBottom - visibleHeight + bottomGap);
+
+  const scroll = () => scrollRef.current?.scrollTo({ y: targetY, animated: true });
+
+  requestAnimationFrame(scroll);
+  if (Platform.OS === 'ios') {
+    setTimeout(scroll, keyboardInset > 0 ? 50 : 320);
+  }
 }

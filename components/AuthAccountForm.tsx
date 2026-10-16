@@ -1,10 +1,9 @@
 /**
  * Shared email/password sign-in, account creation, and profile editing.
  */
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import {
-  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -15,13 +14,19 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  useWindowDimensions,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { useBottomSheetScrollRef } from '@/components/ui/BottomSheetScrollContext';
+import { KeyboardSafeScrollView } from '@/components/ui/KeyboardSafeScrollView';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useCrochetStore, type UserAccount } from '@/store/useCrochetStore';
-import { scrollFieldIntoView as scrollFieldIntoViewOnParent } from '@/utils/scrollFieldIntoView';
+import {
+  scrollFieldIntoView as scrollFieldIntoViewOnParent,
+  type FieldLayout,
+} from '@/utils/scrollFieldIntoView';
+import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { auth, isFirebaseConfigured } from '@/utils/firebase';
 import { creatorInitials } from '@/utils/patternDisplay';
 
@@ -57,30 +62,58 @@ export function AuthAccountForm({
   const [avatarColor, setAvatarColor] = useState<string>(account?.avatarColor ?? AVATAR_SWATCHES[0]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
   const [scrollOffsetY, setScrollOffsetY] = useState(0);
 
   const screenScrollRef = useRef<ScrollView>(null);
   const sheetScrollRef = useBottomSheetScrollRef();
-  const fieldOffsetsRef = useRef<Record<string, number>>({});
+  const fieldLayoutsRef = useRef<Record<string, FieldLayout>>({});
+  const focusedFieldKeyRef = useRef<string | null>(null);
 
+  const { height: windowHeight } = useWindowDimensions();
+  const keyboardInset = useKeyboardInset();
   const firebaseReady = isFirebaseConfigured();
   const isScreen = layout === 'screen';
 
-  const registerFieldOffset = useCallback((key: string, event: LayoutChangeEvent) => {
-    fieldOffsetsRef.current[key] = event.nativeEvent.layout.y;
+  const registerFieldLayout = useCallback((key: string, event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    fieldLayoutsRef.current[key] = { y, height };
   }, []);
 
   const scrollFieldIntoView = useCallback(
     (key: string) => {
       const scrollRef = isScreen ? screenScrollRef : sheetScrollRef;
       if (!scrollRef) return;
-      const keyboardInset = Keyboard.metrics()?.height ?? 0;
-      scrollFieldIntoViewOnParent(scrollRef, fieldOffsetsRef.current, key, keyboardInset);
+      const viewportHeight = isScreen
+        ? scrollViewportHeight
+        : Math.max(200, Math.round(windowHeight * 0.42));
+      scrollFieldIntoViewOnParent(scrollRef, fieldLayoutsRef.current, key, {
+        viewportHeight,
+        keyboardInset,
+      });
     },
-    [isScreen, sheetScrollRef],
+    [isScreen, sheetScrollRef, scrollViewportHeight, windowHeight, keyboardInset],
   );
+
+  const onFieldFocus = useCallback(
+    (key: string) => {
+      focusedFieldKeyRef.current = key;
+      scrollFieldIntoView(key);
+    },
+    [scrollFieldIntoView],
+  );
+
+  const onFieldBlur = useCallback(() => {
+    focusedFieldKeyRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const key = focusedFieldKeyRef.current;
+    if (!key || keyboardInset <= 0) return;
+    scrollFieldIntoView(key);
+  }, [keyboardInset, scrollFieldIntoView]);
 
   const scrollToPrimaryAction = useCallback(() => {
     if (!isScreen || scrollContentHeight <= scrollViewportHeight) return;
@@ -239,11 +272,12 @@ export function AuthAccountForm({
 
       {mode !== 'edit' && (
         <>
-          <Field label="Email" layout={layout} onLayout={(e) => registerFieldOffset('email', e)}>
+          <Field label="Email" layout={layout} onLayout={(e) => registerFieldLayout('email', e)}>
             <TextInput
               value={email}
               onChangeText={setEmail}
-              onFocus={() => scrollFieldIntoView('email')}
+              onFocus={() => onFieldFocus('email')}
+              onBlur={onFieldBlur}
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="email"
@@ -253,42 +287,64 @@ export function AuthAccountForm({
               placeholder="you@example.com"
               placeholderTextColor={Colors.textTertiary}
               selectionColor={Colors.accentPrimary}
+              keyboardAppearance="dark"
               style={[styles.input, isScreen && styles.inputScreen]}
             />
           </Field>
-          <Field label="Password" layout={layout} onLayout={(e) => registerFieldOffset('password', e)}>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              onFocus={() => scrollFieldIntoView('password')}
-              secureTextEntry
-              autoComplete={mode === 'create' ? 'new-password' : 'password'}
-              textContentType={mode === 'create' ? 'newPassword' : 'password'}
-              placeholder="••••••••"
-              placeholderTextColor={Colors.textTertiary}
-              selectionColor={Colors.accentPrimary}
-              style={[styles.input, isScreen && styles.inputScreen]}
-            />
+          <Field label="Password" layout={layout} onLayout={(e) => registerFieldLayout('password', e)}>
+            <View style={styles.inputRow}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => onFieldFocus('password')}
+                onBlur={onFieldBlur}
+                secureTextEntry={!passwordVisible}
+                autoComplete={mode === 'create' ? 'new-password' : 'password'}
+                textContentType={mode === 'create' ? 'newPassword' : 'password'}
+                placeholder="••••••••"
+                placeholderTextColor={Colors.textTertiary}
+                selectionColor={Colors.accentPrimary}
+                keyboardAppearance="dark"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={[styles.input, styles.inputWithAffix, isScreen && styles.inputScreen]}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'}
+                hitSlop={Layout.hitSlop}
+                onPress={() => setPasswordVisible((visible) => !visible)}
+                style={({ pressed }) => [styles.inputAffix, pressed && styles.pressed, webCursor]}
+              >
+                {passwordVisible ? (
+                  <EyeOffIcon color={Colors.textSecondary} />
+                ) : (
+                  <EyeIcon color={Colors.textSecondary} />
+                )}
+              </Pressable>
+            </View>
           </Field>
         </>
       )}
 
       {(mode === 'create' || mode === 'edit') && (
         <>
-          <Field label="Display name" layout={layout} onLayout={(e) => registerFieldOffset('displayName', e)}>
+          <Field label="Display name" layout={layout} onLayout={(e) => registerFieldLayout('displayName', e)}>
             <TextInput
               value={displayName}
               onChangeText={setDisplayName}
               autoComplete="name"
               textContentType="name"
               placeholder="Your name"
-              onFocus={() => scrollFieldIntoView('displayName')}
+              onFocus={() => onFieldFocus('displayName')}
+              onBlur={onFieldBlur}
               placeholderTextColor={Colors.textTertiary}
               selectionColor={Colors.accentPrimary}
+              keyboardAppearance="dark"
               style={[styles.input, isScreen && styles.inputScreen]}
             />
           </Field>
-          <Field label="Username" layout={layout} onLayout={(e) => registerFieldOffset('username', e)}>
+          <Field label="Username" layout={layout} onLayout={(e) => registerFieldLayout('username', e)}>
             <TextInput
               value={username}
               onChangeText={setUsername}
@@ -297,20 +353,24 @@ export function AuthAccountForm({
               autoComplete="username"
               textContentType="username"
               placeholder="your_handle"
-              onFocus={() => scrollFieldIntoView('username')}
+              onFocus={() => onFieldFocus('username')}
+              onBlur={onFieldBlur}
               placeholderTextColor={Colors.textTertiary}
               selectionColor={Colors.accentPrimary}
+              keyboardAppearance="dark"
               style={[styles.input, isScreen && styles.inputScreen]}
             />
           </Field>
-          <Field label="Bio" layout={layout} onLayout={(e) => registerFieldOffset('bio', e)}>
+          <Field label="Bio" layout={layout} onLayout={(e) => registerFieldLayout('bio', e)}>
             <TextInput
               value={bio}
               onChangeText={setBio}
               placeholder="What are you making?"
-              onFocus={() => scrollFieldIntoView('bio')}
+              onFocus={() => onFieldFocus('bio')}
+              onBlur={onFieldBlur}
               placeholderTextColor={Colors.textTertiary}
               selectionColor={Colors.accentPrimary}
+              keyboardAppearance="dark"
               multiline
               style={[styles.input, styles.inputMultiline, isScreen && styles.inputScreen]}
             />
@@ -341,12 +401,10 @@ export function AuthAccountForm({
         style={styles.screenFormShell}
         onLayout={(event) => setScrollViewportHeight(event.nativeEvent.layout.height)}
       >
-        <ScrollView
+        <KeyboardSafeScrollView
           ref={screenScrollRef}
           style={styles.screenScroll}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
+          keyboardPadding={Spacing.xl + bottomInset}
           showsVerticalScrollIndicator={false}
           onScroll={onScreenScroll}
           scrollEventThrottle={16}
@@ -359,6 +417,7 @@ export function AuthAccountForm({
               accessibilityLabel={switchLabel}
               onPress={() => {
                 setError(null);
+                setPasswordVisible(false);
                 setMode(mode === 'sign-in' ? 'create' : 'sign-in');
               }}
               style={({ pressed }) => [styles.screenModeSwitch, pressed && styles.pressed, webCursor]}
@@ -381,7 +440,7 @@ export function AuthAccountForm({
           >
             <Text style={styles.primaryText}>{primaryLabel}</Text>
           </Pressable>
-        </ScrollView>
+        </KeyboardSafeScrollView>
         {scrollHintVisible ? (
           <Pressable
             accessibilityRole="button"
@@ -408,6 +467,7 @@ export function AuthAccountForm({
             accessibilityRole="button"
             onPress={() => {
               setError(null);
+              setPasswordVisible(false);
               setMode(mode === 'sign-in' ? 'create' : 'sign-in');
             }}
             style={({ pressed }) => [pressed && styles.pressed, webCursor]}
@@ -437,6 +497,44 @@ function ChevronDownIcon({ color }: { color: string }) {
         d="M6 9l6 6 6-6"
         stroke={color}
         strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function EyeIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+        stroke={color}
+        strokeWidth={1.8}
+      />
+    </Svg>
+  );
+}
+
+function EyeOffIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3 3l18 18"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M10.6 10.6a3 3 0 0 0 4.24 4.24M9.88 5.09A10.94 10.94 0 0 1 12 5c6.5 0 10 7 10 7a18.45 18.45 0 0 1-2.16 3.19M6.11 6.11A18.45 18.45 0 0 0 2 12s3.5 7 10 7a10.94 10.94 0 0 0 2.12-.22"
+        stroke={color}
+        strokeWidth={1.8}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -562,15 +660,36 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
   },
   input: {
-    ...Typography.body,
+    fontFamily: Typography.body.fontFamily,
+    fontSize: Typography.body.fontSize,
+    fontWeight: Typography.body.fontWeight,
+    ...Platform.select({
+      ios: { paddingVertical: Spacing.md },
+      default: { lineHeight: Typography.body.lineHeight, paddingVertical: Spacing.sm },
+    }),
     minHeight: 48,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
     color: Colors.textPrimary,
     backgroundColor: Colors.elevatedControl,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  inputRow: {
+    width: '100%',
+    position: 'relative',
+  },
+  inputWithAffix: {
+    paddingRight: Spacing.xxxl + Spacing.sm,
+  },
+  inputAffix: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   inputScreen: {
     minHeight: 52,
