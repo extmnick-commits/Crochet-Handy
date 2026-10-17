@@ -1255,6 +1255,15 @@ assert(
   'a short English description still reaches Gemini',
 );
 assert(
+  uploadYoutubeSnippetRejection({
+    title: 'the EASIEST way to crochet the magic circle for beginners',
+    description: 'How to crochet a magic ring step by step.',
+    channelTitle: 'ElyseCrochets 💌',
+    defaultAudioLanguage: 'en',
+  }) == null,
+  'emoji in a channel name does not block an English tutorial',
+);
+assert(
   isValidEnglishYoutubeSnippet({
     title: 'Easy Crochet Beanie',
     description: 'A short English description.',

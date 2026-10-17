@@ -54,9 +54,14 @@ const ORIGINAL = require('@/assets/logo-cutout.png');
 const USE_NATIVE_DRIVER = Platform.OS !== 'android';
 const ANIMATION_WATCHDOG_MS = 1500;
 
-type Props = { active: boolean; onFinished: () => void };
+type Props = {
+  active: boolean;
+  onFinished: () => void;
+  /** Repeat the yarn-and-hook motion until this is cleared, then play the exit once. */
+  loop?: boolean;
+};
 
-export default function LogoLaunch({ active, onFinished }: Props) {
+export default function LogoLaunch({ active, onFinished, loop = false }: Props) {
   const { width, height } = useWindowDimensions();
   const size = Math.max(1, Math.min(MOTION.logoPt, width * MOTION.widthRatio, height * MOTION.heightRatio));
   const progress = useRef(new Animated.Value(0)).current;
@@ -79,7 +84,11 @@ export default function LogoLaunch({ active, onFinished }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!active || !foreground || finished.current) return;
+    if (!active) {
+      finished.current = false;
+      return;
+    }
+    if (!foreground || finished.current) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let watchdog: ReturnType<typeof setTimeout> | undefined;
@@ -91,11 +100,6 @@ export default function LogoLaunch({ active, onFinished }: Props) {
     progress.setValue(0);
     hookProgress.setValue(0);
     exit.setValue(1);
-    if (reduceMotion) {
-      timer = setTimeout(finish, TIMING.reducedHoldMs);
-      return () => { live = false; clearTimeout(timer); };
-    }
-    watchdog = setTimeout(finish, ANIMATION_WATCHDOG_MS);
     const timing = (value: Animated.Value, toValue: number, duration: number) =>
       Animated.timing(value, {
         toValue,
@@ -104,24 +108,48 @@ export default function LogoLaunch({ active, onFinished }: Props) {
         useNativeDriver: USE_NATIVE_DRIVER,
         isInteraction: false,
       });
-    const animation = Animated.sequence([
-      Animated.parallel([
-        Animated.sequence([
-          timing(progress, 1, TIMING.anticipationMs),
-          timing(progress, 2, TIMING.liftMs),
-          Animated.spring(progress, {
-            ...SPRING, toValue: 3, useNativeDriver: USE_NATIVE_DRIVER, isInteraction: false,
-          }),
-        ]),
-        Animated.sequence([
-          Animated.delay(TIMING.hookDelayMs),
-          timing(hookProgress, 1, TIMING.hookDipMs),
-          timing(hookProgress, 2, TIMING.hookPullMs),
-          Animated.spring(hookProgress, {
-            ...SPRING, toValue: 3, useNativeDriver: USE_NATIVE_DRIVER, isInteraction: false,
-          }),
-        ]),
+    const motion = Animated.parallel([
+      Animated.sequence([
+        timing(progress, 1, TIMING.anticipationMs),
+        timing(progress, 2, TIMING.liftMs),
+        Animated.spring(progress, {
+          ...SPRING, toValue: 3, useNativeDriver: USE_NATIVE_DRIVER, isInteraction: false,
+        }),
       ]),
+      Animated.sequence([
+        Animated.delay(TIMING.hookDelayMs),
+        timing(hookProgress, 1, TIMING.hookDipMs),
+        timing(hookProgress, 2, TIMING.hookPullMs),
+        Animated.spring(hookProgress, {
+          ...SPRING, toValue: 3, useNativeDriver: USE_NATIVE_DRIVER, isInteraction: false,
+        }),
+      ]),
+    ]);
+    if (loop) {
+      if (reduceMotion) return () => { live = false; };
+      const play = () => {
+        if (!live) return;
+        progress.setValue(0);
+        hookProgress.setValue(0);
+        motion.start(() => {
+          if (!live) return;
+          timer = setTimeout(play, TIMING.settleHoldMs);
+        });
+      };
+      play();
+      return () => {
+        live = false;
+        clearTimeout(timer);
+        motion.stop();
+      };
+    }
+    if (reduceMotion) {
+      timer = setTimeout(finish, TIMING.reducedHoldMs);
+      return () => { live = false; clearTimeout(timer); };
+    }
+    watchdog = setTimeout(finish, ANIMATION_WATCHDOG_MS);
+    const animation = Animated.sequence([
+      motion,
       Animated.delay(TIMING.settleHoldMs),
       timing(exit, 0, TIMING.exitFadeMs),
     ]);
@@ -134,7 +162,7 @@ export default function LogoLaunch({ active, onFinished }: Props) {
       clearTimeout(watchdog);
       animation.stop();
     };
-  }, [active, foreground, reduceMotion, progress, hookProgress, exit]);
+  }, [active, foreground, loop, reduceMotion, progress, hookProgress, exit]);
 
   const ballMotion = {
     opacity: exit,

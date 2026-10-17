@@ -65,7 +65,7 @@ export type EnglishPatternTextFields = {
 export function isValidEnglishSeedPattern(fields: EnglishPatternTextFields): boolean {
   const title = fields.title.trim();
   const description = (fields.description ?? '').trim();
-  const author = (fields.author ?? '').trim();
+  const author = plainCreatorName(fields.author ?? '');
 
   if (isShortFormTitle(title)) return false;
   if (isKnittingFeedTitle(title)) return false;
@@ -106,21 +106,26 @@ export function isEnglishFeedPattern(fields: EnglishFeedPatternFields): boolean 
 
 export type UploadSnippetRejection = 'missing' | 'shorts' | 'knitting' | 'language' | 'author';
 
+/** Drops emoji and decorative marks so a channel like "ElyseCrochets 💌" still counts as English. */
+export function plainCreatorName(author: string): string {
+  return author.replace(/[^\p{L}\p{N}\s.'’&-]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /**
  * Scraper language gates for a tutorial someone pasted.
- * Skips the catalog's minimum description length so a short description can still be read.
+ * Skips the catalog's minimum description length and ASCII-only channel rule.
+ * Emoji in a channel name is decoration, not a foreign-language signal.
  */
 export function uploadYoutubeSnippetRejection(snippet: YoutubeSnippetLike | undefined): UploadSnippetRejection | null {
   if (!snippet) return 'missing';
   const title = (snippet.title ?? '').trim();
   const description = (snippet.description ?? '').trim();
-  const channelTitle = (snippet.channelTitle ?? '').trim();
+  const channelTitle = plainCreatorName(snippet.channelTitle ?? '');
   if (!title) return 'missing';
   if (isShortFormTitle(title)) return 'shorts';
   if (isKnittingFeedTitle(title)) return 'knitting';
   if (hasSignificantNonLatinScript(title)) return 'language';
   if (channelTitle.length > 0 && isBlockedFeedAuthor(channelTitle)) return 'author';
-  if (channelTitle.length > 0 && !isAsciiEnglishAuthor(channelTitle)) return 'author';
   if (channelTitle.length > 0 && hasSignificantNonLatinScript(channelTitle)) return 'language';
   const leadingDescription = description.slice(0, LEADING_DESCRIPTION_SCRIPT_CHECK_CHARS);
   if (leadingDescription.length > 0 && hasSignificantNonLatinScript(leadingDescription)) return 'language';
