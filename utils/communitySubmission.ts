@@ -6,13 +6,15 @@
  * of saves cannot spend the Gemini quota.
  */
 import { isYarnWeight } from '@/store/machine';
-import { preFilterSubmission, reviewCrochetPattern } from '@/utils/crochetReview';
+import { hasSpamOrShortlink, preFilterSubmission, reviewCrochetPattern } from '@/utils/crochetReview';
+import { CROCHET_ACCEPT_CONFIDENCE } from '@/utils/patternExtraction';
 import {
   cleanPatternText,
   communityPublishStatus,
   isPatternVideoSource,
   normalizeHttpUrl,
   reviewAndParsePattern,
+  type PatternAiReview,
   type PatternVideoSource,
 } from '@/utils/patternAiParser';
 
@@ -34,6 +36,17 @@ export type CommunitySubmissionInput = {
   videoUrl: string;
   /** Pasted pattern text. The model sees this once, after the local gates pass. */
   rawText: string;
+  /**
+   * Set when the upload Gemini pass already accepted this tutorial.
+   * Skips the abbreviation prefilter and the second model call.
+   */
+  acceptedExtraction?: {
+    title: string;
+    steps: readonly string[];
+    hookSize: string;
+    yarnWeight: string;
+    confidence: number;
+  };
 };
 
 export type CommunitySubmissionPayload = {
@@ -95,18 +108,39 @@ export function buildCommunitySubmissionPayload(
  * after the local pre-filter and the 5-per-day cap both pass.
  */
 export async function submitCommunityPattern(input: CommunitySubmissionInput): Promise<CommunitySubmitResult> {
-  if (!preFilterSubmission(input.rawText).ok) return 'not-crochet';
+  const trusted = input.acceptedExtraction;
+  const trustedCrochet =
+    trusted != null && trusted.confidence >= CROCHET_ACCEPT_CONFIDENCE && trusted.steps.length > 0;
+  if (trustedCrochet) {
+    if (hasSpamOrShortlink(input.rawText)) return 'not-crochet';
+  } else if (!preFilterSubmission(input.rawText).ok) {
+    return 'not-crochet';
+  }
   const firebase = await import('@/utils/firebase');
   if (!firebase.isFirebaseConfigured() || !firebase.db) return 'unavailable';
   const claimedAt = await claimCommunitySubmissionSlot();
   if (claimedAt == null) return 'rate-limited';
 
-  const attempt = await reviewAndParsePattern(input.rawText);
-  if (!attempt.called) {
-    await releaseCommunitySubmissionSlot(claimedAt);
-    return 'unavailable';
+  let review: PatternAiReview | null =
+    trusted && trustedCrochet
+      ? {
+          isValidCrochet: true,
+          confidence: trusted.confidence,
+          rejectionReason: null,
+          title: trusted.title,
+          hookSize: trusted.hookSize,
+          yarnWeight: trusted.yarnWeight,
+          steps: [...trusted.steps],
+        }
+      : null;
+  if (!review) {
+    const attempt = await reviewAndParsePattern(input.rawText);
+    if (!attempt.called) {
+      await releaseCommunitySubmissionSlot(claimedAt);
+      return 'unavailable';
+    }
+    review = attempt.review;
   }
-  const review = attempt.review;
   if (!review) return 'unavailable';
 
   let status = communityPublishStatus(review);

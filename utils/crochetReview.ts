@@ -30,12 +30,16 @@ export type PreFilterResult = { ok: true } | { ok: false; reason: 'length' | 'sp
  * Local gate that runs before a Gemini request. Length, spam, and stitch
  * density are decided on device so junk never spends model quota.
  */
+export function hasSpamOrShortlink(text: string): boolean {
+  return SPAM_OR_SHORTLINK.test(text);
+}
+
 export function preFilterSubmission(rawText: string): PreFilterResult {
   const text = rawText.trim();
   if (text.length < MIN_SUBMISSION_CHARS || text.length > MAX_SUBMISSION_CHARS) {
     return { ok: false, reason: 'length' };
   }
-  if (SPAM_OR_SHORTLINK.test(text)) return { ok: false, reason: 'spam' };
+  if (hasSpamOrShortlink(text)) return { ok: false, reason: 'spam' };
   const markers = text.match(new RegExp(STITCH_MARKER_SOURCE, 'gi'));
   if (!markers || markers.length < 2) return { ok: false, reason: 'markers' };
   return { ok: true };

@@ -5,6 +5,15 @@
  * or a blog/file embed is returned. Callers get `null` when nothing playable
  * is found.
  */
+import {
+  CROCHET_ACCEPT_CONFIDENCE,
+  formatTutorialForPrompt,
+  mapExtractedPattern,
+  readExtractedPatternAi,
+  youtubeUploadExtractionPrompt,
+  type MappedPatternDetails,
+} from '@/utils/patternExtraction';
+import type { VideoBookmark } from '@/utils/chapters';
 import { parseYouTubeUrl } from '@/utils/youtube';
 
 export type PatternVideoSource = 'facebook' | 'web' | 'youtube';
@@ -213,7 +222,7 @@ export type PatternAiReview = {
   steps: string[];
 };
 
-export const AUTO_PUBLISH_CONFIDENCE = 80;
+export const AUTO_PUBLISH_CONFIDENCE = CROCHET_ACCEPT_CONFIDENCE;
 
 const REVIEW_MODEL = 'gemini-flash-latest';
 const REVIEW_INPUT_CHARS = 10_000;
@@ -330,6 +339,119 @@ export async function reviewAndParsePattern(rawText: string): Promise<PatternRev
   } catch {
     return { called: false };
   }
+}
+
+export type YoutubePatternExtraction = {
+  isValidCrochet: boolean;
+  confidence: number;
+  rejectionReason: string | null;
+  mapped: MappedPatternDetails;
+};
+
+export type YoutubeExtractionAttempt =
+  | { called: false }
+  | { called: true; extraction: YoutubePatternExtraction | null };
+
+/**
+ * One Firebase Gemini pass for a pasted YouTube tutorial.
+ * Uses the scraper field rules plus a crochet verdict. `called` is false when
+ * Firebase AI is not configured, so the form can stay manual.
+ */
+export async function extractYoutubePattern(input: {
+  title: string;
+  creator: string;
+  description: string;
+  transcript?: string | null;
+  bookmarks?: readonly VideoBookmark[];
+}): Promise<YoutubeExtractionAttempt> {
+  const tutorial = formatTutorialForPrompt({
+    title: input.title,
+    description: input.description,
+    transcript: input.transcript,
+  });
+  if (!tutorial.trim()) return { called: false };
+  try {
+    const firebase = await import('@/utils/firebase');
+    if (!firebase.isFirebaseConfigured() || !firebase.firebaseApp) return { called: false };
+    const { getAI, getGenerativeModel, GoogleAIBackend, Schema } = await import('firebase/ai');
+    const ai = getAI(firebase.firebaseApp, { backend: new GoogleAIBackend() });
+    const model = getGenerativeModel(ai, {
+      model: REVIEW_MODEL,
+      generationConfig: {
+        maxOutputTokens: 2048,
+        responseMimeType: 'application/json',
+        responseSchema: youtubeExtractionSchema(Schema),
+      },
+    });
+    let raw = '';
+    try {
+      const result = await model.generateContent(youtubeUploadExtractionPrompt(tutorial));
+      raw = result.response.text();
+    } catch {
+      return { called: true, extraction: null };
+    }
+    const parsed = readExtractedPatternAi(parseReviewJson(raw));
+    if (!parsed || typeof parsed.isValidCrochet !== 'boolean' || typeof parsed.confidence !== 'number') {
+      return { called: true, extraction: null };
+    }
+    return {
+      called: true,
+      extraction: {
+        isValidCrochet: parsed.isValidCrochet,
+        confidence: parsed.confidence,
+        rejectionReason: parsed.rejectionReason ?? null,
+        mapped: mapExtractedPattern(
+          { title: input.title, creator: input.creator, description: input.description },
+          parsed,
+          input.bookmarks ?? [],
+        ),
+      },
+    };
+  } catch {
+    return { called: false };
+  }
+}
+
+function youtubeExtractionSchema(Schema: typeof import('firebase/ai').Schema) {
+  const text = () => Schema.string();
+  return Schema.object({
+    properties: {
+      isValidCrochet: Schema.boolean({
+        description: 'True only for a crochet tutorial. Knitting, spam, and unrelated videos are false.',
+      }),
+      confidence: Schema.integer({ description: 'Integer confidence from 0 to 100.', minimum: 0, maximum: 100 }),
+      rejectionReason: Schema.string({
+        description: 'Short reason when it is not crochet, otherwise null.',
+        nullable: true,
+      }),
+      difficulty: text(),
+      estimatedTimeMinutes: Schema.integer(),
+      summary: text(),
+      description: text(),
+      yarnWeight: text(),
+      hookSize: text(),
+      totalRows: Schema.integer(),
+      stitchesPerRow: Schema.integer(),
+      tags: Schema.array({ items: text() }),
+      keyStitches: Schema.array({ items: text() }),
+      steps: Schema.array({ items: text(), maxItems: 16 }),
+      materials: Schema.array({
+        items: Schema.object({
+          properties: { name: text(), weight: text(), yardage: text() },
+        }),
+      }),
+      tools: Schema.array({
+        items: Schema.object({
+          properties: { type: text(), size: text() },
+        }),
+      }),
+      chapters: Schema.array({
+        items: Schema.object({
+          properties: { label: text(), time: text() },
+        }),
+      }),
+    },
+  });
 }
 
 function parseReviewJson(raw: string): unknown {

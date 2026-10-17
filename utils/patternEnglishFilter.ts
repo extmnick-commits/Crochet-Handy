@@ -104,6 +104,34 @@ export function isEnglishFeedPattern(fields: EnglishFeedPatternFields): boolean 
   });
 }
 
+export type UploadSnippetRejection = 'missing' | 'shorts' | 'knitting' | 'language' | 'author';
+
+/**
+ * Scraper language gates for a tutorial someone pasted.
+ * Skips the catalog's minimum description length so a short description can still be read.
+ */
+export function uploadYoutubeSnippetRejection(snippet: YoutubeSnippetLike | undefined): UploadSnippetRejection | null {
+  if (!snippet) return 'missing';
+  const title = (snippet.title ?? '').trim();
+  const description = (snippet.description ?? '').trim();
+  const channelTitle = (snippet.channelTitle ?? '').trim();
+  if (!title) return 'missing';
+  if (isShortFormTitle(title)) return 'shorts';
+  if (isKnittingFeedTitle(title)) return 'knitting';
+  if (hasSignificantNonLatinScript(title)) return 'language';
+  if (channelTitle.length > 0 && isBlockedFeedAuthor(channelTitle)) return 'author';
+  if (channelTitle.length > 0 && !isAsciiEnglishAuthor(channelTitle)) return 'author';
+  if (channelTitle.length > 0 && hasSignificantNonLatinScript(channelTitle)) return 'language';
+  const leadingDescription = description.slice(0, LEADING_DESCRIPTION_SCRIPT_CHECK_CHARS);
+  if (leadingDescription.length > 0 && hasSignificantNonLatinScript(leadingDescription)) return 'language';
+
+  const audioLang = snippet.defaultAudioLanguage?.trim();
+  if (audioLang && !audioLang.toLowerCase().startsWith('en')) return 'language';
+  const defaultLang = snippet.defaultLanguage?.trim();
+  if (defaultLang && !defaultLang.toLowerCase().startsWith('en')) return 'language';
+  return null;
+}
+
 /** Filters YouTube `videos.list` candidates before AI extraction. */
 export function isValidEnglishYoutubeSnippet(snippet: YoutubeSnippetLike | undefined): boolean {
   if (!snippet) return false;

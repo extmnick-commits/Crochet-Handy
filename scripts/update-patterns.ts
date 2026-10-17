@@ -21,18 +21,14 @@ import * as path from 'node:path';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 
-import {
-  extractVideoBookmarks,
-  resolveVideoBookmarksFromSources,
-  type VideoBookmark,
-} from '../utils/chapters';
+import { type VideoBookmark } from '../utils/chapters';
 import {
   getActiveHolidayTopic,
   resolveScrapeTopic,
-  scrapeCategoryKeywords,
   searchQueryForScrapeTopic,
 } from '../utils/holidayTopics';
 import { isValidEnglishYoutubeSnippet } from '../utils/patternEnglishFilter';
+import { batchExtractionSystemPrompt, mapExtractedPattern } from '../utils/patternExtraction';
 import { derivePatternSummary } from '../utils/patternSummary';
 import { filterVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
 import { fetchWatchEnrichmentForVideoIds } from '../utils/youtubeTranscript';
@@ -49,18 +45,6 @@ type YarnWeight =
   | 'bulky'
   | 'super-bulky'
   | 'jumbo';
-
-const YARN_WEIGHTS: readonly YarnWeight[] = [
-  'lace',
-  'fingering',
-  'sport',
-  'dk',
-  'worsted',
-  'aran',
-  'bulky',
-  'super-bulky',
-  'jumbo',
-];
 
 type SeedPatternMaterial = {
   name: string;
@@ -220,36 +204,6 @@ function slugifyId(title: string, videoId: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
   return `pattern-${slug || videoId}`.slice(0, 64);
-}
-
-function normalizeDifficulty(value: string | undefined): PatternDifficulty {
-  const key = (value ?? '').trim().toLowerCase();
-  if (key === 'beginner' || key === 'easy' || key === 'intermediate' || key === 'advanced') {
-    return key;
-  }
-  return 'easy';
-}
-
-function normalizeYarnWeight(value: string | undefined): YarnWeight {
-  const raw = (value ?? '').trim().toLowerCase().replace(/\s+/g, '-');
-  const aliases: Record<string, YarnWeight> = {
-    '4-ply': 'sport',
-    '5-ply': 'sport',
-    '8-ply': 'dk',
-    '10-ply': 'aran',
-    'chunky': 'bulky',
-    'super-chunky': 'super-bulky',
-  };
-  const candidate = aliases[raw] ?? raw;
-  if ((YARN_WEIGHTS as readonly string[]).includes(candidate)) {
-    return candidate as YarnWeight;
-  }
-  return 'worsted';
-}
-
-function clampInt(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
 function thumbnailUrl(videoId: string): string {
@@ -489,25 +443,7 @@ export async function extractBatchPatterns(
     messages: [
       {
         role: 'system',
-        content: [
-          `Analyze these ${videos.length} crochet YouTube videos and extract project details for each.`,
-          'Return strict JSON only: { "patterns": [ ... ] }.',
-          'Each item must include videoIndex (0-based, matching Video N in the user message),',
-          'difficulty (Beginner|Easy|Intermediate|Advanced), estimatedTimeMinutes,',
-          'summary (1–2 sentences, max 160 characters, enticing maker-focused blurb for the detail screen),',
-          'description (longer project overview, 2–4 sentences),',
-          'materials [{ name, weight, yardage }], tools [{ type, size }], keyStitches [string],',
-          'yarnWeight (lace|fingering|sport|dk|worsted|aran|bulky|super-bulky|jumbo), hookSize,',
-          'totalRows, stitchesPerRow,',
-          'tags [string] (include relevant category tags such as amigurumi, wearables, halloween, christmas, valentines, thanksgiving, easter, blanket, bag alongside key stitches),',
-          'chapters [{ label, time }] when the description lists timestamps (time as M:SS or H:MM:SS).',
-          'When a transcript excerpt is present, use it as the primary signal for difficulty, keyStitches, tags, and time estimate.',
-          'Difficulty rubric: Beginner = magic ring/chaining/SC only, no shaping; Easy = simple repeats and basic increases/decreases;',
-          'Intermediate = colorwork, notable shaping, or many parts to assemble; Advanced = garments, fine lace, complex construction, or many techniques.',
-          'Tags: lowercase, specific (project type + notable stitches + season when relevant), 4–8 items, no duplicates.',
-          `Include exactly ${videos.length} entries with videoIndex 0 through ${videos.length - 1}.`,
-          'Infer reasonable values when a video omits them.',
-        ].join(' '),
+        content: batchExtractionSystemPrompt(videos.length),
       },
       {
         role: 'user',
@@ -542,120 +478,42 @@ export function mapBatchPatternsToSeed(
   );
 }
 
-function bookmarksFromAiChapters(chapters: AiPatternPayload['chapters']): VideoBookmark[] {
-  if (!chapters?.length) return [];
-  const out: VideoBookmark[] = [];
-  for (const chapter of chapters) {
-    const label = String(chapter.label ?? '').trim();
-    if (!label) continue;
-    const fromTime = chapter.time ? extractVideoBookmarks(`${chapter.time} ${label}`)[0] : undefined;
-    const seconds =
-      fromTime?.seconds ??
-      (typeof chapter.seconds === 'number' && Number.isFinite(chapter.seconds)
-        ? Math.max(0, Math.trunc(chapter.seconds))
-        : 0);
-    out.push({
-      id: `bm-${seconds}-${label.slice(0, 12).replace(/\s+/g, '-').toLowerCase()}`,
-      label,
-      seconds,
-    });
-  }
-  return out.sort((a, b) => a.seconds - b.seconds);
-}
-
-function resolvePatternBookmarks(
-  video: YouTubeVideoItem,
-  ai: AiPatternPayload,
-  watchBookmarks: readonly VideoBookmark[],
-): VideoBookmark[] {
-  const description = video.snippet?.description ?? '';
-  return resolveVideoBookmarksFromSources(
-    extractVideoBookmarks(description),
-    watchBookmarks,
-    extractVideoBookmarks(ai.description ?? ''),
-    bookmarksFromAiChapters(ai.chapters),
-  );
-}
-
 export function mergePattern(
   video: YouTubeVideoItem,
   ai: AiPatternPayload,
   watchBookmarks: readonly VideoBookmark[] = [],
 ): SeedPattern {
   const videoId = video.id ?? '';
-  const title = (video.snippet?.title ?? 'Untitled tutorial').trim();
-  const author = (video.snippet?.channelTitle ?? 'Unknown').trim();
-  const hookFromTools =
-    ai.tools?.find((tool) => /hook/i.test(tool.type ?? ''))?.size?.trim() ?? ai.hookSize?.trim() ?? '5.0 mm';
-
-  const materials = (ai.materials ?? [])
-    .map((item) => ({
-      name: String(item.name ?? '').trim(),
-      weight: String(item.weight ?? '').trim(),
-      yardage: String(item.yardage ?? '').trim(),
-    }))
-    .filter((item) => item.name.length > 0);
-
-  const tools = (ai.tools ?? [])
-    .map((item) => ({
-      type: String(item.type ?? '').trim(),
-      size: String(item.size ?? '').trim(),
-    }))
-    .filter((item) => item.type.length > 0);
-
-  const keyStitches = (ai.keyStitches ?? [])
-    .map((stitch) => String(stitch).trim())
-    .filter((stitch) => stitch.length > 0);
-
-  const yarnFromMaterials = materials[0]?.weight;
-  const estimatedMinutes = clampInt(ai.estimatedTimeMinutes ?? 120, 15, 24 * 60);
-
-  const categoryKeywords = scrapeCategoryKeywords();
-
-  const textToScan = `${title} ${video.snippet?.description ?? ''}`.toLowerCase();
-  const inferredCategories = Object.entries(categoryKeywords)
-    .filter(([, keywords]) => keywords.some((kw) => textToScan.includes(kw)))
-    .map(([category]) => category);
-
-  const rawTags = [
-    ...(ai.tags ?? []),
-    ...inferredCategories,
-    ...keyStitches,
-  ];
-  const tags: string[] = [];
-  for (const tag of rawTags) {
-    const normalized = String(tag).trim().toLowerCase();
-    if (normalized && !tags.includes(normalized)) {
-      tags.push(normalized);
-    }
-  }
-
-  const totalRows = clampInt(ai.totalRows ?? Math.round(estimatedMinutes / 12), 1, 9999);
-  const stitchesPerRow = clampInt(ai.stitchesPerRow ?? 36, 1, 9999);
-  const bookmarks = resolvePatternBookmarks(video, ai, watchBookmarks);
+  const mapped = mapExtractedPattern(
+    {
+      title: video.snippet?.title ?? 'Untitled tutorial',
+      creator: video.snippet?.channelTitle ?? 'Unknown',
+      description: video.snippet?.description ?? '',
+    },
+    ai,
+    watchBookmarks,
+  );
 
   return {
-    id: slugifyId(title, videoId),
+    id: slugifyId(mapped.title, videoId),
     videoId,
     youtubeUrl: youtubeWatchUrl(videoId),
     thumbnailUrl: thumbnailUrl(videoId),
-    title,
-    author,
-    difficulty: normalizeDifficulty(ai.difficulty),
-    estimatedTimeMinutes: estimatedMinutes,
-    description: (ai.description ?? '').trim() || 'Crochet tutorial from YouTube.',
-    summary:
-      (ai.summary ?? '').trim() ||
-      derivePatternSummary((ai.description ?? '').trim() || 'Crochet tutorial from YouTube.'),
-    materials,
-    tools,
-    keyStitches,
-    yarnWeight: normalizeYarnWeight(ai.yarnWeight ?? yarnFromMaterials),
-    hookSize: hookFromTools,
-    totalRows,
-    stitchesPerRow,
-    tags: tags.slice(0, 8),
-    bookmarks,
+    title: mapped.title,
+    author: mapped.creator,
+    difficulty: mapped.difficulty,
+    estimatedTimeMinutes: mapped.estimatedTimeMinutes,
+    description: mapped.description,
+    summary: mapped.summary,
+    materials: mapped.materials,
+    tools: mapped.tools,
+    keyStitches: mapped.keyStitches,
+    yarnWeight: mapped.yarnWeight,
+    hookSize: mapped.hookSize,
+    totalRows: mapped.totalRows,
+    stitchesPerRow: mapped.stitchesPerRow,
+    tags: mapped.tags,
+    bookmarks: mapped.bookmarks,
   };
 }
 

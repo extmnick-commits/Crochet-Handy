@@ -4,7 +4,7 @@
  * The store rejects a second copy of the same video and ignores a link it
  * can't parse, so this sheet checks both before calling `addPatternFromYouTube`.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { BottomSheet } from '@/components/ui/BottomSheet';
@@ -16,11 +16,14 @@ import {
   type YarnWeight,
 } from '@/store/useCrochetStore';
 import { extractVideoBookmarks, formatBookmarkTime, mergeVideoBookmarks, type VideoBookmark } from '@/utils/chapters';
-import { fetchYouTubeChapterBookmarks, youtubeChaptersConfigured } from '@/utils/youtubeChapters';
+import { fetchYouTubeVideoDetails, youtubeChaptersConfigured } from '@/utils/youtubeChapters';
+import { fetchYoutubeTranscriptExcerpt } from '@/utils/youtubeTranscript';
 import { submitCommunityPattern } from '@/utils/communitySubmission';
 import { PREFILTER_REJECTION_MESSAGE, preFilterSubmission } from '@/utils/crochetReview';
 import { isFirebaseConfigured } from '@/utils/firebase';
-import { detectPatternVideo, extractPatternSteps } from '@/utils/patternAiParser';
+import { detectPatternVideo, extractPatternSteps, extractYoutubePattern } from '@/utils/patternAiParser';
+import { acceptsCrochetExtraction, type MappedPatternDetails } from '@/utils/patternExtraction';
+import { uploadYoutubeSnippetRejection, type UploadSnippetRejection } from '@/utils/patternEnglishFilter';
 import { difficultyLabel, parseWholeCount, yarnWeightMeta } from '@/utils/patternDisplay';
 import { youtubeThumbnailUrl } from '@/utils/youtube';
 
@@ -77,11 +80,25 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
   const [difficulty, setDifficulty] = useState<PatternDifficulty>('easy');
   const [tags, setTags] = useState('');
   const [notes, setNotes] = useState('');
+  const [patternSummary, setPatternSummary] = useState('');
+  const [extractedSteps, setExtractedSteps] = useState<string[]>([]);
+  const [accepted, setAccepted] = useState<{ confidence: number } | null>(null);
+  const [blockReason, setBlockReason] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedLocally, setSavedLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [youtubeBookmarks, setYoutubeBookmarks] = useState<VideoBookmark[]>([]);
-  const [chapterLookup, setChapterLookup] = useState<'idle' | 'loading' | 'ready'>('idle');
+  const [chapterLookup, setChapterLookup] = useState<'idle' | 'loading' | 'reading' | 'ready'>('idle');
+  const edited = useRef({
+    title: false,
+    creator: false,
+    yarnWeight: false,
+    hookSize: false,
+    totalRows: false,
+    stitchesPerRow: false,
+    difficulty: false,
+    tags: false,
+  });
 
   const detected = useMemo(() => detectPatternVideo({ url, text: notes }), [url, notes]);
   const noteBookmarks = useMemo(() => extractVideoBookmarks(notes), [notes]);
@@ -91,19 +108,97 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
   );
 
   useEffect(() => {
+    edited.current = {
+      title: false,
+      creator: false,
+      yarnWeight: false,
+      hookSize: false,
+      totalRows: false,
+      stitchesPerRow: false,
+      difficulty: false,
+      tags: false,
+    };
+    setTitle('');
+    setCreator('');
+    setYarnWeight('worsted');
+    setHookSize('');
+    setTotalRows('10');
+    setStitchesPerRow('10');
+    setDifficulty('easy');
+    setTags('');
+    setPatternSummary('');
+    setExtractedSteps([]);
+    setAccepted(null);
+    setBlockReason(null);
+    setError(null);
+
     if (!detected || detected.source !== 'youtube' || !youtubeChaptersConfigured()) {
       setYoutubeBookmarks([]);
       setChapterLookup(detected ? 'ready' : 'idle');
       return;
     }
+
+    const videoId = detected.videoId;
     let cancelled = false;
     setChapterLookup('loading');
     setYoutubeBookmarks([]);
-    void fetchYouTubeChapterBookmarks([detected.videoId]).then((found) => {
+
+    void (async () => {
+      const details = await fetchYouTubeVideoDetails(videoId);
       if (cancelled) return;
-      setYoutubeBookmarks(found.get(detected.videoId) ?? []);
+      if (!details) {
+        setChapterLookup('ready');
+        return;
+      }
+      setYoutubeBookmarks(details.bookmarks);
+      const gate = uploadYoutubeSnippetRejection(details);
+      if (gate) {
+        setBlockReason(uploadGateMessage(gate));
+        setChapterLookup('ready');
+        return;
+      }
+      if (!isFirebaseConfigured()) {
+        setChapterLookup('ready');
+        return;
+      }
+
+      setChapterLookup('reading');
+      const transcript = await fetchYoutubeTranscriptExcerpt(videoId);
+      if (cancelled) return;
+      const attempt = await extractYoutubePattern({
+        title: details.title,
+        creator: details.channelTitle,
+        description: details.description,
+        transcript,
+        bookmarks: details.bookmarks,
+      });
+      if (cancelled) return;
+      if (!attempt.called || !attempt.extraction) {
+        setChapterLookup('ready');
+        return;
+      }
+      if (!acceptsCrochetExtraction(attempt.extraction)) {
+        setBlockReason(attempt.extraction.rejectionReason || PREFILTER_REJECTION_MESSAGE);
+        setChapterLookup('ready');
+        return;
+      }
+      applyMappedDetails(edited.current, attempt.extraction.mapped, {
+        setTitle,
+        setCreator,
+        setYarnWeight,
+        setHookSize,
+        setTotalRows,
+        setStitchesPerRow,
+        setDifficulty,
+        setTags,
+        setPatternSummary,
+        setExtractedSteps,
+        setYoutubeBookmarks,
+      });
+      setAccepted({ confidence: attempt.extraction.confidence });
       setChapterLookup('ready');
-    });
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -118,7 +213,7 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
       onClose();
       return;
     }
-    if (chapterLookup === 'loading' || saving) return;
+    if (blockReason || chapterLookup === 'loading' || chapterLookup === 'reading' || saving) return;
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setError('Add a title for this pattern.');
@@ -140,7 +235,7 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
       return;
     }
 
-    const steps = stepsForImport(notes, detectedBookmarks, rows, stitches, hookSize);
+    const steps = extractedSteps.length > 0 ? extractedSteps : stepsForImport(notes, detectedBookmarks, rows, stitches, hookSize);
     const id = addPatternFromYouTube({
       title: trimmedTitle,
       creator: creator.trim() || undefined,
@@ -156,6 +251,7 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
         .split(',')
         .map((tag) => tag.trim())
         .filter(Boolean),
+      summary: patternSummary.trim() || undefined,
       bookmarks: detectedBookmarks,
       steps,
     });
@@ -165,9 +261,9 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
       return;
     }
 
-    const rawText = [trimmedTitle, notes.trim(), hookSize.trim(), ...steps].filter(Boolean).join('\n');
+    const rawText = [trimmedTitle, notes.trim(), hookSize.trim(), patternSummary.trim(), ...steps].filter(Boolean).join('\n');
     if (isFirebaseConfigured()) {
-      if (!preFilterSubmission(rawText).ok) {
+      if (!accepted && !preFilterSubmission(rawText).ok) {
         setSavedLocally(true);
         setError(PREFILTER_REJECTION_MESSAGE);
         onSaved?.(id);
@@ -184,6 +280,17 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
           source: detected.source,
           videoUrl: detected.videoUrl,
           rawText,
+          ...(accepted
+            ? {
+                acceptedExtraction: {
+                  title: trimmedTitle,
+                  steps,
+                  hookSize: hookSize.trim(),
+                  yarnWeight,
+                  confidence: accepted.confidence,
+                },
+              }
+            : {}),
         });
         if (result === 'not-crochet') {
           setSavedLocally(true);
@@ -253,6 +360,9 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
         {detected?.source === 'youtube' && chapterLookup === 'loading' && (
           <Text style={styles.detectTitle}>Checking YouTube for chapters…</Text>
         )}
+        {detected?.source === 'youtube' && chapterLookup === 'reading' && (
+          <Text style={styles.detectTitle}>Reading this tutorial…</Text>
+        )}
         {detected?.source === 'youtube' && chapterLookup === 'ready' && youtubeChaptersConfigured() && youtubeBookmarks.length === 0 && noteBookmarks.length === 0 && (
           <Text style={styles.lookupEmpty}>No chapter timestamps on this video. Paste them below if the creator listed them in the description.</Text>
         )}
@@ -292,6 +402,7 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
           <TextInput
             value={title}
             onChangeText={(value) => {
+              edited.current.title = true;
               setTitle(value);
               setError(null);
             }}
@@ -304,7 +415,10 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
         <Field label="Creator">
           <TextInput
             value={creator}
-            onChangeText={setCreator}
+            onChangeText={(value) => {
+              edited.current.creator = true;
+              setCreator(value);
+            }}
             placeholder="Channel name"
             placeholderTextColor={Colors.textTertiary}
             style={styles.input}
@@ -321,7 +435,10 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
                   key={weight}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  onPress={() => setYarnWeight(weight)}
+                  onPress={() => {
+                    edited.current.yarnWeight = true;
+                    setYarnWeight(weight);
+                  }}
                   style={({ pressed }) => [styles.chip, selected && styles.chipSelected, pressed && styles.pressed, webCursor]}
                 >
                   <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
@@ -336,7 +453,10 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
         <Field label="Hook size">
           <TextInput
             value={hookSize}
-            onChangeText={setHookSize}
+            onChangeText={(value) => {
+              edited.current.hookSize = true;
+              setHookSize(value);
+            }}
             placeholder="4.0 mm"
             placeholderTextColor={Colors.textTertiary}
             autoCapitalize="none"
@@ -349,7 +469,10 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
             <Field label="Total rows">
               <TextInput
                 value={totalRows}
-                onChangeText={setTotalRows}
+                onChangeText={(value) => {
+                  edited.current.totalRows = true;
+                  setTotalRows(value);
+                }}
                 placeholder="10"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardType="number-pad"
@@ -362,7 +485,10 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
             <Field label="Stitches per row">
               <TextInput
                 value={stitchesPerRow}
-                onChangeText={setStitchesPerRow}
+                onChangeText={(value) => {
+                  edited.current.stitchesPerRow = true;
+                  setStitchesPerRow(value);
+                }}
                 placeholder="10"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardType="number-pad"
@@ -382,7 +508,10 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
                   key={level}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  onPress={() => setDifficulty(level)}
+                  onPress={() => {
+                    edited.current.difficulty = true;
+                    setDifficulty(level);
+                  }}
                   style={({ pressed }) => [styles.chip, selected && styles.chipSelected, pressed && styles.pressed, webCursor]}
                 >
                   <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{difficultyLabel(level)}</Text>
@@ -395,7 +524,10 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
         <Field label="Tags">
           <TextInput
             value={tags}
-            onChangeText={setTags}
+            onChangeText={(value) => {
+              edited.current.tags = true;
+              setTags(value);
+            }}
             placeholder="amigurumi, halloween, wearable"
             placeholderTextColor={Colors.textTertiary}
             autoCapitalize="none"
@@ -403,27 +535,88 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
           />
         </Field>
 
-        {error && (
+        {(blockReason || error) && (
           <Text accessibilityLiveRegion="polite" style={styles.error}>
-            {error}
+            {blockReason || error}
           </Text>
         )}
 
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={savedLocally ? 'Done' : 'Save pattern'}
-          accessibilityState={{ disabled: chapterLookup === 'loading' || saving }}
-          disabled={chapterLookup === 'loading' || saving}
+          accessibilityState={{ disabled: Boolean(blockReason) || chapterLookup === 'loading' || chapterLookup === 'reading' || saving }}
+          disabled={Boolean(blockReason) || chapterLookup === 'loading' || chapterLookup === 'reading' || saving}
           testID="add-pattern-save"
           onPress={() => {
             void onSave();
           }}
-          style={({ pressed }) => [styles.save, (chapterLookup === 'loading' || saving) && styles.saveWaiting, pressed && styles.pressed, webCursor]}
+          style={({ pressed }) => [
+            styles.save,
+            (Boolean(blockReason) || chapterLookup === 'loading' || chapterLookup === 'reading' || saving) && styles.saveWaiting,
+            pressed && styles.pressed,
+            webCursor,
+          ]}
         >
           <Text style={styles.saveText}>{saving ? 'Saving…' : savedLocally ? 'Done' : 'Save pattern'}</Text>
         </Pressable>
       </View>
   );
+}
+
+type EditedFields = {
+  title: boolean;
+  creator: boolean;
+  yarnWeight: boolean;
+  hookSize: boolean;
+  totalRows: boolean;
+  stitchesPerRow: boolean;
+  difficulty: boolean;
+  tags: boolean;
+};
+
+function applyMappedDetails(
+  edited: EditedFields,
+  mapped: MappedPatternDetails,
+  set: {
+    setTitle: (value: string) => void;
+    setCreator: (value: string) => void;
+    setYarnWeight: (value: YarnWeight) => void;
+    setHookSize: (value: string) => void;
+    setTotalRows: (value: string) => void;
+    setStitchesPerRow: (value: string) => void;
+    setDifficulty: (value: PatternDifficulty) => void;
+    setTags: (value: string) => void;
+    setPatternSummary: (value: string) => void;
+    setExtractedSteps: (value: string[]) => void;
+    setYoutubeBookmarks: (value: VideoBookmark[]) => void;
+  },
+) {
+  if (!edited.title) set.setTitle(mapped.title);
+  if (!edited.creator) set.setCreator(mapped.creator);
+  if (!edited.yarnWeight) set.setYarnWeight(mapped.yarnWeight);
+  if (!edited.hookSize) set.setHookSize(mapped.hookSize);
+  if (!edited.totalRows) set.setTotalRows(String(mapped.totalRows));
+  if (!edited.stitchesPerRow) set.setStitchesPerRow(String(mapped.stitchesPerRow));
+  if (!edited.difficulty) set.setDifficulty(mapped.difficulty);
+  if (!edited.tags) set.setTags(mapped.tags.join(', '));
+  set.setPatternSummary(mapped.summary);
+  set.setExtractedSteps(mapped.steps);
+  if (mapped.bookmarks.length > 0) set.setYoutubeBookmarks(mapped.bookmarks);
+}
+
+function uploadGateMessage(reason: UploadSnippetRejection): string {
+  switch (reason) {
+    case 'shorts':
+      return "Shorts aren't saved as patterns.";
+    case 'knitting':
+      return 'That looks like a knitting tutorial.';
+    case 'language':
+      return 'Only English tutorials can be saved.';
+    case 'author':
+      return "That channel isn't available in the pattern library.";
+    default:
+      return 'Could not read that YouTube video.';
+  }
 }
 
 function stepsForImport(

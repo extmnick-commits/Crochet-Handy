@@ -16,6 +16,8 @@ import {
   extractPatternSteps,
   parsePatternAiReview,
 } from '../utils/patternAiParser';
+import { acceptsCrochetExtraction, mapExtractedPattern } from '../utils/patternExtraction';
+import { isValidEnglishYoutubeSnippet, uploadYoutubeSnippetRejection } from '../utils/patternEnglishFilter';
 import { parseYouTubeUrl } from '../utils/youtube';
 import { parseCommunityDocument } from './communityCatalogFirestore';
 import { assemblePatternCatalog } from './export-pattern-catalog';
@@ -1192,5 +1194,74 @@ assert(parseCommunityDocument('projects/demo/databases/(default)/documents/commu
   source: { stringValue: 'web' },
   videoUrl: { stringValue: 'https://example.com/a.mp4' },
 }) == null, 'firestore parser rejects a title-less submission');
+
+const beanie = mapExtractedPattern(
+  {
+    title: 'Easy Crochet Beanie Tutorial for Beginners',
+    creator: 'VivCrochets',
+    description: 'A chunky beanie worked in rounds with a 6 mm hook.',
+  },
+  {
+    isValidCrochet: true,
+    confidence: 92,
+    difficulty: 'Easy',
+    yarnWeight: 'chunky',
+    hookSize: '5.0 mm',
+    tools: [{ type: 'crochet hook', size: '6.0 mm' }],
+    totalRows: 42,
+    stitchesPerRow: 48,
+    tags: ['beanie', 'wearables'],
+    keyStitches: ['single crochet'],
+    summary: 'A beginner chunky beanie in continuous rounds.',
+    steps: ['Rnd 1: 8 sc in a magic ring'],
+    chapters: [{ label: 'Round 1', time: '0:58' }],
+  },
+  [],
+);
+equal(beanie.title, 'Easy Crochet Beanie Tutorial for Beginners', 'upload keeps the YouTube title');
+equal(beanie.creator, 'VivCrochets', 'upload keeps the channel name');
+equal(beanie.hookSize, '6.0 mm', 'hook size comes from the tool list');
+equal(beanie.yarnWeight, 'bulky', 'chunky yarn maps to bulky');
+equal(beanie.totalRows, 42, 'extracted row count is kept');
+equal(beanie.stitchesPerRow, 48, 'extracted stitch count is kept');
+assert(beanie.tags.includes('beanie') && beanie.tags.includes('wearables'), 'extracted tags are kept');
+equal(beanie.steps[0], 'Rnd 1: 8 sc in a magic ring', 'extracted stitch lines are kept');
+assert(beanie.bookmarks.some((bookmark) => bookmark.seconds === 58), 'chapter time becomes a bookmark');
+assert(acceptsCrochetExtraction({ isValidCrochet: true, confidence: 80 }) === true, 'confident crochet extraction is accepted');
+assert(acceptsCrochetExtraction({ isValidCrochet: true, confidence: 79 }) === false, 'low-confidence extraction is rejected');
+assert(acceptsCrochetExtraction({ isValidCrochet: false, confidence: 99 }) === false, 'a non-crochet payload is rejected');
+equal(
+  uploadYoutubeSnippetRejection({ title: 'Knitting pattern for a hat', description: 'Needles and yarn.', channelTitle: 'Wool' }),
+  'knitting',
+  'knitting titles are rejected before Gemini',
+);
+equal(
+  uploadYoutubeSnippetRejection({
+    title: 'Crochet beanie',
+    description: 'Short note.',
+    channelTitle: 'VivCrochets',
+    defaultAudioLanguage: 'es',
+  }),
+  'language',
+  'non-English audio is rejected before Gemini',
+);
+assert(
+  uploadYoutubeSnippetRejection({
+    title: 'Easy Crochet Beanie',
+    description: 'A short English description.',
+    channelTitle: 'VivCrochets',
+    defaultAudioLanguage: 'en',
+  }) == null,
+  'a short English description still reaches Gemini',
+);
+assert(
+  isValidEnglishYoutubeSnippet({
+    title: 'Easy Crochet Beanie',
+    description: 'A short English description.',
+    channelTitle: 'VivCrochets',
+    defaultAudioLanguage: 'en',
+  }) === false,
+  'the catalog scraper still requires a long description',
+);
 
 console.log('crochet machine checks passed');
