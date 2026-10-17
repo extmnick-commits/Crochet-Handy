@@ -3,8 +3,19 @@
  * Run with: npx tsx scripts/check-crochet-machine.ts
  */
 import { extractVideoBookmarks, formatBookmarkTime, isEstimatedBookmarkSet, sanitizeVideoBookmarks } from '../utils/chapters';
-import { reviewCrochetPattern } from '../utils/crochetReview';
-import { detectPatternVideo, embeddedTutorialUrl, extractPatternSteps } from '../utils/patternAiParser';
+import { preFilterSubmission, reviewCrochetPattern } from '../utils/crochetReview';
+import {
+  canRecordCommunitySubmission,
+  COMMUNITY_SUBMISSION_WINDOW_MS,
+  pruneCommunitySubmissionTimes,
+} from '../utils/communitySubmission';
+import {
+  communityPublishStatus,
+  detectPatternVideo,
+  embeddedTutorialUrl,
+  extractPatternSteps,
+  parsePatternAiReview,
+} from '../utils/patternAiParser';
 import { parseYouTubeUrl } from '../utils/youtube';
 import { parseCommunityDocument } from './communityCatalogFirestore';
 import { assemblePatternCatalog } from './export-pattern-catalog';
@@ -1020,6 +1031,86 @@ assert(
 assert(
   reviewCrochetPattern({ title: 'Market bag', steps: ['Row 1: ch 30', 'Row 2: dc across'] }).ok === true,
   'crochet project with stitch rows passes review',
+);
+const stitchText =
+  'Rnd 1: mr, 6 sc into the ring. Rnd 2: inc in each stitch around. Fasten off and weave the ends for this amigurumi piece.';
+assert(preFilterSubmission(stitchText).ok === true, 'stitch instructions pass the local gate');
+assert(preFilterSubmission(`${stitchText} See craft.co for yarn.`).ok === true, 'a normal domain is not treated as a shortlink');
+assert(preFilterSubmission('too short').ok === false, 'short text never reaches the model');
+assert(preFilterSubmission(`${stitchText} ${'x'.repeat(10_000)}`).ok === false, 'overlong text never reaches the model');
+assert(preFilterSubmission(`${stitchText} join t.me/freebies`).ok === false, 'telegram links are rejected locally');
+assert(preFilterSubmission(`${stitchText} https://bit.ly/hooks`).ok === false, 'shortlinks are rejected locally');
+assert(
+  preFilterSubmission(
+    'This is a long note about a soft hat I want to make someday with nice yarn for winter gifts and calm weekends at home.',
+  ).ok === false,
+  'prose without stitch markers is rejected locally',
+);
+const day = Date.UTC(2026, 9, 16, 12);
+const withinDay = [1, 2, 3, 4, 5].map((minutes) => day - minutes * 60_000);
+assert(canRecordCommunitySubmission(withinDay, day) === false, 'five submissions in 24 hours block another');
+assert(canRecordCommunitySubmission(withinDay.slice(0, 4), day) === true, 'four submissions in 24 hours still allow one');
+assert(
+  canRecordCommunitySubmission(
+    withinDay.map((ts) => ts - COMMUNITY_SUBMISSION_WINDOW_MS),
+    day,
+  ) === true,
+  'submissions older than 24 hours do not count',
+);
+equal(pruneCommunitySubmissionTimes([day + 60_000, day - 60_000], day).length, 1, 'future timestamps are ignored');
+const autoPublish = parsePatternAiReview({
+  isValidCrochet: true,
+  confidence: 80,
+  rejectionReason: null,
+  title: 'Market bag',
+  hookSize: '5.0 mm',
+  yarnWeight: 'worsted',
+  steps: ['Rnd 1: 6 sc in mr'],
+});
+assert(autoPublish != null && communityPublishStatus(autoPublish) === 'published', 'confident crochet is auto-published');
+const unsure = parsePatternAiReview({
+  isValidCrochet: true,
+  confidence: 79,
+  rejectionReason: null,
+  title: 'Market bag',
+  hookSize: '5.0 mm',
+  yarnWeight: 'worsted',
+  steps: ['Rnd 1: 6 sc in mr'],
+});
+assert(unsure != null && communityPublishStatus(unsure) === 'rejected', 'low confidence stays out of the public feed');
+const flagged = parsePatternAiReview({
+  isValidCrochet: false,
+  confidence: 99,
+  rejectionReason: 'knitting',
+  title: 'Sweater',
+  hookSize: '',
+  yarnWeight: 'worsted',
+  steps: ['Row 1: k2 p2'],
+});
+assert(flagged != null && communityPublishStatus(flagged) === 'rejected', 'flagged text is not published');
+assert(
+  patternFromCommunitySubmission('community-published-bag', {
+    title: 'Crochet market bag',
+    steps: ['Row 1: ch 30', 'Row 2: sc across'],
+    hookSize: '5.0 mm',
+    yarnWeight: 'worsted',
+    source: 'facebook',
+    videoUrl: 'https://www.facebook.com/watch/?v=445566',
+    status: 'published',
+  }) != null,
+  'published community submission can enter the catalog',
+);
+assert(
+  patternFromCommunitySubmission('community-rejected-bag', {
+    title: 'Crochet market bag',
+    steps: ['Row 1: ch 30', 'Row 2: sc across'],
+    hookSize: '5.0 mm',
+    yarnWeight: 'worsted',
+    source: 'facebook',
+    videoUrl: 'https://www.facebook.com/watch/?v=112233',
+    status: 'rejected',
+  }) == null,
+  'rejected community submission stays out of the catalog',
 );
 const facebookEmbed = embeddedTutorialUrl('https://www.facebook.com/watch/?v=998877');
 assert(facebookEmbed?.includes('facebook.com/plugins/video.php') === true, 'facebook watch url uses the video plugin');

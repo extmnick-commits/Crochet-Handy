@@ -12,6 +12,35 @@ const GENERIC_STEP = /^Work \d+ rows of \d+ stitches\b/i;
 
 export type CrochetReview = { ok: true } | { ok: false; reason: string };
 
+/** Shown when the local gate stops a submission before any model call. */
+export const PREFILTER_REJECTION_MESSAGE = "Doesn't look like a crochet pattern with stitch instructions";
+
+const MIN_SUBMISSION_CHARS = 80;
+const MAX_SUBMISSION_CHARS = 10_000;
+
+/** Stitch markers the gate counts. At least two hits are required. */
+const STITCH_MARKER_SOURCE = '\\b(?:sc|dc|hdc|inc|dec|mr|sl\\s*st|rnd|row)\\b';
+
+const SPAM_OR_SHORTLINK =
+  /\b(?:telegram|crypto|bitcoin|ethereum|tether|usdt|nft|airdrop|binance|viagra|cialis|casino|lottery|forex)\b|t\.me\/|tg:\/\/|(?:^|[^a-z0-9.])(?:https?:\/\/)?(?:www\.)?(?:bit\.ly|tinyurl\.com|tiny\.cc|t\.co|goo\.gl|is\.gd|cutt\.ly|ow\.ly|rb\.gy|rebrand\.ly|shorturl\.at|buff\.ly|adf\.ly)(?:\/|$|\s)/i;
+
+export type PreFilterResult = { ok: true } | { ok: false; reason: 'length' | 'spam' | 'markers' };
+
+/**
+ * Local gate that runs before a Gemini request. Length, spam, and stitch
+ * density are decided on device so junk never spends model quota.
+ */
+export function preFilterSubmission(rawText: string): PreFilterResult {
+  const text = rawText.trim();
+  if (text.length < MIN_SUBMISSION_CHARS || text.length > MAX_SUBMISSION_CHARS) {
+    return { ok: false, reason: 'length' };
+  }
+  if (SPAM_OR_SHORTLINK.test(text)) return { ok: false, reason: 'spam' };
+  const markers = text.match(new RegExp(STITCH_MARKER_SOURCE, 'gi'));
+  if (!markers || markers.length < 2) return { ok: false, reason: 'markers' };
+  return { ok: true };
+}
+
 export function reviewCrochetPattern(input: { title: string; steps: readonly string[] }): CrochetReview {
   const title = input.title.trim();
   const steps = input.steps.map((step) => step.trim()).filter((step) => step.length > 0);

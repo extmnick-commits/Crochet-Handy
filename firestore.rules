@@ -20,9 +20,11 @@ service cloud.firestore {
     //   - source: string (required, "facebook" | "web" | "youtube")
     //   - videoUrl: string (required, https URL, 12-500 chars)
     //   - submittedAt: timestamp (required)
-    //   - status: string (required, clients may only create "pending")
-    // Clients cannot read or update submissions. The catalog job uses a
-    // service account, which bypasses these rules, to mark status "approved".
+    //   - status: string (required, "pending" | "published" | "rejected")
+    // Clients cannot read, update, or delete submissions. "published" is
+    // written only after the on-device review passes; the catalog job still
+    // drops anything that is not crochet. A service account bypasses these
+    // rules to mark merged rows "approved".
     // Account ids, email, and display names are not fields on this document.
     //
     // ===============================================================
@@ -88,7 +90,7 @@ service cloud.firestore {
         && request.resource.data.videoUrl is string
         && request.resource.data.videoUrl.matches('^https://[^\\s]{8,480}$')
         && request.resource.data.submittedAt is timestamp
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status in ['pending', 'published', 'rejected'];
     }
 
     match /users/{userId} {

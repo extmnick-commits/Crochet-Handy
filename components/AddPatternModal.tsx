@@ -18,7 +18,7 @@ import {
 import { extractVideoBookmarks, formatBookmarkTime, mergeVideoBookmarks, type VideoBookmark } from '@/utils/chapters';
 import { fetchYouTubeChapterBookmarks, youtubeChaptersConfigured } from '@/utils/youtubeChapters';
 import { submitCommunityPattern } from '@/utils/communitySubmission';
-import { reviewCrochetPattern } from '@/utils/crochetReview';
+import { PREFILTER_REJECTION_MESSAGE, preFilterSubmission } from '@/utils/crochetReview';
 import { isFirebaseConfigured } from '@/utils/firebase';
 import { detectPatternVideo, extractPatternSteps } from '@/utils/patternAiParser';
 import { difficultyLabel, parseWholeCount, yarnWeightMeta } from '@/utils/patternDisplay';
@@ -165,25 +165,38 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
       return;
     }
 
-    const review = reviewCrochetPattern({ title: trimmedTitle, steps });
-    if (!review.ok) {
-      setSavedLocally(true);
-      setError('Saved on this device. Community catalog only takes crochet patterns.');
-      onSaved?.(id);
-      return;
-    }
-
+    const rawText = [trimmedTitle, notes.trim(), hookSize.trim(), ...steps].filter(Boolean).join('\n');
     if (isFirebaseConfigured()) {
+      if (!preFilterSubmission(rawText).ok) {
+        setSavedLocally(true);
+        setError(PREFILTER_REJECTION_MESSAGE);
+        onSaved?.(id);
+        return;
+      }
+
       setSaving(true);
       try {
-        await submitCommunityPattern({
+        const result = await submitCommunityPattern({
           title: trimmedTitle,
           steps,
           hookSize: hookSize.trim(),
           yarnWeight,
           source: detected.source,
           videoUrl: detected.videoUrl,
+          rawText,
         });
+        if (result === 'not-crochet') {
+          setSavedLocally(true);
+          setError(PREFILTER_REJECTION_MESSAGE);
+          onSaved?.(id);
+          return;
+        }
+        if (result === 'rate-limited') {
+          setSavedLocally(true);
+          setError('You can share up to 5 community patterns every 24 hours.');
+          onSaved?.(id);
+          return;
+        }
       } catch {
         // The pattern is already in the local library. A failed relay stays anonymous.
       } finally {
@@ -233,7 +246,7 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
 
         {detected ? (
           <Text style={styles.shareCaption}>
-            Crochet patterns are sent for review and added to the community catalog after that check.
+            Crochet patterns with stitch instructions are checked once and can go live in the community catalog.
           </Text>
         ) : null}
 

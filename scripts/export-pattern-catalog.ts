@@ -1,10 +1,11 @@
 /**
  * Writes catalog/pattern-catalog.json for the mobile app.
  *
- * Seed patterns stay the base catalog. Pending Firestore `community_submissions`
- * are checked as crochet patterns, deduped, merged, and marked approved.
- * Anything that is not a crochet pattern is marked rejected and stays out of
- * the catalog. Without credentials this still publishes the seed catalog.
+ * Seed patterns stay the base catalog. Firestore `community_submissions` with
+ * status pending or published are checked as crochet patterns, deduped, merged,
+ * and marked approved. Rejected rows are not queried. Anything that is not a
+ * crochet pattern is marked rejected and stays out of the catalog. Without
+ * credentials this still publishes the seed catalog.
  *
  * Run: npm run export-pattern-catalog
  */

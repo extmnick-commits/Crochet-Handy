@@ -1366,7 +1366,14 @@ export function patternFromCommunitySubmission(
   id: string,
   input: CommunityCatalogSubmission,
 ): CrochetPattern | null {
-  if (input.status && input.status !== 'pending' && input.status !== 'approved') return null;
+  if (
+    input.status &&
+    input.status !== 'pending' &&
+    input.status !== 'approved' &&
+    input.status !== 'published'
+  ) {
+    return null;
+  }
   if (!isPatternVideoSource(input.source) || !isYarnWeight(input.yarnWeight)) return null;
   if (!Array.isArray(input.steps) || input.steps.length === 0) return null;
   const pattern = buildPattern(id, {

@@ -201,3 +201,150 @@ function isStepLine(line: string): boolean {
   if (STEP_START_PATTERN.test(line) || NUMBERED_STEP_PATTERN.test(line)) return true;
   return STITCH_PATTERN.test(line);
 }
+
+/** One Gemini Flash response covers both the safety check and the stitch parse. */
+export type PatternAiReview = {
+  isValidCrochet: boolean;
+  confidence: number;
+  rejectionReason: string | null;
+  title: string;
+  hookSize: string;
+  yarnWeight: string;
+  steps: string[];
+};
+
+export const AUTO_PUBLISH_CONFIDENCE = 80;
+
+const REVIEW_MODEL = 'gemini-flash-latest';
+const REVIEW_INPUT_CHARS = 10_000;
+
+/**
+ * High-confidence crochet is auto-published. Anything flagged or unsure is
+ * rejected and stays out of the public catalog.
+ */
+export function communityPublishStatus(review: PatternAiReview): 'published' | 'rejected' {
+  if (review.isValidCrochet && review.confidence >= AUTO_PUBLISH_CONFIDENCE) return 'published';
+  return 'rejected';
+}
+
+/** Drops contact details and caps the prompt so a submission cannot inflate the request. */
+export function submissionTextForReview(rawText: string): string {
+  return rawText.replace(EMAIL_PATTERN, '').trim().slice(0, REVIEW_INPUT_CHARS);
+}
+
+export function parsePatternAiReview(value: unknown): PatternAiReview | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.isValidCrochet !== 'boolean') return null;
+  if (typeof record.confidence !== 'number' || !Number.isFinite(record.confidence)) return null;
+  const confidence = Math.round(record.confidence);
+  if (confidence < 0 || confidence > 100) return null;
+  if (record.rejectionReason != null && typeof record.rejectionReason !== 'string') return null;
+  if (typeof record.title !== 'string' || typeof record.hookSize !== 'string' || typeof record.yarnWeight !== 'string') {
+    return null;
+  }
+  if (!Array.isArray(record.steps) || record.steps.some((step) => typeof step !== 'string')) return null;
+  const rejection = typeof record.rejectionReason === 'string' ? record.rejectionReason.trim() : '';
+  return {
+    isValidCrochet: record.isValidCrochet,
+    confidence,
+    rejectionReason: rejection.length > 0 ? rejection : null,
+    title: record.title,
+    hookSize: record.hookSize,
+    yarnWeight: record.yarnWeight,
+    steps: record.steps
+      .map((step) => step.trim())
+      .filter((step) => step.length > 0)
+      .slice(0, MAX_STEPS),
+  };
+}
+
+export type PatternReviewAttempt =
+  | { called: false }
+  | { called: true; review: PatternAiReview | null };
+
+/**
+ * Single Gemini Flash call. Firebase AI Logic holds the model credential in
+ * the Firebase project, so this module never reads or ships a Gemini API key.
+ * `called` is false when the request is never sent. A sent request that fails
+ * still counts as called so the caller can keep the rate-limit slot.
+ */
+export async function reviewAndParsePattern(rawText: string): Promise<PatternReviewAttempt> {
+  const submission = submissionTextForReview(rawText);
+  if (!submission) return { called: false };
+  try {
+    const firebase = await import('@/utils/firebase');
+    if (!firebase.isFirebaseConfigured() || !firebase.firebaseApp) return { called: false };
+    const { getAI, getGenerativeModel, GoogleAIBackend, Schema } = await import('firebase/ai');
+    const ai = getAI(firebase.firebaseApp, { backend: new GoogleAIBackend() });
+    const model = getGenerativeModel(ai, {
+      model: REVIEW_MODEL,
+      generationConfig: {
+        maxOutputTokens: 1024,
+        responseMimeType: 'application/json',
+        responseSchema: Schema.object({
+          properties: {
+            isValidCrochet: Schema.boolean({
+              description: 'True only when the text is a real crochet pattern with stitch instructions.',
+            }),
+            confidence: Schema.integer({
+              description: 'Integer confidence from 0 to 100 that this is crochet.',
+              minimum: 0,
+              maximum: 100,
+            }),
+            rejectionReason: Schema.string({
+              description: 'Short reason when it is not valid crochet, otherwise null.',
+              nullable: true,
+            }),
+            title: Schema.string({ description: 'Short pattern title.' }),
+            hookSize: Schema.string({ description: 'Hook size such as 4.0 mm, or empty.' }),
+            yarnWeight: Schema.string({
+              description: 'One of lace, fingering, sport, dk, worsted, aran, bulky, super-bulky, jumbo.',
+            }),
+            steps: Schema.array({
+              description: 'Crochet stitch lines, at most 16.',
+              items: Schema.string(),
+              maxItems: 16,
+            }),
+          },
+        }),
+      },
+    });
+    let raw = '';
+    try {
+      const result = await model.generateContent(
+        [
+          'Review this community submission and parse it in one response.',
+          'Set isValidCrochet true only for crochet stitch instructions. Knitting, spam, ads, and unrelated text are false.',
+          'confidence is an integer from 0 to 100. rejectionReason is null when it is valid crochet.',
+          'title, hookSize, yarnWeight, and steps are the cleaned pattern. steps are stitch lines only.',
+          'Submission:',
+          submission,
+        ].join('\n'),
+      );
+      raw = result.response.text();
+    } catch {
+      return { called: true, review: null };
+    }
+    return { called: true, review: parsePatternAiReview(parseReviewJson(raw)) };
+  } catch {
+    return { called: false };
+  }
+}
+
+function parseReviewJson(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1)) as unknown;
+    } catch {
+      return null;
+    }
+  }
+}

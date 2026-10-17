@@ -52,8 +52,12 @@ export async function pullPendingCommunitySubmissions(): Promise<PendingCommunit
           where: {
             fieldFilter: {
               field: { fieldPath: 'status' },
-              op: 'EQUAL',
-              value: { stringValue: 'pending' },
+              op: 'IN',
+              value: {
+                arrayValue: {
+                  values: [{ stringValue: 'pending' }, { stringValue: 'published' }],
+                },
+              },
             },
           },
         },
