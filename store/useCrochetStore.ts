@@ -63,6 +63,9 @@ import {
   applyEnsureDefaultCollectionFolder,
   DEFAULT_COLLECTION_NAME,
   applyUpdateAccountProfile,
+  applyRecordUpload,
+  applyUploadQuota,
+  canUploadToday,
   applyUpdateProjectYarnColor,
   applyUpdateStashItem,
   createId,
@@ -81,6 +84,7 @@ import {
   type NewPatternInput,
   type PatternComment,
   type UserAccount,
+  type UploadQuota,
   type VideoBookmark,
   type NewProgressPhotoInput,
   type NewProjectYarnColorInput,
@@ -154,11 +158,11 @@ type CrochetActions = {
   reopenProject: () => void;
   deleteProject: (projectId: string) => void;
   /** Returns the new id, or the existing pattern id when that video is already saved. */
-  addPatternFromYouTube: (input: NewPatternInput) => string | null;
+  addPatternFromYouTube: (input: NewPatternInput, id?: string) => string | null;
   /** Replace a pattern's bookmarks when YouTube chapters are found. */
   setPatternBookmarks: (patternId: string, bookmarks: VideoBookmark[]) => void;
   removePattern: (patternId: string) => void;
-  addStashItem: (input: NewYarnInput) => string | null;
+  addStashItem: (input: NewYarnInput, id?: string) => string | null;
   updateStashItem: (stashItemId: string, patch: YarnStashPatch) => void;
   removeStashItem: (stashItemId: string) => void;
   setRowNote: (note: string) => void;
@@ -174,6 +178,10 @@ type CrochetActions = {
   /** Pull-to-refresh: merge bundled seed and remote scraper catalog. */
   refreshPatternCatalog: () => Promise<number>;
   setAccount: (account: UserAccount | null) => void;
+  /** Counts one basic upload on this device when Firebase is not configured. */
+  recordLocalUpload: () => boolean;
+  /** Replaces the local counter with the quota committed in Firestore. */
+  setUploadQuota: (quota: UploadQuota) => void;
   updateAccountProfile: (patch: {
     displayName?: string;
     username?: string;
@@ -314,8 +322,8 @@ export const useCrochetStore = create<CrochetStore>()(
 
         setPatternBookmarks: (patternId, bookmarks) =>
           commit((data) => applySetPatternBookmarks(data, patternId, bookmarks)),
-        addPatternFromYouTube: (input) => {
-          const id = createId('pattern');
+        addPatternFromYouTube: (input, preferredId) => {
+          const id = preferredId ?? createId('pattern');
           const next = applyAddPattern(readData(get()), id, input);
           if (!next) return findExistingPatternId(get().patterns, input);
           set(next);
@@ -323,8 +331,8 @@ export const useCrochetStore = create<CrochetStore>()(
         },
         removePattern: (patternId) => commit((data, now) => applyRemovePattern(data, patternId, now)),
 
-        addStashItem: (input) => {
-          const id = createId('yarn');
+        addStashItem: (input, preferredId) => {
+          const id = preferredId ?? createId('yarn');
           const next = applyAddStashItem(readData(get()), id, input);
           if (!next) return null;
           set(next);
@@ -381,6 +389,18 @@ export const useCrochetStore = create<CrochetStore>()(
           ),
 
         setAccount: (account) => commit((data) => applySetAccount(data, account)),
+        recordLocalUpload: () => {
+          const data = readData(get());
+          const now = Date.now();
+          if (!data.account || !canUploadToday(data.account, now)) return false;
+          const next = applyRecordUpload(data, now);
+          if (next) set(next);
+          return true;
+        },
+        setUploadQuota: (quota) => {
+          const next = applyUploadQuota(readData(get()), quota);
+          if (next) set(next);
+        },
         updateAccountProfile: (patch) => commit((data, now) => applyUpdateAccountProfile(data, patch, now)),
         toggleLikePattern: (patternId) => commit((data) => applyToggleLikePattern(data, patternId)),
         toggleCollectPattern: (patternId) => commit((data) => applyToggleCollectPattern(data, patternId)),

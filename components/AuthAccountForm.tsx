@@ -21,6 +21,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useBottomSheetScrollRef } from '@/components/ui/BottomSheetScrollContext';
 import { KeyboardSafeScrollView } from '@/components/ui/KeyboardSafeScrollView';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { DEFAULT_UPLOAD_QUOTA } from '@/store/machine';
 import { useCrochetStore, type UserAccount } from '@/store/useCrochetStore';
 import {
   scrollFieldIntoView as scrollFieldIntoViewOnParent,
@@ -186,6 +187,7 @@ export function AuthAccountForm({
           bio,
           avatarColor,
           updatedAt: Date.now(),
+          ...DEFAULT_UPLOAD_QUOTA,
         };
         setAccount(local);
         onSuccess();
@@ -226,6 +228,7 @@ export function AuthAccountForm({
         bio,
         avatarColor,
         updatedAt: Date.now(),
+        ...DEFAULT_UPLOAD_QUOTA,
       };
       setAccount(profile);
       onSuccess();

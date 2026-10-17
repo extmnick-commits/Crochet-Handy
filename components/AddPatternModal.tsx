@@ -8,11 +8,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import LogoLaunch from '@/components/LogoLaunch';
+import { UploadLimitPaywall } from '@/components/UploadLimitPaywall';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { createId, decideUploadAccess, DAILY_UPLOAD_LIMIT } from '@/store/machine';
 import { useCrochetStore } from '@/store/useCrochetStore';
+import { uploadsRemainingToday } from '@/utils/uploadQuotaTesting';
+import { isFirebaseConfigured } from '@/utils/firebase';
 import { detectPatternVideo } from '@/utils/patternAiParser';
 import { prepareTutorialImport, publishPreparedTutorial } from '@/utils/importTutorial';
+import { reserveDailyUpload } from '@/utils/uploadQuota';
 
 type AddPatternModalProps = {
   visible: boolean;
@@ -49,15 +54,28 @@ export function AddPatternModal({ visible, onClose, onSaved }: AddPatternModalPr
         ) : null
       }
     >
-      {visible ? <AddPatternForm onClose={onClose} onSaved={onSaved} /> : null}
+      {visible ? <AddPatternForm visible={visible} onClose={onClose} onSaved={onSaved} /> : null}
     </BottomSheet>
   );
 }
 
-function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (patternId: string) => void }) {
+function AddPatternForm({
+  visible,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSaved?: (patternId: string) => void;
+}) {
+  const account = useCrochetStore((state) => state.account);
   const addPatternFromYouTube = useCrochetStore((state) => state.addPatternFromYouTube);
+  const removePattern = useCrochetStore((state) => state.removePattern);
+  const recordLocalUpload = useCrochetStore((state) => state.recordLocalUpload);
+  const setUploadQuota = useCrochetStore((state) => state.setUploadQuota);
   const [url, setUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [paywall, setPaywall] = useState(false);
   const [phase, setPhase] = useState<Phase>('link');
   const live = useRef(true);
 
@@ -68,8 +86,18 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
     };
   }, []);
 
+  useEffect(() => {
+    if (!visible) return;
+    setUrl('');
+    setError(null);
+    setPaywall(false);
+    setPhase('link');
+  }, [visible]);
+
+  const uploadsLeft = uploadsRemainingToday(account);
+
   const onAdd = async () => {
-    if (phase !== 'link') return;
+    if (phase !== 'link' || paywall) return;
     const detected = detectPatternVideo({ url });
     if (!detected) {
       setError('Paste a YouTube, Facebook, or web tutorial link.');
@@ -86,6 +114,17 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
       return;
     }
 
+    const account = useCrochetStore.getState().account;
+    const access = decideUploadAccess(account, isFirebaseConfigured(), Date.now());
+    if (access === 'sign-in') {
+      setError('Sign in to add a pattern.');
+      return;
+    }
+    if (access === 'limit') {
+      setPaywall(true);
+      return;
+    }
+
     setError(null);
     setPhase('working');
     const started = Date.now();
@@ -98,10 +137,46 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
       setError(prepared.message);
       return;
     }
-    const id = addPatternFromYouTube(prepared.input);
+    const docId = createId('pattern');
+    const reserved = await reserveDailyUpload({
+      kind: 'pattern',
+      docId,
+      title: prepared.input.title,
+      videoUrl: prepared.input.videoUrl || prepared.input.youtubeUrl,
+    });
+    if (!live.current) return;
+    if (reserved.status === 'limit') {
+      if (reserved.quota) setUploadQuota(reserved.quota);
+      setPhase('link');
+      setPaywall(true);
+      return;
+    }
+    if (reserved.status === 'sign-in') {
+      setPhase('link');
+      setError('Sign in to add a pattern.');
+      return;
+    }
+    if (reserved.status === 'error') {
+      setPhase('link');
+      setError(reserved.message);
+      return;
+    }
+    const id = addPatternFromYouTube(prepared.input, docId);
     if (!id) {
       setPhase('link');
       setError('Could not save that pattern.');
+      return;
+    }
+    if (id !== docId) {
+      onSaved?.(id);
+      onClose();
+      return;
+    }
+    if (reserved.status === 'server') setUploadQuota(reserved.quota);
+    if (reserved.status === 'local' && account && !recordLocalUpload()) {
+      removePattern(id);
+      setPhase('link');
+      setPaywall(true);
       return;
     }
     await publishPreparedTutorial(prepared.community);
@@ -111,8 +186,15 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
 
   return (
     <View style={styles.form}>
-      {phase === 'link' ? (
+      {paywall ? (
+        <UploadLimitPaywall onDismiss={() => setPaywall(false)} />
+      ) : phase === 'link' ? (
         <>
+          {uploadsLeft != null ? (
+            <Text style={styles.quotaHint} testID="pattern-uploads-remaining">
+              {uploadsLeft} of {DAILY_UPLOAD_LIMIT} uploads left today (patterns + yarn).
+            </Text>
+          ) : null}
           <Text style={styles.label}>Tutorial link</Text>
           <TextInput
             value={url}
@@ -136,6 +218,7 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Add pattern"
+            testID="pattern-add-submit"
             onPress={() => {
               void onAdd();
             }}
@@ -200,6 +283,10 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
   },
   label: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  quotaHint: {
     ...Typography.caption,
     color: Colors.textSecondary,
   },

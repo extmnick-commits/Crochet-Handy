@@ -6,7 +6,6 @@ import * as Haptics from 'expo-haptics';
 import { signOut } from 'firebase/auth';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Image,
   Linking,
   Platform,
@@ -22,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { AuthAccountModal } from '@/components/AuthAccountModal';
+import { UploadQuotaDevTools } from '@/components/UploadQuotaDevTools';
 import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
@@ -36,7 +36,6 @@ import {
   type IdeaFolder,
   type UserAccount,
 } from '@/store/useCrochetStore';
-import { deleteFirebaseAccount } from '@/utils/deleteFirebaseAccount';
 import { auth, isFirebaseConfigured } from '@/utils/firebase';
 import {
   creatorInitials,
@@ -183,34 +182,6 @@ export default function MeScreen() {
     setAccount(null);
   };
 
-  const onDeleteAccount = () => {
-    if (!account) return;
-    const cloudUser = Boolean(isFirebaseConfigured() && auth?.currentUser);
-    const message = cloudUser
-      ? 'This permanently deletes your cloud account and synced data. Projects saved on this device stay until you clear app data.'
-      : 'This removes your local profile from this device. Your projects and stash stay on this device.';
-    Alert.alert('Delete account?', message, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            tick();
-            if (cloudUser) {
-              const result = await deleteFirebaseAccount();
-              if (result.status === 'error') {
-                Alert.alert('Could not delete account', result.message);
-                return;
-              }
-            }
-            setAccount(null);
-          })();
-        },
-      },
-    ]);
-  };
-
   return (
     <View style={[styles.screen, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <ScrollView
@@ -237,8 +208,9 @@ export default function MeScreen() {
             setAuthOpen(true);
           }}
           onSignOut={() => void onSignOut()}
-          onDeleteAccount={onDeleteAccount}
         />
+
+        <UploadQuotaDevTools />
 
         <LibraryHeaderBar
           libraryPill={libraryPill}
@@ -647,7 +619,6 @@ function ProfileAccountBar({
   onSignIn,
   onEdit,
   onSignOut,
-  onDeleteAccount,
 }: {
   account: UserAccount | null;
   firebaseReady: boolean;
@@ -657,7 +628,6 @@ function ProfileAccountBar({
   onSignIn: () => void;
   onEdit: () => void;
   onSignOut: () => void;
-  onDeleteAccount: () => void;
 }) {
   return (
     <View style={styles.profileBar}>
@@ -680,14 +650,6 @@ function ProfileAccountBar({
           <View style={styles.profileActions}>
             <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={onSignOut} hitSlop={Layout.hitSlop}>
               <Text style={styles.signOutLink}>Sign out</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Delete account"
-              onPress={onDeleteAccount}
-              hitSlop={Layout.hitSlop}
-            >
-              <Text style={styles.deleteAccountLink}>Delete account</Text>
             </Pressable>
           </View>
         </View>
@@ -948,10 +910,6 @@ const styles = StyleSheet.create({
   signOutLink: {
     ...Typography.caption,
     color: Colors.textSecondary,
-  },
-  deleteAccountLink: {
-    ...Typography.caption,
-    color: Colors.danger,
   },
   legalFooter: {
     flexDirection: 'row',

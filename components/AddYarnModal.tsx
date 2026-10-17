@@ -2,14 +2,18 @@
  * Add a skein to the stash. The store normalizes the hex and rejects a blank
  * name, so this sheet checks both before calling `addStashItem`.
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { UploadLimitPaywall } from '@/components/UploadLimitPaywall';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { MAX_SKEINS, YARN_WEIGHTS, useCrochetStore, type YarnWeight } from '@/store/useCrochetStore';
-import { normalizeHex } from '@/store/machine';
+import { createId, decideUploadAccess, DAILY_UPLOAD_LIMIT, normalizeHex } from '@/store/machine';
+import { isFirebaseConfigured } from '@/utils/firebase';
 import { yarnWeightMeta } from '@/utils/patternDisplay';
+import { reserveDailyUpload } from '@/utils/uploadQuota';
+import { uploadsRemainingToday } from '@/utils/uploadQuotaTesting';
 
 const PRESET_COLORS = [
   '#C6A36E',
@@ -58,22 +62,34 @@ export function AddYarnModal({ visible, onClose }: AddYarnModalProps) {
         ) : null
       }
     >
-      {visible ? <AddYarnForm onClose={onClose} /> : null}
+      {visible ? <AddYarnForm visible={visible} onClose={onClose} /> : null}
     </BottomSheet>
   );
 }
 
-function AddYarnForm({ onClose }: { onClose: () => void }) {
+function AddYarnForm({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const account = useCrochetStore((state) => state.account);
   const addStashItem = useCrochetStore((state) => state.addStashItem);
+  const removeStashItem = useCrochetStore((state) => state.removeStashItem);
+  const recordLocalUpload = useCrochetStore((state) => state.recordLocalUpload);
+  const setUploadQuota = useCrochetStore((state) => state.setUploadQuota);
   const [colorName, setColorName] = useState('');
   const [brand, setBrand] = useState('');
   const [hex, setHex] = useState('#C6A36E');
   const [yarnWeight, setYarnWeight] = useState<YarnWeight>('worsted');
   const [skeinCount, setSkeinCount] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [paywall, setPaywall] = useState(false);
   const normalized = normalizeHex(hex);
+  const uploadsLeft = uploadsRemainingToday(account);
 
-  const onSave = () => {
+  useEffect(() => {
+    if (!visible) return;
+    setError(null);
+    setPaywall(false);
+  }, [visible]);
+
+  const onSave = async () => {
     if (!colorName.trim() || !brand.trim()) {
       setError('Add a brand and a color name.');
       return;
@@ -82,22 +98,77 @@ function AddYarnForm({ onClose }: { onClose: () => void }) {
       setError('Use a hex color like #C6A36E.');
       return;
     }
-    const id = addStashItem({
-      hexColor: normalized,
+    const account = useCrochetStore.getState().account;
+    const access = decideUploadAccess(account, isFirebaseConfigured(), Date.now());
+    if (access === 'sign-in') {
+      setError('Sign in to add yarn.');
+      return;
+    }
+    if (access === 'limit') {
+      setPaywall(true);
+      return;
+    }
+    const docId = createId('yarn');
+    const reserved = await reserveDailyUpload({
+      kind: 'yarn',
+      docId,
       brand: brand.trim(),
       colorName: colorName.trim(),
+      hexColor: normalized,
       yarnWeight,
       skeinCount,
     });
-    if (!id) {
+    if (reserved.status === 'limit') {
+      if (reserved.quota) setUploadQuota(reserved.quota);
+      setPaywall(true);
+      return;
+    }
+    if (reserved.status === 'sign-in') {
+      setError('Sign in to add yarn.');
+      return;
+    }
+    if (reserved.status === 'error') {
+      setError(reserved.message);
+      return;
+    }
+    const id = addStashItem(
+      {
+        hexColor: normalized,
+        brand: brand.trim(),
+        colorName: colorName.trim(),
+        yarnWeight,
+        skeinCount,
+      },
+      docId,
+    );
+    if (!id || id !== docId) {
       setError('Could not add that yarn.');
+      return;
+    }
+    if (reserved.status === 'server') setUploadQuota(reserved.quota);
+    if (reserved.status === 'local' && account && !recordLocalUpload()) {
+      removeStashItem(id);
+      setPaywall(true);
       return;
     }
     onClose();
   };
 
+  if (paywall) {
+    return (
+      <View style={styles.form}>
+        <UploadLimitPaywall onDismiss={() => setPaywall(false)} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.form}>
+      {uploadsLeft != null ? (
+        <Text style={styles.quotaHint} testID="yarn-uploads-remaining">
+          {uploadsLeft} of {DAILY_UPLOAD_LIMIT} uploads left today (patterns + yarn).
+        </Text>
+      ) : null}
       <Field label="Color">
         <View style={styles.presets}>
           {PRESET_COLORS.map((color) => {
@@ -222,7 +293,9 @@ function AddYarnForm({ onClose }: { onClose: () => void }) {
         accessibilityRole="button"
         accessibilityLabel="Add yarn to stash"
         testID="add-yarn-save"
-        onPress={onSave}
+        onPress={() => {
+          void onSave();
+        }}
         style={({ pressed }) => [styles.save, pressed && styles.pressed, webCursor]}
       >
         <Text style={styles.saveText}>Add to stash</Text>
@@ -286,6 +359,10 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   label: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  quotaHint: {
     ...Typography.caption,
     color: Colors.textSecondary,
   },

@@ -1,3 +1,5 @@
+// Deploy: npx firebase-tools@latest deploy --only firestore:rules --project YOUR_PROJECT_ID
+// Requires a Firestore database in the Firebase console (Native mode).
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -7,8 +9,36 @@ service cloud.firestore {
     //
     // Collection: users
     // Document ID: Firebase Auth uid
-    // Fields: the signed-in maker's synced app slice (patterns, projects, stash).
+    // Fields: the signed-in maker's synced app slice, plus:
+    //   - membershipTier: "basic" | "premium" (clients may only keep or mirror basic)
+    //   - dailyUploadCount: int
+    //   - lastUploadDate: timestamp | null
+    // Premium is set with the Admin SDK. A client cannot grant it.
     // Access: the signed-in user may read and write only their own document.
+    // Ordinary sync must leave the three quota fields unchanged. An upload
+    // transaction may set them to the same values as users/{uid}/quota/current.
+    //
+    // Collection: users/{uid}/quota
+    // Document ID: current
+    // Fields:
+    //   - membershipTier: "basic" | "premium"
+    //   - dailyUploadCount: int 1-3 after a basic upload
+    //   - lastUploadDate: timestamp (server time of that upload)
+    //   - lastUploadDocId: string
+    //   - lastUploadKind: "pattern" | "yarn"
+    // This document is the quota ledger. Clients cannot delete it, so deleting
+    // the parent profile does not reset the daily counter. Premium on this
+    // document or on the parent profile bypasses the cap.
+    //
+    // Collection: users/{uid}/patterns
+    // Document ID: client id, ^[a-z0-9-]{1,80}$
+    // Fields: title, videoUrl, createdAt
+    // Create counts as one upload unless the member is premium.
+    //
+    // Collection: users/{uid}/yarn
+    // Document ID: client id, ^[a-z0-9-]{1,80}$
+    // Fields: brand, colorName, hexColor, yarnWeight, skeinCount, createdAt
+    // Create counts as one upload unless the member is premium.
     //
     // Collection: community_submissions
     // Document ID: auto-id
@@ -37,6 +67,217 @@ service cloud.firestore {
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isUploadDocId(docId) {
+      return docId.matches('^[a-z0-9-]{1,80}$');
+    }
+
+    function sameUtcDay(left, right) {
+      return left.year() == right.year()
+        && left.month() == right.month()
+        && left.day() == right.day();
+    }
+
+    function isHttpUrl(url) {
+      return url is string
+        && url.size() >= 12
+        && url.size() <= 500
+        && url.matches('^https?://[^\\s]+$');
+    }
+
+    function isYarnWeight(weight) {
+      return weight in [
+        'lace',
+        'fingering',
+        'sport',
+        'dk',
+        'worsted',
+        'aran',
+        'bulky',
+        'super-bulky',
+        'jumbo'
+      ];
+    }
+
+    function isHexColor(value) {
+      return value is string && value.matches('^#[0-9A-F]{6}$');
+    }
+
+    function quotaPath(userId) {
+      return /databases/$(database)/documents/users/$(userId)/quota/current;
+    }
+
+    function profilePath(userId) {
+      return /databases/$(database)/documents/users/$(userId);
+    }
+
+    function isPremiumData(data) {
+      return data != null
+        && 'membershipTier' in data
+        && data.membershipTier == 'premium';
+    }
+
+    function quotaFieldsUntouched() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'membershipTier',
+        'dailyUploadCount',
+        'lastUploadDate'
+      ]);
+    }
+
+    function quotaFieldsInitial() {
+      let data = request.resource.data;
+      return !data.keys().hasAny(['membershipTier', 'dailyUploadCount', 'lastUploadDate'])
+        || (
+          data.membershipTier == 'basic'
+          && data.dailyUploadCount is int
+          && data.dailyUploadCount == 0
+          && data.lastUploadDate == null
+        );
+    }
+
+    function profileMirrorsLedger(userId) {
+      let ledger = getAfter(quotaPath(userId)).data;
+      return request.resource.data.membershipTier == ledger.membershipTier
+        && request.resource.data.dailyUploadCount == ledger.dailyUploadCount
+        && request.resource.data.lastUploadDate == ledger.lastUploadDate;
+    }
+
+    function validUserCreate(userId) {
+      return quotaFieldsInitial() || profileMirrorsLedger(userId);
+    }
+
+    function validUserUpdate(userId) {
+      return quotaFieldsUntouched() || profileMirrorsLedger(userId);
+    }
+
+    function patternDocCreated(userId, docId) {
+      let path = /databases/$(database)/documents/users/$(userId)/patterns/$(docId);
+      return isUploadDocId(docId) && !exists(path) && existsAfter(path);
+    }
+
+    function yarnDocCreated(userId, docId) {
+      let path = /databases/$(database)/documents/users/$(userId)/yarn/$(docId);
+      return isUploadDocId(docId) && !exists(path) && existsAfter(path);
+    }
+
+    function uploadDocCreated(userId, kind, docId) {
+      return (kind == 'pattern' && patternDocCreated(userId, docId))
+        || (kind == 'yarn' && yarnDocCreated(userId, docId));
+    }
+
+    function quotaShape(data) {
+      return data.keys().hasOnly([
+          'membershipTier',
+          'dailyUploadCount',
+          'lastUploadDate',
+          'lastUploadDocId',
+          'lastUploadKind'
+        ])
+        && data.keys().hasAll([
+          'membershipTier',
+          'dailyUploadCount',
+          'lastUploadDate',
+          'lastUploadDocId',
+          'lastUploadKind'
+        ])
+        && data.membershipTier == 'basic'
+        && data.dailyUploadCount is int
+        && data.dailyUploadCount >= 1
+        && data.dailyUploadCount <= 3
+        && data.lastUploadDate == request.time
+        && data.lastUploadDocId is string
+        && isUploadDocId(data.lastUploadDocId)
+        && data.lastUploadKind in ['pattern', 'yarn'];
+    }
+
+    function quotaStep(before, after) {
+      let newDay = before == null
+        || !('lastUploadDate' in before)
+        || !(before.lastUploadDate is timestamp)
+        || !sameUtcDay(before.lastUploadDate, request.time);
+      let beforeCount = before != null && before.dailyUploadCount is int ? before.dailyUploadCount : 0;
+      let tierStable = before == null
+        || !('membershipTier' in before)
+        || before.membershipTier == 'basic';
+      return tierStable
+        && (
+          (newDay && after.dailyUploadCount == 1)
+          || (!newDay && beforeCount < 3 && after.dailyUploadCount == beforeCount + 1)
+        );
+    }
+
+    function basicUploadMatches(userId, kind, docId, quotaBefore) {
+      let quotaAfter = getAfter(quotaPath(userId)).data;
+      return quotaShape(quotaAfter)
+        && quotaStep(quotaBefore, quotaAfter)
+        && quotaAfter.lastUploadKind == kind
+        && quotaAfter.lastUploadDocId == docId;
+    }
+
+    function canCreateLimitedUpload(userId, kind, docId) {
+      let quotaBefore = exists(quotaPath(userId))
+        ? get(quotaPath(userId)).data
+        : { 'membershipTier': 'basic', 'dailyUploadCount': 0 };
+      let profileBefore = exists(profilePath(userId))
+        ? get(profilePath(userId)).data
+        : { 'membershipTier': 'basic' };
+      return isPremiumData(quotaBefore)
+        || isPremiumData(profileBefore)
+        || basicUploadMatches(userId, kind, docId, quotaBefore);
+    }
+
+    function patternContent(data) {
+      return data.keys().hasOnly(['title', 'videoUrl', 'createdAt'])
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 120
+        && isHttpUrl(data.videoUrl)
+        && data.createdAt is timestamp;
+    }
+
+    function validPatternCreate() {
+      return patternContent(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validPatternUpdate() {
+      return patternContent(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function yarnContent(data) {
+      return data.keys().hasOnly([
+          'brand',
+          'colorName',
+          'hexColor',
+          'yarnWeight',
+          'skeinCount',
+          'createdAt'
+        ])
+        && data.brand is string
+        && data.brand.size() > 0
+        && data.brand.size() <= 60
+        && data.colorName is string
+        && data.colorName.size() > 0
+        && data.colorName.size() <= 60
+        && isHexColor(data.hexColor)
+        && isYarnWeight(data.yarnWeight)
+        && data.skeinCount is int
+        && data.skeinCount >= 1
+        && data.skeinCount <= 48
+        && data.createdAt is timestamp;
+    }
+
+    function validYarnCreate() {
+      return yarnContent(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validYarnUpdate() {
+      return yarnContent(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
     }
 
     function communityKeys() {
@@ -75,17 +316,7 @@ service cloud.firestore {
         && stepAt(12) && stepAt(13) && stepAt(14) && stepAt(15)
         && request.resource.data.hookSize is string
         && request.resource.data.hookSize.size() <= 32
-        && request.resource.data.yarnWeight in [
-          'lace',
-          'fingering',
-          'sport',
-          'dk',
-          'worsted',
-          'aran',
-          'bulky',
-          'super-bulky',
-          'jumbo'
-        ]
+        && isYarnWeight(request.resource.data.yarnWeight)
         && request.resource.data.source in ['facebook', 'web', 'youtube']
         && request.resource.data.videoUrl is string
         && request.resource.data.videoUrl.matches('^https://[^\\s]{8,480}$')
@@ -94,8 +325,45 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && validUserCreate(userId);
+      allow update: if isOwner(userId) && validUserUpdate(userId);
       allow delete: if isOwner(userId);
+
+      match /quota/{quotaId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && quotaId == 'current'
+          && quotaShape(request.resource.data)
+          && request.resource.data.dailyUploadCount == 1
+          && uploadDocCreated(userId, request.resource.data.lastUploadKind, request.resource.data.lastUploadDocId);
+        allow update: if isOwner(userId)
+          && quotaId == 'current'
+          && quotaShape(request.resource.data)
+          && quotaStep(resource.data, request.resource.data)
+          && uploadDocCreated(userId, request.resource.data.lastUploadKind, request.resource.data.lastUploadDocId);
+        allow delete: if false;
+      }
+
+      match /patterns/{patternId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isUploadDocId(patternId)
+          && validPatternCreate()
+          && canCreateLimitedUpload(userId, 'pattern', patternId);
+        allow update: if isOwner(userId) && validPatternUpdate();
+        allow delete: if isOwner(userId);
+      }
+
+      match /yarn/{yarnId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isUploadDocId(yarnId)
+          && validYarnCreate()
+          && canCreateLimitedUpload(userId, 'yarn', yarnId);
+        allow update: if isOwner(userId) && validYarnUpdate();
+        allow delete: if isOwner(userId);
+      }
     }
 
     match /community_submissions/{submissionId} {

@@ -55,6 +55,13 @@ import {
   applyToggleLikePattern,
   applyTogglePatternInFolder,
   applyUpdateAccountProfile,
+  applyRecordUpload,
+  applyUploadQuota,
+  canUploadToday,
+  decideUploadAccess,
+  DEFAULT_UPLOAD_QUOTA,
+  readUploadQuota,
+  resolveUploadQuota,
   applyDecrementRow,
   applyDecrementStitch,
   applyFinishProject,
@@ -743,6 +750,7 @@ const account = {
   bio: 'Making plushies',
   avatarColor: '#2F6B4F',
   updatedAt: t0,
+  ...DEFAULT_UPLOAD_QUOTA,
 };
 const withAccount = applySetAccount(dataFrom(seed), account);
 assert(withAccount?.account?.username === 'nick', 'set account');
@@ -1283,5 +1291,77 @@ assert(
   }) === false,
   'the catalog scraper still requires a long description',
 );
+
+const repairedMembership = repairPersisted(
+  {
+    account: {
+      uid: 'user-1',
+      email: 'nick@example.com',
+      displayName: 'Nick',
+      username: 'nick',
+      bio: '',
+      avatarColor: '#2F6B4F',
+      updatedAt: t0,
+    },
+    patterns: [],
+    projects: [],
+    yarnStash: [],
+  },
+  t0,
+);
+equal(repairedMembership?.account?.membershipTier, 'basic', 'missing tier repairs to basic');
+equal(repairedMembership?.account?.dailyUploadCount, 0, 'missing upload count repairs to 0');
+equal(repairedMembership?.account?.lastUploadDate, null, 'missing upload date repairs to null');
+
+const premiumStamp = { seconds: 1_700_000_000, nanoseconds: 0 };
+const parsedQuota = readUploadQuota({
+  membershipTier: 'premium',
+  dailyUploadCount: 4,
+  lastUploadDate: premiumStamp,
+});
+equal(parsedQuota.membershipTier, 'premium', 'premium tier survives repair');
+equal(parsedQuota.dailyUploadCount, 4, 'upload count survives repair');
+equal(parsedQuota.lastUploadDate, 1_700_000_000_000, 'timestamp seconds become epoch ms');
+const resolved = resolveUploadQuota([
+  { membershipTier: 'basic', dailyUploadCount: 2, lastUploadDate: t0 },
+  { membershipTier: 'premium' },
+]);
+equal(resolved.membershipTier, 'premium', 'premium on a later source keeps the tier');
+equal(resolved.dailyUploadCount, 2, 'earlier source keeps the counter');
+
+const quotaNow = Date.UTC(2026, 0, 2, 12, 0, 0);
+let quotaState = applySetAccount(dataFrom(seed), { ...account, ...DEFAULT_UPLOAD_QUOTA });
+assert(quotaState, 'account for quota');
+for (let upload = 1; upload <= 3; upload += 1) {
+  const next = applyRecordUpload(quotaState!, quotaNow + upload);
+  assert(next, `basic upload ${upload}`);
+  quotaState = next;
+  equal(quotaState?.account?.dailyUploadCount, upload, `basic count is ${upload}`);
+}
+assert(applyRecordUpload(quotaState!, quotaNow + 10) == null, 'fourth basic upload is blocked');
+assert(!canUploadToday(quotaState!.account, quotaNow + 10), 'basic gate closes at 3');
+assert(decideUploadAccess(quotaState!.account, true, quotaNow + 10) === 'limit', 'signed-in basic member sees the paywall');
+const nextUtcDay = applyRecordUpload(quotaState!, Date.UTC(2026, 0, 3, 0, 30, 0));
+equal(nextUtcDay?.account?.dailyUploadCount, 1, 'a new UTC day starts the counter over');
+
+const premiumAccount = {
+  ...account,
+  membershipTier: 'premium' as const,
+  dailyUploadCount: 9,
+  lastUploadDate: quotaNow,
+};
+const premiumState = applySetAccount(dataFrom(seed), premiumAccount);
+assert(canUploadToday(premiumState?.account ?? null, quotaNow), 'premium bypasses the daily cap');
+assert(applyRecordUpload(premiumState!, quotaNow) == null, 'premium does not increment the counter');
+equal(premiumState?.account?.dailyUploadCount, 9, 'premium counter stays put');
+const mirrored = applyUploadQuota(premiumState!, { membershipTier: 'premium', dailyUploadCount: 9, lastUploadDate: quotaNow });
+assert(mirrored == null, 'identical server quota is not rewritten');
+assert(decideUploadAccess(null, true, quotaNow) === 'sign-in', 'cloud uploads require a profile');
+assert(decideUploadAccess(null, false, quotaNow) === 'allow', 'local mode can save without a profile');
+
+const fromProfileDoc = resolveUploadQuota([
+  { membershipTier: 'basic', dailyUploadCount: 3, lastUploadDate: quotaNow },
+]);
+equal(fromProfileDoc.dailyUploadCount, 3, 'top-level profile quota is preserved on hydrate');
 
 console.log('crochet machine checks passed');

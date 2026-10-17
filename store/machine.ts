@@ -141,6 +141,25 @@ export type ProgressPhoto = {
   milestoneTag?: MilestoneTag;
 };
 
+export type MembershipTier = 'basic' | 'premium';
+
+/** Basic membership can create this many pattern or yarn uploads per UTC day. */
+export const DAILY_UPLOAD_LIMIT = 3;
+
+export type UploadQuota = {
+  membershipTier: MembershipTier;
+  /** Uploads already counted on `lastUploadDate`'s UTC day. */
+  dailyUploadCount: number;
+  /** Epoch milliseconds of the last counted upload. Null until the first one. */
+  lastUploadDate: number | null;
+};
+
+export const DEFAULT_UPLOAD_QUOTA: UploadQuota = {
+  membershipTier: 'basic',
+  dailyUploadCount: 0,
+  lastUploadDate: null,
+};
+
 export type UserAccount = {
   uid: string;
   email: string;
@@ -149,7 +168,12 @@ export type UserAccount = {
   bio: string;
   avatarColor: string;
   updatedAt: number;
+  membershipTier: MembershipTier;
+  dailyUploadCount: number;
+  lastUploadDate: number | null;
 };
+
+export type UploadAccess = 'allow' | 'sign-in' | 'limit';
 
 export type IdeaFolder = {
   id: string;
@@ -2184,7 +2208,10 @@ function accountsEqual(a: UserAccount, b: UserAccount): boolean {
     a.username === b.username &&
     a.bio === b.bio &&
     a.avatarColor === b.avatarColor &&
-    a.updatedAt === b.updatedAt
+    a.updatedAt === b.updatedAt &&
+    a.membershipTier === b.membershipTier &&
+    a.dailyUploadCount === b.dailyUploadCount &&
+    a.lastUploadDate === b.lastUploadDate
   );
 }
 
@@ -2211,7 +2238,114 @@ function repairAccount(input: unknown): UserAccount | null {
   const avatarColor =
     typeof input.avatarColor === 'string' ? (normalizeHex(input.avatarColor) ?? '#2F6B4F') : '#2F6B4F';
   const updatedAt = finiteTimestamp(input.updatedAt, Date.now());
-  return { uid: input.uid, email, displayName, username, bio, avatarColor, updatedAt };
+  return { uid: input.uid, email, displayName, username, bio, avatarColor, updatedAt, ...readUploadQuota(input) };
+}
+
+/** UTC calendar day, so the client cap matches Firestore's `timestamp.year/month/day`. */
+export function utcDayKey(now: number): string {
+  if (!Number.isFinite(now)) return '';
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+function readQuotaTimestamp(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  if (!isRecord(value)) return null;
+  if (typeof value.toMillis === 'function') {
+    const millis = (value.toMillis as () => unknown)();
+    if (typeof millis === 'number' && Number.isFinite(millis) && millis > 0) return millis;
+  }
+  const seconds = typeof value.seconds === 'number' ? value.seconds : typeof value._seconds === 'number' ? value._seconds : null;
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return null;
+  const nanos = typeof value.nanoseconds === 'number' ? value.nanoseconds : 0;
+  return seconds * 1000 + Math.floor(nanos / 1_000_000);
+}
+
+function hasQuotaSignal(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && ('membershipTier' in value || 'dailyUploadCount' in value || 'lastUploadDate' in value);
+}
+
+/** Missing or malformed quota fields become basic membership with a clear counter. */
+export function readUploadQuota(input: unknown): UploadQuota {
+  if (!isRecord(input)) return { ...DEFAULT_UPLOAD_QUOTA };
+  const membershipTier: MembershipTier = input.membershipTier === 'premium' ? 'premium' : 'basic';
+  const dailyUploadCount =
+    typeof input.dailyUploadCount === 'number' &&
+    Number.isInteger(input.dailyUploadCount) &&
+    input.dailyUploadCount >= 0 &&
+    input.dailyUploadCount <= 1000
+      ? input.dailyUploadCount
+      : 0;
+  return {
+    membershipTier,
+    dailyUploadCount,
+    lastUploadDate: readQuotaTimestamp(input.lastUploadDate),
+  };
+}
+
+/**
+ * Earlier sources supply the counter. Premium on any source wins the tier so a
+ * membership flag is not dropped when the counter lives on a second document.
+ */
+export function resolveUploadQuota(sources: readonly unknown[]): UploadQuota {
+  let resolved: UploadQuota = { ...DEFAULT_UPLOAD_QUOTA };
+  let sawCounter = false;
+  for (const source of sources) {
+    if (!hasQuotaSignal(source)) continue;
+    const parsed = readUploadQuota(source);
+    if (!sawCounter) {
+      resolved = parsed;
+      sawCounter = true;
+      continue;
+    }
+    if (parsed.membershipTier === 'premium') resolved = { ...resolved, membershipTier: 'premium' };
+  }
+  return resolved;
+}
+
+export function canUploadToday(account: UploadQuota | null, now: number): boolean {
+  if (!account) return false;
+  if (account.membershipTier === 'premium') return true;
+  if (account.lastUploadDate == null) return true;
+  if (utcDayKey(account.lastUploadDate) !== utcDayKey(now)) return true;
+  return account.dailyUploadCount < DAILY_UPLOAD_LIMIT;
+}
+
+/** Next basic counter, the same premium quota when the cap does not apply, or null when blocked. */
+export function nextBasicQuota(current: UploadQuota, now: number): UploadQuota | null {
+  if (!canUploadToday(current, now)) return null;
+  if (current.membershipTier === 'premium') return current;
+  const sameDay = current.lastUploadDate != null && utcDayKey(current.lastUploadDate) === utcDayKey(now);
+  return {
+    membershipTier: 'basic',
+    dailyUploadCount: sameDay ? current.dailyUploadCount + 1 : 1,
+    lastUploadDate: now,
+  };
+}
+
+export function decideUploadAccess(account: UserAccount | null, firebaseReady: boolean, now: number): UploadAccess {
+  if (!account) return firebaseReady ? 'sign-in' : 'allow';
+  return canUploadToday(account, now) ? 'allow' : 'limit';
+}
+
+export function applyRecordUpload(data: CrochetData, now: number): CrochetData | null {
+  if (!data.account) return null;
+  const next = nextBasicQuota(data.account, now);
+  if (!next) return null;
+  if (
+    next.membershipTier === data.account.membershipTier &&
+    next.dailyUploadCount === data.account.dailyUploadCount &&
+    next.lastUploadDate === data.account.lastUploadDate
+  ) {
+    return null;
+  }
+  return { ...data, account: { ...data.account, ...next } };
+}
+
+export function applyUploadQuota(data: CrochetData, quota: UploadQuota): CrochetData | null {
+  if (!data.account) return null;
+  const account = { ...data.account, ...quota };
+  if (accountsEqual(data.account, account)) return null;
+  return { ...data, account };
 }
 
 function repairPatternComments(input: unknown, patterns: CrochetPattern[]): PatternComment[] {

@@ -5,16 +5,18 @@ import { useEffect, useRef } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-import { fitCrochetPersistedSliceForFirestore, type CrochetData } from '@/store/machine';
-import { createSeedData } from '@/store/seed';
 import {
-  partializeCrochetState,
-  useCrochetHydrated,
-  useCrochetStore,
+  DEFAULT_UPLOAD_QUOTA,
+  fitCrochetPersistedSliceForFirestore,
+  resolveUploadQuota,
+  type CrochetData,
   type UserAccount,
-} from '@/store/useCrochetStore';
+} from '@/store/machine';
+import { createSeedData } from '@/store/seed';
+import { partializeCrochetState, useCrochetHydrated, useCrochetStore } from '@/store/useCrochetStore';
 import { auth, db, isFirebaseConfigured } from '@/utils/firebase';
 import { pullPatternCatalogUpdates } from '@/utils/syncPatternCatalog';
+import { readAuthoritativeQuota } from '@/utils/uploadQuota';
 
 const SYNC_DEBOUNCE_MS = 800;
 
@@ -26,13 +28,37 @@ function readCrochetDataFromStore(): CrochetData {
   };
 }
 
-function firestorePayloadFromStore(account?: UserAccount | null) {
+function publicAccount(account: UserAccount) {
+  return {
+    uid: account.uid,
+    email: account.email,
+    displayName: account.displayName,
+    username: account.username,
+    bio: account.bio,
+    avatarColor: account.avatarColor,
+    updatedAt: account.updatedAt,
+  };
+}
+
+function withoutNestedQuota(raw: Record<string, unknown>): Record<string, unknown> {
+  const nested = raw.account;
+  if (!nested || typeof nested !== 'object' || Array.isArray(nested)) return raw;
+  const account = { ...(nested as Record<string, unknown>) };
+  delete account.membershipTier;
+  delete account.dailyUploadCount;
+  delete account.lastUploadDate;
+  return { ...raw, account };
+}
+
+function firestorePayloadFromStore(account?: UserAccount | null, initializeQuota = false) {
   const state = useCrochetStore.getState();
   const slice = fitCrochetPersistedSliceForFirestore(partializeCrochetState(state));
+  const resolved = account ?? state.account;
   return {
     ...slice,
-    account: account ?? state.account,
+    account: resolved ? publicAccount(resolved) : null,
     updatedAt: Date.now(),
+    ...(initializeQuota ? DEFAULT_UPLOAD_QUOTA : {}),
   };
 }
 
@@ -47,8 +73,9 @@ function reconcilePatternsAfterCloudHydrate(): void {
   );
 }
 
-function accountFromUser(user: User, profile?: Partial<UserAccount>): UserAccount {
+function accountFromUser(user: User, profile?: Partial<UserAccount>, quotaSources: readonly unknown[] = []): UserAccount {
   const now = Date.now();
+  const quota = resolveUploadQuota([...quotaSources, profile ?? null]);
   return {
     uid: user.uid,
     email: user.email ?? profile?.email ?? '',
@@ -57,6 +84,7 @@ function accountFromUser(user: User, profile?: Partial<UserAccount>): UserAccoun
     bio: profile?.bio ?? '',
     avatarColor: profile?.avatarColor ?? '#2F6B4F',
     updatedAt: profile?.updatedAt ?? now,
+    ...quota,
   };
 }
 
@@ -67,23 +95,27 @@ function defaultUsername(user: User): string {
   return `maker${user.uid.slice(0, 6)}`;
 }
 
-function cloudAccountFromDoc(raw: Record<string, unknown>, user: User): UserAccount | null {
+function cloudAccountFromDoc(raw: Record<string, unknown>, user: User): UserAccount {
   const nested = raw.account;
   if (nested && typeof nested === 'object' && nested !== null) {
     const profile = nested as Partial<UserAccount>;
     if (typeof profile.uid === 'string' && profile.uid === user.uid) {
-      return accountFromUser(user, profile);
+      return accountFromUser(user, profile, [raw, nested]);
     }
   }
-  return accountFromUser(user, {
-    uid: user.uid,
-    email: typeof raw.email === 'string' ? raw.email : user.email ?? '',
-    displayName: typeof raw.displayName === 'string' ? raw.displayName : undefined,
-    username: typeof raw.username === 'string' ? raw.username : undefined,
-    bio: typeof raw.bio === 'string' ? raw.bio : undefined,
-    avatarColor: typeof raw.avatarColor === 'string' ? raw.avatarColor : undefined,
-    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : undefined,
-  });
+  return accountFromUser(
+    user,
+    {
+      uid: user.uid,
+      email: typeof raw.email === 'string' ? raw.email : user.email ?? '',
+      displayName: typeof raw.displayName === 'string' ? raw.displayName : undefined,
+      username: typeof raw.username === 'string' ? raw.username : undefined,
+      bio: typeof raw.bio === 'string' ? raw.bio : undefined,
+      avatarColor: typeof raw.avatarColor === 'string' ? raw.avatarColor : undefined,
+      updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : undefined,
+    },
+    [raw],
+  );
 }
 
 export function FirebaseAccountSync() {
@@ -118,16 +150,17 @@ export function FirebaseAccountSync() {
 
         if (snap.exists()) {
           const raw = snap.data() as Record<string, unknown>;
-          hydrateFromCloud(raw);
+          hydrateFromCloud(withoutNestedQuota(raw));
           reconcilePatternsAfterCloudHydrate();
           const account = cloudAccountFromDoc(raw, user);
-          setAccount(account);
+          const quota = await readAuthoritativeQuota(user.uid, raw);
+          setAccount({ ...account, ...quota });
           await setDoc(ref, firestorePayloadFromStore(account), { merge: true });
         } else {
           const state = useCrochetStore.getState();
           const account = accountFromUser(user, state.account ?? undefined);
           setAccount(account);
-          await setDoc(ref, firestorePayloadFromStore(account), { merge: true });
+          await setDoc(ref, firestorePayloadFromStore(account, true), { merge: true });
           reconcilePatternsAfterCloudHydrate();
         }
 
