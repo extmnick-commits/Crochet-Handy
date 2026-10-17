@@ -76,11 +76,13 @@ function AddPatternForm({ onClose, onSaved }: { onClose: () => void; onSaved?: (
       return;
     }
     const library = useCrochetStore.getState().patterns;
-    const alreadySaved = detected.videoId
-      ? library.some((pattern) => pattern.videoId === detected.videoId)
-      : library.some((pattern) => pattern.videoUrl === detected.videoUrl);
-    if (alreadySaved) {
-      setError('That video is already in your library.');
+    const existing = detected.videoId
+      ? library.find((pattern) => pattern.videoId === detected.videoId)
+      : library.find((pattern) => pattern.videoUrl === detected.videoUrl);
+    if (existing) {
+      setError(null);
+      onSaved?.(existing.id);
+      onClose();
       return;
     }
 

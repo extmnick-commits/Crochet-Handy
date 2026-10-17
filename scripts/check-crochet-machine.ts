@@ -17,7 +17,11 @@ import {
   parsePatternAiReview,
 } from '../utils/patternAiParser';
 import { acceptsCrochetExtraction, mapExtractedPattern } from '../utils/patternExtraction';
-import { isValidEnglishYoutubeSnippet, uploadYoutubeSnippetRejection } from '../utils/patternEnglishFilter';
+import {
+  isEnglishFeedPattern,
+  isValidEnglishYoutubeSnippet,
+  uploadYoutubeSnippetRejection,
+} from '../utils/patternEnglishFilter';
 import { parseYouTubeUrl } from '../utils/youtube';
 import { parseCommunityDocument } from './communityCatalogFirestore';
 import { assemblePatternCatalog } from './export-pattern-catalog';
@@ -1262,6 +1266,13 @@ assert(
     defaultAudioLanguage: 'en',
   }) == null,
   'emoji in a channel name does not block an English tutorial',
+);
+assert(
+  isEnglishFeedPattern({
+    title: 'Crochet This Cute Acorn in Minutes!🍂 Beginner Friendly',
+    creator: 'Gul\u2019s Cozy Crochet',
+  }),
+  'typographic apostrophe in creator name still shows in the feed',
 );
 assert(
   isValidEnglishYoutubeSnippet({

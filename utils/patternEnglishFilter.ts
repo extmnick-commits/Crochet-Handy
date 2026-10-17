@@ -36,7 +36,7 @@ export function isBlockedFeedAuthor(author: string): boolean {
 
 /** Creator names should be plain ASCII (blocks Turkish/CJK channel branding in the feed). */
 export function isAsciiEnglishAuthor(author: string): boolean {
-  const trimmed = author.trim();
+  const trimmed = plainCreatorName(author);
   if (!trimmed) return true;
   return /^[\x20-\x7E]+$/.test(trimmed);
 }
@@ -108,7 +108,12 @@ export type UploadSnippetRejection = 'missing' | 'shorts' | 'knitting' | 'langua
 
 /** Drops emoji and decorative marks so a channel like "ElyseCrochets 💌" still counts as English. */
 export function plainCreatorName(author: string): string {
-  return author.replace(/[^\p{L}\p{N}\s.'’&-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  return author
+    .replace(/[\u2018\u2019\u2032]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[^\p{L}\p{N}\s.'"&-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**

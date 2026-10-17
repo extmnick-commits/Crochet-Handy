@@ -298,11 +298,16 @@ export default function PatternsScreen() {
       <AddPatternModal
         visible={addOpen}
         onClose={() => setAddOpen(false)}
-        onSaved={() => {
+        onSaved={(patternId) => {
           setCategory('for-you');
           setQuery('');
           setYarnFilters([]);
           setHookFilters([]);
+          const { patterns, createProject } = useCrochetStore.getState();
+          const pattern = patterns.find((item) => item.id === patternId);
+          if (!pattern) return;
+          createProject({ name: pattern.title, patternId: pattern.id });
+          router.navigate('/active');
         }}
       />
 
