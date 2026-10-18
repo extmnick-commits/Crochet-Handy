@@ -3,7 +3,7 @@
  */
 import Constants from 'expo-constants';
 
-import { parseCatalogPatterns, type CrochetPattern } from '@/store/machine';
+import { parseCatalogPatterns, type CrochetPattern, type YarnWeight } from '@/store/machine';
 
 import bundledCatalogFile from '../catalog/pattern-catalog.json';
 
@@ -98,4 +98,65 @@ export async function fetchRemotePatternCatalog(
     }
   }
   return best;
+}
+
+const SCRAP_HINTS = [
+  'amigurumi',
+  'plush',
+  'plushie',
+  'doll',
+  'keychain',
+  'coaster',
+  'scrunchie',
+  'ornament',
+  'applique',
+  'appliqué',
+  'dishcloth',
+  'washcloth',
+  'headband',
+  'ear warmer',
+  'flower',
+  'bookmark',
+  'charm',
+  'mini',
+] as const;
+
+function patternHaystack(pattern: CrochetPattern): string {
+  return `${pattern.title} ${pattern.tags.join(' ')} ${pattern.summary ?? ''}`.toLowerCase();
+}
+
+function mentionsHint(pattern: CrochetPattern, hint: string): boolean {
+  const needle = hint.toLowerCase();
+  if (pattern.tags.some((tag) => tag.toLowerCase().includes(needle))) return true;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`, 'i').test(patternHaystack(pattern));
+}
+
+function isScrapFriendlyPattern(pattern: CrochetPattern): boolean {
+  return SCRAP_HINTS.some((hint) => mentionsHint(pattern, hint));
+}
+
+function scoreScrapPattern(pattern: CrochetPattern, yarnWeight?: YarnWeight): number {
+  const text = patternHaystack(pattern);
+  let score = 0;
+  if (yarnWeight && pattern.yarnWeight === yarnWeight) score += 5;
+  if (mentionsHint(pattern, 'amigurumi') || mentionsHint(pattern, 'plushie') || text.includes('plush')) score += 3;
+  if (mentionsHint(pattern, 'keychain') || mentionsHint(pattern, 'coaster') || mentionsHint(pattern, 'scrunchie')) {
+    score += 2;
+  }
+  if (mentionsHint(pattern, 'mini')) score += 1;
+  return score;
+}
+
+/**
+ * Bundled catalog rows that suit leftover yarn: amigurumi, keychains, coasters,
+ * and other small or medium makes. Same-weight matches sort first.
+ */
+export function patternsForScrapProjects(options?: { yarnWeight?: YarnWeight; limit?: number }): CrochetPattern[] {
+  const limit = options?.limit ?? 6;
+  const yarnWeight = options?.yarnWeight;
+  return loadRepoPatternCatalog()
+    .filter(isScrapFriendlyPattern)
+    .sort((a, b) => scoreScrapPattern(b, yarnWeight) - scoreScrapPattern(a, yarnWeight) || a.title.localeCompare(b.title))
+    .slice(0, Math.max(0, limit));
 }

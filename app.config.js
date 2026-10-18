@@ -1,6 +1,65 @@
 /** Pass the existing YouTube key into the app so chapter lookup can run on device. */
+const fs = require('fs');
+const path = require('path');
+const { withAndroidManifest, withDangerousMod } = require('@expo/config-plugins');
+
+/**
+ * llama.rn compiles Metal on iOS unless RNLLAMA_DISABLE_METAL=1.
+ * Keep that env var unset when the Podfile is generated.
+ */
+function withLlamaMetalEnabled(config) {
+  return withDangerousMod(config, [
+    'ios',
+    (mod) => {
+      const podfilePath = path.join(mod.modRequest.projectRoot, 'ios', 'Podfile');
+      if (!fs.existsSync(podfilePath)) return mod;
+      const contents = fs.readFileSync(podfilePath, 'utf8');
+      if (contents.includes('LLAMA_RN_METAL')) return mod;
+      const banner =
+        '# LLAMA_RN_METAL: keep the iOS Metal backend compiled in.\nENV.delete(\'RNLLAMA_DISABLE_METAL\')\n';
+      fs.writeFileSync(podfilePath, banner + contents);
+      return mod;
+    },
+  ]);
+}
+
+/** Optional Vulkan loader so Android builds can use the GPU next to OpenCL. */
+function withLlamaVulkanEnabled(config) {
+  return withAndroidManifest(config, (mod) => {
+    const application = mod.modResults.manifest.application?.[0];
+    if (!application) return mod;
+    if (!application['uses-native-library']) application['uses-native-library'] = [];
+    const libraries = application['uses-native-library'];
+    const present = libraries.some((lib) => lib.$?.['android:name'] === 'libvulkan.so');
+    if (!present) {
+      libraries.push({
+        $: {
+          'android:name': 'libvulkan.so',
+          'android:required': 'false',
+        },
+      });
+    }
+    return mod;
+  });
+}
+
+const llamaRnPlugin = [
+  'llama.rn',
+  {
+    // Metal stays on for iOS (withLlamaMetalEnabled). Android OpenCL is the
+    // supported GPU flag; enableVulkan is applied by withLlamaVulkanEnabled.
+    enableMetal: true,
+    enableVulkan: true,
+    enableOpenCLAndHexagon: true,
+    enableEntitlements: true,
+    entitlementsProfile: ['production', 'development', 'preview'],
+    forceCxx20: true,
+  },
+];
+
 module.exports = ({ config }) => ({
   ...config,
+  plugins: [...(config.plugins ?? []), llamaRnPlugin, withLlamaMetalEnabled, withLlamaVulkanEnabled],
   scheme: config.scheme || 'crochethandy',
   ios: {
     ...config.ios,

@@ -2,7 +2,7 @@
  * Add a skein to the stash. The store normalizes the hex and rejects a blank
  * name, so this sheet checks both before calling `addStashItem`.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { UploadLimitPaywall } from '@/components/UploadLimitPaywall';
@@ -12,6 +12,7 @@ import { MAX_SKEINS, YARN_WEIGHTS, useCrochetStore, type YarnWeight } from '@/st
 import { createId, decideUploadAccess, DAILY_UPLOAD_LIMIT, normalizeHex } from '@/store/machine';
 import { isFirebaseConfigured } from '@/utils/firebase';
 import { yarnWeightMeta } from '@/utils/patternDisplay';
+import { YARDAGE_TIERS, hookForYarnWeight, type ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
 import { reserveDailyUpload } from '@/utils/uploadQuota';
 import { uploadsRemainingToday } from '@/utils/uploadQuotaTesting';
 
@@ -33,9 +34,11 @@ const PRESET_COLORS = [
 type AddYarnModalProps = {
   visible: boolean;
   onClose: () => void;
+  /** Prefills the sheet and offers a one-tap save into the stash. */
+  scannedLeftover?: ScannedLeftoverDraft | null;
 };
 
-export function AddYarnModal({ visible, onClose }: AddYarnModalProps) {
+export function AddYarnModal({ visible, onClose, scannedLeftover = null }: AddYarnModalProps) {
   return (
     <BottomSheet
       visible={visible}
@@ -62,97 +65,148 @@ export function AddYarnModal({ visible, onClose }: AddYarnModalProps) {
         ) : null
       }
     >
-      {visible ? <AddYarnForm visible={visible} onClose={onClose} /> : null}
+      {visible ? (
+        <AddYarnForm
+          key={scannedLeftover?.colors.map((color) => color.hex).join('-') || 'manual'}
+          onClose={onClose}
+          scannedLeftover={scannedLeftover}
+        />
+      ) : null}
     </BottomSheet>
   );
 }
 
-function AddYarnForm({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function AddYarnForm({
+  onClose,
+  scannedLeftover,
+}: {
+  onClose: () => void;
+  scannedLeftover: ScannedLeftoverDraft | null;
+}) {
   const account = useCrochetStore((state) => state.account);
   const addStashItem = useCrochetStore((state) => state.addStashItem);
   const removeStashItem = useCrochetStore((state) => state.removeStashItem);
   const recordLocalUpload = useCrochetStore((state) => state.recordLocalUpload);
   const setUploadQuota = useCrochetStore((state) => state.setUploadQuota);
-  const [colorName, setColorName] = useState('');
-  const [brand, setBrand] = useState('');
-  const [hex, setHex] = useState('#C6A36E');
-  const [yarnWeight, setYarnWeight] = useState<YarnWeight>('worsted');
+  const scannedColor = scannedLeftover?.colors[0];
+  const [colorName, setColorName] = useState(scannedColor?.name ?? '');
+  const [brand, setBrand] = useState(scannedColor ? 'Leftover scrap' : '');
+  const [hex, setHex] = useState(scannedColor?.hex ?? '#C6A36E');
+  const [yarnWeight, setYarnWeight] = useState<YarnWeight>(scannedLeftover?.yarnWeight ?? 'worsted');
   const [skeinCount, setSkeinCount] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [paywall, setPaywall] = useState(false);
   const normalized = normalizeHex(hex);
   const uploadsLeft = uploadsRemainingToday(account);
 
-  useEffect(() => {
-    if (!visible) return;
-    setError(null);
-    setPaywall(false);
-  }, [visible]);
-
-  const onSave = async () => {
-    if (!colorName.trim() || !brand.trim()) {
-      setError('Add a brand and a color name.');
-      return;
-    }
-    if (!normalized) {
-      setError('Use a hex color like #C6A36E.');
-      return;
-    }
-    const account = useCrochetStore.getState().account;
-    const access = decideUploadAccess(account, isFirebaseConfigured(), Date.now());
-    if (access === 'sign-in') {
-      setError('Sign in to add yarn.');
-      return;
-    }
-    if (access === 'limit') {
-      setPaywall(true);
-      return;
-    }
+  const persistYarn = async (draft: {
+    hexColor: string;
+    brand: string;
+    colorName: string;
+    yarnWeight: YarnWeight;
+    skeinCount: number;
+    hookSize?: string;
+  }): Promise<'saved' | 'limit' | 'sign-in' | 'invalid' | 'error'> => {
+    const hexColor = normalizeHex(draft.hexColor);
+    if (!draft.colorName.trim() || !draft.brand.trim() || !hexColor) return 'invalid';
+    const currentAccount = useCrochetStore.getState().account;
+    const access = decideUploadAccess(currentAccount, isFirebaseConfigured(), Date.now());
+    if (access === 'sign-in') return 'sign-in';
+    if (access === 'limit') return 'limit';
     const docId = createId('yarn');
     const reserved = await reserveDailyUpload({
       kind: 'yarn',
       docId,
-      brand: brand.trim(),
-      colorName: colorName.trim(),
-      hexColor: normalized,
-      yarnWeight,
-      skeinCount,
+      brand: draft.brand.trim(),
+      colorName: draft.colorName.trim(),
+      hexColor,
+      yarnWeight: draft.yarnWeight,
+      skeinCount: draft.skeinCount,
     });
     if (reserved.status === 'limit') {
       if (reserved.quota) setUploadQuota(reserved.quota);
-      setPaywall(true);
-      return;
+      return 'limit';
     }
-    if (reserved.status === 'sign-in') {
-      setError('Sign in to add yarn.');
-      return;
-    }
-    if (reserved.status === 'error') {
-      setError(reserved.message);
-      return;
-    }
+    if (reserved.status === 'sign-in') return 'sign-in';
+    if (reserved.status === 'error') return 'error';
     const id = addStashItem(
       {
-        hexColor: normalized,
-        brand: brand.trim(),
-        colorName: colorName.trim(),
-        yarnWeight,
-        skeinCount,
+        hexColor,
+        brand: draft.brand.trim(),
+        colorName: draft.colorName.trim(),
+        yarnWeight: draft.yarnWeight,
+        skeinCount: draft.skeinCount,
+        hookSize: draft.hookSize,
       },
       docId,
     );
-    if (!id || id !== docId) {
-      setError('Could not add that yarn.');
+    if (!id || id !== docId) return 'error';
+    if (reserved.status === 'server') setUploadQuota(reserved.quota);
+    if (reserved.status === 'local' && currentAccount && !recordLocalUpload()) {
+      removeStashItem(id);
+      return 'limit';
+    }
+    return 'saved';
+  };
+
+  const onSave = async () => {
+    const outcome = await persistYarn({
+      hexColor: hex,
+      brand,
+      colorName,
+      yarnWeight,
+      skeinCount,
+    });
+    if (outcome === 'invalid') {
+      setError(!normalized ? 'Use a hex color like #C6A36E.' : 'Add a brand and a color name.');
       return;
     }
-    if (reserved.status === 'server') setUploadQuota(reserved.quota);
-    if (reserved.status === 'local' && account && !recordLocalUpload()) {
-      removeStashItem(id);
+    if (outcome === 'sign-in') {
+      setError('Sign in to add yarn.');
+      return;
+    }
+    if (outcome === 'limit') {
       setPaywall(true);
+      return;
+    }
+    if (outcome === 'error') {
+      setError('Could not add that yarn.');
       return;
     }
     onClose();
   };
+
+  const onSaveScanned = async () => {
+    if (!scannedLeftover || scannedLeftover.colors.length === 0) return;
+    const hookSize = scannedLeftover.hookSize || hookForYarnWeight(scannedLeftover.yarnWeight);
+    for (const color of scannedLeftover.colors) {
+      const outcome = await persistYarn({
+        hexColor: color.hex,
+        brand: 'Leftover scrap',
+        colorName: color.name,
+        yarnWeight: scannedLeftover.yarnWeight,
+        skeinCount: 1,
+        hookSize,
+      });
+      if (outcome === 'sign-in') {
+        setError('Sign in to add yarn.');
+        return;
+      }
+      if (outcome === 'limit') {
+        setPaywall(true);
+        return;
+      }
+      if (outcome !== 'saved') {
+        setError('Could not save that leftover yarn.');
+        return;
+      }
+    }
+    onClose();
+  };
+
+  const scannedLabel = scannedLeftover
+    ? YARDAGE_TIERS.find((tier) => tier.id === scannedLeftover.yardageTier)?.label
+    : null;
 
   if (paywall) {
     return (
@@ -164,6 +218,35 @@ function AddYarnForm({ visible, onClose }: { visible: boolean; onClose: () => vo
 
   return (
     <View style={styles.form}>
+      {scannedLeftover && scannedLeftover.colors.length > 0 ? (
+        <View style={styles.scannedCard}>
+          <Text style={styles.scannedTitle}>Scanned leftover yarn</Text>
+          <Text style={styles.scannedMeta}>
+            {scannedLeftover.colors.map((color) => color.name).join(', ')}
+            {scannedLabel ? ` · ${scannedLabel}` : ''}
+          </Text>
+          <View style={styles.presets}>
+            {scannedLeftover.colors.map((color) => (
+              <View key={`${color.hex}-${color.name}`} style={[styles.preset, { backgroundColor: color.hex }]} />
+            ))}
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Save scanned leftover yarn"
+            testID="save-scanned-leftover"
+            onPress={() => {
+              void onSaveScanned();
+            }}
+            style={({ pressed }) => [styles.save, pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.saveText}>
+              {scannedLeftover.colors.length === 1
+                ? 'Save scanned leftover yarn'
+                : `Save ${scannedLeftover.colors.length} scanned colors`}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
       {uploadsLeft != null ? (
         <Text style={styles.quotaHint} testID="yarn-uploads-remaining">
           {uploadsLeft} of {DAILY_UPLOAD_LIMIT} uploads left today (patterns + yarn).
@@ -440,6 +523,20 @@ const styles = StyleSheet.create({
     minWidth: 24,
     textAlign: 'center',
     color: Colors.textPrimary,
+  },
+  scannedCard: {
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.elevatedControl,
+  },
+  scannedTitle: {
+    ...Typography.subhead,
+    color: Colors.textPrimary,
+  },
+  scannedMeta: {
+    ...Typography.callout,
+    color: Colors.textSecondary,
   },
   error: {
     ...Typography.callout,
