@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-17T05:48:13.942Z",
+  "generatedAt": "2026-10-18T02:17:16.331Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -2826,6 +2826,491 @@
         }
       ],
       "summary": "Crochet a cozy oversized unisex sweater in just two evenings using chunky yarn and large hooks."
+    },
+    {
+      "id": "pattern-no-sew-crochet-pocket-ghost-bag-charm-tutorial-e",
+      "title": "No-Sew Crochet Pocket Ghost Bag Charm Tutorial 👻 | Easy Beginner Ghost Keychain Ideas",
+      "creator": "Annie Ahmed 🧸",
+      "youtubeUrl": "https://www.youtube.com/watch?v=rhg8dy29RSQ",
+      "videoId": "rhg8dy29RSQ",
+      "thumbnailUrl": "https://i.ytimg.com/vi/rhg8dy29RSQ/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "3.0mm",
+      "totalRows": 11,
+      "stitchesPerRow": 12,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "bag",
+        "sc",
+        "keychain",
+        "pocket ghost",
+        "thanksgiving",
+        "ch"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-intro",
+          "label": "Intro",
+          "seconds": 0
+        },
+        {
+          "id": "bm-2-material-and-abbreviatio",
+          "label": "Material And Abbreviations",
+          "seconds": 2
+        },
+        {
+          "id": "bm-5-crochet-ghost",
+          "label": "Crochet Ghost",
+          "seconds": 5
+        },
+        {
+          "id": "bm-24-r1",
+          "label": "R1",
+          "seconds": 24
+        },
+        {
+          "id": "bm-54-r2",
+          "label": "R2",
+          "seconds": 54
+        },
+        {
+          "id": "bm-108-r3-to-5",
+          "label": "R3 to 5",
+          "seconds": 108
+        },
+        {
+          "id": "bm-140-r6",
+          "label": "R6",
+          "seconds": 140
+        },
+        {
+          "id": "bm-179-r7",
+          "label": "R7",
+          "seconds": 179
+        },
+        {
+          "id": "bm-248-r8",
+          "label": "R8",
+          "seconds": 248
+        },
+        {
+          "id": "bm-277-r9",
+          "label": "R9",
+          "seconds": 277
+        },
+        {
+          "id": "bm-456-r10",
+          "label": "R10",
+          "seconds": 456
+        },
+        {
+          "id": "bm-554-r11",
+          "label": "R11",
+          "seconds": 554
+        },
+        {
+          "id": "bm-642-sew-eyes",
+          "label": "Sew Eyes",
+          "seconds": 642
+        },
+        {
+          "id": "bm-738-final-look",
+          "label": "Final Look",
+          "seconds": 738
+        }
+      ],
+      "summary": "Create an adorable no-sew crochet pocket ghost with ruffled bottom and cute facial features. Perfect as a quick Halloween bag charm."
+    },
+    {
+      "id": "pattern-easy-crochet-pumpkin-keychain-bag-charm-tutorial",
+      "title": "Easy Crochet Pumpkin Keychain & Bag Charm Tutorial 🎃 | Beginner Pumpkin Amigurumi Ideas",
+      "creator": "Annie Ahmed 🧸",
+      "youtubeUrl": "https://www.youtube.com/watch?v=75JRX5OYSLg",
+      "videoId": "75JRX5OYSLg",
+      "thumbnailUrl": "https://i.ytimg.com/vi/75JRX5OYSLg/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "3.0mm",
+      "totalRows": 16,
+      "stitchesPerRow": 14,
+      "tags": [
+        "amigurumi",
+        "fall",
+        "halloween",
+        "bag",
+        "keychain",
+        "pumpkin",
+        "stpatricks",
+        "thanksgiving"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-intro",
+          "label": "Intro",
+          "seconds": 0
+        },
+        {
+          "id": "bm-2-material-and-abbreviatio",
+          "label": "Material And Abbreviations",
+          "seconds": 2
+        },
+        {
+          "id": "bm-5-crochet-pumpkin",
+          "label": "Crochet Pumpkin",
+          "seconds": 5
+        },
+        {
+          "id": "bm-39-r1",
+          "label": "R1",
+          "seconds": 39
+        },
+        {
+          "id": "bm-105-r2-to-16",
+          "label": "R2 to 16",
+          "seconds": 105
+        },
+        {
+          "id": "bm-211-close-edges",
+          "label": "Close edges",
+          "seconds": 211
+        },
+        {
+          "id": "bm-279-sew",
+          "label": "Sew",
+          "seconds": 279
+        },
+        {
+          "id": "bm-465-crochet-stem",
+          "label": "Crochet Stem",
+          "seconds": 465
+        },
+        {
+          "id": "bm-675-assemble",
+          "label": "Assemble",
+          "seconds": 675
+        },
+        {
+          "id": "bm-696-attach-keychain",
+          "label": "Attach Keychain",
+          "seconds": 696
+        },
+        {
+          "id": "bm-706-final-look",
+          "label": "Final Look",
+          "seconds": 706
+        }
+      ],
+      "summary": "Craft a cute mini crochet pumpkin with defined ridges, stem, and leaf. Ideal for autumn decor and quick handmade keychains."
+    },
+    {
+      "id": "pattern-crochet-ghost-tutorial-easy-no-sew-halloween-cro",
+      "title": "Crochet Ghost Tutorial 👻 | Easy No-Sew Halloween Crochet",
+      "creator": "Zam Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=yZnBcJ5YOVE",
+      "videoId": "yZnBcJ5YOVE",
+      "thumbnailUrl": "https://i.ytimg.com/vi/yZnBcJ5YOVE/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "2.5mm",
+      "totalRows": 10,
+      "stitchesPerRow": 12,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "sc",
+        "keychain",
+        "ghost",
+        "thanksgiving",
+        "wearables",
+        "mr"
+      ],
+      "bookmarks": [],
+      "summary": "Learn to make an easy no-sew crochet ghost featuring a soft white body, curved arms, and a flowing flared bottom."
+    },
+    {
+      "id": "pattern-the-cutest-crochet-ghost-i-ve-ever-made-quick-cr",
+      "title": "The Cutest crochet Ghost! I’ve ever made ! 👻( Quick crochet Tutorial )",
+      "creator": "Jiyusu Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=HEqaKr0WYs8",
+      "videoId": "HEqaKr0WYs8",
+      "thumbnailUrl": "https://i.ytimg.com/vi/HEqaKr0WYs8/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "fingering",
+      "hookSize": "3.5mm",
+      "totalRows": 8,
+      "stitchesPerRow": 10,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "sc",
+        "keychain",
+        "ghost",
+        "mothers-day",
+        "ch",
+        "inc"
+      ],
+      "bookmarks": [],
+      "summary": "Stitch the cutest little amigurumi ghost quickly with this fun and easy spooky crochet tutorial."
+    },
+    {
+      "id": "pattern-easy-crochet-pumpkin-keychain-no-magic-ring-no-s",
+      "title": "Easy Crochet Pumpkin Keychain – No Magic Ring, No Sew!",
+      "creator": "Easy Stitch Academy",
+      "youtubeUrl": "https://www.youtube.com/watch?v=b0gEJKsNb1A",
+      "videoId": "b0gEJKsNb1A",
+      "thumbnailUrl": "https://i.ytimg.com/vi/b0gEJKsNb1A/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "3.5mm",
+      "totalRows": 4,
+      "stitchesPerRow": 15,
+      "tags": [
+        "fall",
+        "halloween",
+        "keychain",
+        "pumpkin",
+        "beginner",
+        "thanksgiving",
+        "amigurumi",
+        "wearables"
+      ],
+      "bookmarks": [],
+      "summary": "Crochet a cute flat pumpkin slice in just 4 minutes with no magic ring and no sewing required!"
+    },
+    {
+      "id": "pattern-crochet-ghost-with-strawberry-hat-halloween-tuto",
+      "title": "Crochet Ghost with Strawberry Hat 🍓👻 | Halloween Tutorial",
+      "creator": "Yarnivaco | Tiny Amigurumi",
+      "youtubeUrl": "https://www.youtube.com/watch?v=2npAQ-SUr8I",
+      "videoId": "2npAQ-SUr8I",
+      "thumbnailUrl": "https://i.ytimg.com/vi/2npAQ-SUr8I/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "3.0mm",
+      "totalRows": 12,
+      "stitchesPerRow": 12,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "ghost",
+        "strawberry",
+        "keychain",
+        "wearables",
+        "mr",
+        "ch"
+      ],
+      "bookmarks": [],
+      "summary": "Create an adorable Halloween ghost wearing a cute strawberry hat in this fun, step-by-step crochet tutorial."
+    },
+    {
+      "id": "pattern-step-by-step-crochet-pumpkin-quick-easy-fall-cra",
+      "title": "Step-by-Step Crochet Pumpkin | Quick & Easy Fall Craft Project",
+      "creator": "Hasthi creation",
+      "youtubeUrl": "https://www.youtube.com/watch?v=T0W6E6QiOJI",
+      "videoId": "T0W6E6QiOJI",
+      "thumbnailUrl": "https://i.ytimg.com/vi/T0W6E6QiOJI/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "3.5mm",
+      "totalRows": 10,
+      "stitchesPerRow": 14,
+      "tags": [
+        "fall",
+        "halloween",
+        "pumpkin",
+        "decor",
+        "sc",
+        "stpatricks",
+        "thanksgiving",
+        "wearables"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-introduction-materials",
+          "label": "Introduction & Materials",
+          "seconds": 0
+        },
+        {
+          "id": "bm-90-crocheting-the-pumpkin-b",
+          "label": "Crocheting the Pumpkin Base",
+          "seconds": 90
+        },
+        {
+          "id": "bm-480-shaping-assembly",
+          "label": "Shaping & Assembly",
+          "seconds": 480
+        },
+        {
+          "id": "bm-750-adding-the-stem-leaf",
+          "label": "Adding the Stem & Leaf",
+          "seconds": 750
+        },
+        {
+          "id": "bm-885-final-look",
+          "label": "Final Look!",
+          "seconds": 885
+        }
+      ],
+      "summary": "Learn how to crochet an easy and cute pumpkin for Halloween and Fall decor with clear step-by-step instructions."
+    },
+    {
+      "id": "pattern-cute-crochet-pumpkin-keychain-with-witch-hat-hal",
+      "title": "Cute Crochet Pumpkin Keychain with Witch Hat | Halloween Bag Charm",
+      "creator": "Beginners Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=6VMjoHhT0yE",
+      "videoId": "6VMjoHhT0yE",
+      "thumbnailUrl": "https://i.ytimg.com/vi/6VMjoHhT0yE/maxresdefault.jpg",
+      "difficulty": "intermediate",
+      "yarnWeight": "sport",
+      "hookSize": "2.5mm",
+      "totalRows": 14,
+      "stitchesPerRow": 12,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "pumpkin",
+        "witch",
+        "keychain",
+        "wearables",
+        "bag",
+        "mr"
+      ],
+      "bookmarks": [],
+      "summary": "Crochet a tiny pumpkin witch complete with a witch hat, broom, and cute legs for a fun Halloween charm."
+    },
+    {
+      "id": "pattern-mini-crochet-ghost-how-to-crochet-easy-ghost-for",
+      "title": "Mini ! crochet ghost 👻 how to crochet easy ghost for BEGINNERS -simple crochet",
+      "creator": "Minni Minni Crochet 🧶",
+      "youtubeUrl": "https://www.youtube.com/watch?v=xlOseeBTvaw",
+      "videoId": "xlOseeBTvaw",
+      "thumbnailUrl": "https://i.ytimg.com/vi/xlOseeBTvaw/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "dk",
+      "hookSize": "4.0mm",
+      "totalRows": 6,
+      "stitchesPerRow": 12,
+      "tags": [
+        "halloween",
+        "ghost",
+        "garland",
+        "keychain",
+        "beginner",
+        "wearables",
+        "ch",
+        "sc"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-14-what-you-need",
+          "label": "What you need",
+          "seconds": 14
+        },
+        {
+          "id": "bm-25-making-slip-knot",
+          "label": "making slip knot",
+          "seconds": 25
+        },
+        {
+          "id": "bm-61-foundation-chain",
+          "label": "foundation chain",
+          "seconds": 61
+        },
+        {
+          "id": "bm-109-crochet-ghost-first-half",
+          "label": "crochet ghost first half",
+          "seconds": 109
+        },
+        {
+          "id": "bm-356-crochet-ghost-second-hal",
+          "label": "crochet ghost second half",
+          "seconds": 356
+        },
+        {
+          "id": "bm-502-sewing-eyes",
+          "label": "sewing eyes",
+          "seconds": 502
+        },
+        {
+          "id": "bm-562-halloween-ghost-garland",
+          "label": "Halloween ghost garland",
+          "seconds": 562
+        }
+      ],
+      "summary": "Make a super cute and easy mini crochet ghost in just two minutes without a magic ring!"
+    },
+    {
+      "id": "pattern-how-to-crochet-a-pumpkin-for-absolute-beginners-",
+      "title": "How to Crochet a Pumpkin for Absolute Beginners | Single Crochet Pumpkin 🍁",
+      "creator": "Bluebonnet Craft Co.",
+      "youtubeUrl": "https://www.youtube.com/watch?v=pTltsMw2SKY",
+      "videoId": "pTltsMw2SKY",
+      "thumbnailUrl": "https://i.ytimg.com/vi/pTltsMw2SKY/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "5.0mm",
+      "totalRows": 10,
+      "stitchesPerRow": 12,
+      "tags": [
+        "fall",
+        "pumpkin",
+        "beginner",
+        "sc",
+        "decor",
+        "halloween",
+        "thanksgiving",
+        "wearables"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-introduction-and-materia",
+          "label": "Introduction and materials",
+          "seconds": 0
+        },
+        {
+          "id": "bm-22-pattern-sizing-and-tips",
+          "label": "Pattern sizing and tips",
+          "seconds": 22
+        },
+        {
+          "id": "bm-170-crocheting-the-main-body",
+          "label": "Crocheting the main body",
+          "seconds": 170
+        },
+        {
+          "id": "bm-266-joining-the-edges",
+          "label": "Joining the edges",
+          "seconds": 266
+        },
+        {
+          "id": "bm-328-closing-the-base",
+          "label": "Closing the base",
+          "seconds": 328
+        },
+        {
+          "id": "bm-417-stuffing-and-shaping",
+          "label": "Stuffing and shaping",
+          "seconds": 417
+        },
+        {
+          "id": "bm-489-creating-pumpkin-segment",
+          "label": "Creating pumpkin segments",
+          "seconds": 489
+        },
+        {
+          "id": "bm-672-stem-and-decoration",
+          "label": "Stem and decoration",
+          "seconds": 672
+        },
+        {
+          "id": "bm-824-final-assembly",
+          "label": "Final assembly",
+          "seconds": 824
+        }
+      ],
+      "summary": "Learn how to crochet a simple single crochet pumpkin designed specifically for absolute beginners."
     }
   ]
 }
