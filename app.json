@@ -38,7 +38,14 @@
       "themeColor": "#121212"
     },
     "plugins": [
-      "expo-build-properties",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true
+          }
+        }
+      ],
       "./plugins/withAndroidGradleFixes.js",
       "expo-updates",
       "expo-router",
