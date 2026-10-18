@@ -266,33 +266,78 @@ function colorDistance(a: [number, number, number], b: [number, number, number])
   return Math.sqrt(dr * dr + dg * dg + db * db);
 }
 
-function hueName([r, g, b]: [number, number, number]): string {
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const lightness = (max + min) / 2 / 255;
-  if (max - min < 22) {
+type PixelHsl = { hue: number; saturation: number; lightness: number };
+
+function pixelHsl([r, g, b]: readonly [number, number, number]): PixelHsl {
+  const red = r / 255;
+  const green = g / 255;
+  const blue = b / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const lightness = (max + min) / 2;
+  const delta = max - min;
+  let hue = 0;
+  let saturation = 0;
+  if (delta > 0) {
+    saturation = delta / (1 - Math.abs(2 * lightness - 1) || 1);
+    if (max === red) hue = ((green - blue) / delta) % 6;
+    else if (max === green) hue = (blue - red) / delta + 2;
+    else hue = (red - green) / delta + 4;
+    hue *= 60;
+    if (hue < 0) hue += 360;
+  }
+  return { hue, saturation, lightness };
+}
+
+function hueDelta(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 360;
+  return Math.min(diff, 360 - diff);
+}
+
+function hueName(rgb: [number, number, number]): string {
+  const { hue, saturation, lightness } = pixelHsl(rgb);
+  if (saturation < 0.12) {
     if (lightness > 0.88) return 'Ivory';
     if (lightness > 0.7) return 'Light gray';
     if (lightness > 0.45) return 'Gray';
     if (lightness > 0.2) return 'Charcoal';
     return 'Black';
   }
-  let hue = 0;
-  const delta = max - min || 1;
-  if (max === r) hue = ((g - b) / delta) % 6;
-  else if (max === g) hue = (b - r) / delta + 2;
-  else hue = (r - g) / delta + 4;
-  hue *= 60;
-  if (hue < 0) hue += 360;
   const pale = lightness > 0.72;
-  if (hue < 20 || hue >= 345) return pale ? 'Blush' : 'Red';
-  if (hue < 45) return pale ? 'Peach' : 'Orange';
+  if (hue < 18 || hue >= 345) {
+    if (pale) return 'Blush';
+    if (lightness < 0.42) return 'Burgundy';
+    return 'Red';
+  }
+  if (hue < 50) {
+    if (pale) return 'Peach';
+    if (saturation < 0.55 && lightness < 0.62) return lightness < 0.38 ? 'Brown' : 'Taupe';
+    return 'Orange';
+  }
   if (hue < 70) return pale ? 'Cream' : 'Mustard';
   if (hue < 160) return pale ? 'Sage' : 'Green';
   if (hue < 200) return pale ? 'Aqua' : 'Teal';
   if (hue < 255) return pale ? 'Sky' : 'Blue';
   if (hue < 290) return pale ? 'Lilac' : 'Purple';
   return pale ? 'Pink' : 'Magenta';
+}
+
+/** Couch, wall, and paper are lighter than the yarn balls sitting on them. */
+function yarnHueFamily(hsl: PixelHsl): string | null {
+  if (hsl.lightness > 0.68) return null;
+  if (hsl.saturation < 0.1) {
+    if (hsl.lightness < 0.2) return 'black';
+    if (hsl.lightness > 0.62) return null;
+    return 'gray';
+  }
+  if (hsl.hue < 20 || hsl.hue >= 310) return 'red';
+  if (hsl.hue < 48) return 'warm';
+  if (hsl.hue < 75) return 'yellow';
+  if (hsl.hue < 165) return 'green';
+  if (hsl.hue < 200) return 'teal';
+  if (hsl.hue < 255) return 'blue';
+  if (hsl.hue < 310) return 'purple';
+  return 'red';
 }
 
 export function describeYarnColor(hex: string): ScrapYarnColor {
@@ -306,25 +351,43 @@ export function describeYarnColor(hex: string): ScrapYarnColor {
     const distance = colorDistance(rgb, swatchRgb);
     if (!nearest || distance < nearest.distance) nearest = { swatch, distance };
   }
-  if (nearest && nearest.distance <= 42) return nearest.swatch;
+  if (nearest) {
+    const swatchRgb = hexToRgb(nearest.swatch.hex);
+    const sample = pixelHsl(rgb);
+    const swatch = swatchRgb ? pixelHsl(swatchRgb) : null;
+    const huesAgree = swatch != null && hueDelta(sample.hue, swatch.hue) <= 22;
+    const bothNeutral = swatch != null && sample.saturation < 0.12 && swatch.saturation < 0.12;
+    if (nearest.distance <= 24 || (nearest.distance <= 42 && (huesAgree || bothNeutral))) {
+      return nearest.swatch;
+    }
+  }
   return { hex: normalized, name: hueName(rgb) };
 }
 
 export function dominantYarnColors(pixels: readonly (readonly [number, number, number])[], limit = 4): ScrapYarnColor[] {
-  const buckets = new Map<string, { rgb: [number, number, number]; count: number }>();
+  const families = new Map<string, { count: number; r: number; g: number; b: number }>();
   for (const pixel of pixels) {
-    const r = Math.min(255, Math.round(Math.max(0, pixel[0]) / 32) * 32);
-    const g = Math.min(255, Math.round(Math.max(0, pixel[1]) / 32) * 32);
-    const b = Math.min(255, Math.round(Math.max(0, pixel[2]) / 32) * 32);
-    const key = `${r},${g},${b}`;
-    const current = buckets.get(key);
-    if (current) current.count += 1;
-    else buckets.set(key, { rgb: [r, g, b], count: 1 });
+    const family = yarnHueFamily(pixelHsl(pixel));
+    if (!family) continue;
+    const current = families.get(family) ?? { count: 0, r: 0, g: 0, b: 0 };
+    current.count += 1;
+    current.r += pixel[0];
+    current.g += pixel[1];
+    current.b += pixel[2];
+    families.set(family, current);
   }
-  const ranked = [...buckets.values()].sort((a, b) => b.count - a.count);
+  const total = pixels.length || 1;
+  const pool = [...families.values()]
+    .filter((family) => family.count >= total * 0.07)
+    .sort((a, b) => b.count - a.count);
   const chosen: ScrapYarnColor[] = [];
-  for (const bucket of ranked) {
-    const hex = `#${bucket.rgb.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+  for (const family of pool) {
+    const rgb: [number, number, number] = [
+      Math.round(family.r / family.count),
+      Math.round(family.g / family.count),
+      Math.round(family.b / family.count),
+    ];
+    const hex = `#${rgb.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
     const described = describeYarnColor(hex);
     if (chosen.some((color) => color.hex === described.hex || color.name === described.name)) continue;
     const describedRgb = hexToRgb(described.hex);
@@ -346,12 +409,12 @@ export async function detectYarnColors(imageUri: string): Promise<ScrapYarnColor
   try {
     const image = await loadProbeImage(imageUri);
     const canvas = document.createElement('canvas');
-    canvas.width = 24;
-    canvas.height = 24;
+    canvas.width = 64;
+    canvas.height = 64;
     const context = canvas.getContext('2d');
     if (!context) return [];
-    context.drawImage(image, 0, 0, 24, 24);
-    const data = context.getImageData(0, 0, 24, 24).data;
+    context.drawImage(image, 0, 0, 64, 64);
+    const data = context.getImageData(0, 0, 64, 64).data;
     const pixels: [number, number, number][] = [];
     for (let index = 0; index < data.length; index += 4) {
       if ((data[index + 3] ?? 0) < 200) continue;
@@ -383,12 +446,12 @@ export function yarnColorProbeHtml(imageUri: string): string {
     }
     img.onload = function () {
       var canvas = document.createElement('canvas');
-      canvas.width = 24;
-      canvas.height = 24;
+      canvas.width = 64;
+      canvas.height = 64;
       var ctx = canvas.getContext('2d');
       if (!ctx) { post([]); return; }
-      ctx.drawImage(img, 0, 0, 24, 24);
-      var data = ctx.getImageData(0, 0, 24, 24).data;
+      ctx.drawImage(img, 0, 0, 64, 64);
+      var data = ctx.getImageData(0, 0, 64, 64).data;
       var pixels = [];
       for (var i = 0; i < data.length; i += 4) {
         if (data[i + 3] < 200) continue;

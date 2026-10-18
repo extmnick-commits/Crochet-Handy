@@ -37,7 +37,6 @@ import {
   type CrochetPattern,
   type IdeaFolder,
   type UserAccount,
-  type YarnStashItem,
 } from '@/store/useCrochetStore';
 import { auth, isFirebaseConfigured } from '@/utils/firebase';
 import {
@@ -46,7 +45,6 @@ import {
   MASONRY_TEXT_BLOCK,
   normalizePatternTag,
   packMasonryColumns,
-  yarnWeightMeta,
 } from '@/utils/patternDisplay';
 import type { ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
 import { patternPosterUri } from '@/utils/youtube';
@@ -60,7 +58,6 @@ export default function MeScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const projects = useCrochetStore((state) => state.projects);
   const patterns = useCrochetStore((state) => state.patterns);
-  const yarnStash = useCrochetStore((state) => state.yarnStash);
   const progressPhotos = useCrochetStore((state) => state.progressPhotos);
   const account = useCrochetStore((state) => state.account);
   const likedPatternIds = useCrochetStore((state) => state.likedPatternIds);
@@ -219,18 +216,18 @@ export default function MeScreen() {
           onSignOut={() => void onSignOut()}
         />
 
-        <YarnStashSection
-          items={yarnStash}
-          onScan={() => {
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Scan Leftover Yarn (Local AI)"
+          testID="scan-leftover-yarn"
+          onPress={() => {
             tick();
             setScrapOpen(true);
           }}
-          onAdd={() => {
-            tick();
-            setScannedLeftover(null);
-            setAddYarnOpen(true);
-          }}
-        />
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.primaryButtonText}>Scan Leftover Yarn (Local AI)</Text>
+        </Pressable>
 
         <UploadQuotaDevTools />
 
@@ -718,64 +715,6 @@ function ProfileAccountBar({
   );
 }
 
-function YarnStashSection({
-  items,
-  onScan,
-  onAdd,
-}: {
-  items: YarnStashItem[];
-  onScan: () => void;
-  onAdd: () => void;
-}) {
-  return (
-    <View style={styles.section}>
-      <Text role="heading" aria-level={2} style={styles.stashTitle}>
-        Yarn Stash
-      </Text>
-      {items.length === 0 ? (
-        <Text style={styles.empty}>No yarn on the shelf yet.</Text>
-      ) : (
-        <View style={styles.stashList}>
-          {items.map((item) => {
-            const meta = yarnWeightMeta(item.yarnWeight);
-            return (
-              <View key={item.id} style={styles.stashRow}>
-                <View style={[styles.stashSwatch, { backgroundColor: item.hexColor }]} />
-                <View style={styles.stashCopy}>
-                  <Text numberOfLines={1} style={styles.stashName}>
-                    {item.colorName}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.stashMeta}>
-                    {item.brand} · {meta.label} {meta.number} · {item.skeinCount}{' '}
-                    {item.skeinCount === 1 ? 'skein' : 'skeins'}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Scan Leftover Yarn (Local AI)"
-        testID="scan-leftover-yarn"
-        onPress={onScan}
-        style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
-      >
-        <Text style={styles.primaryButtonText}>Scan Leftover Yarn (Local AI)</Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add yarn to stash"
-        onPress={onAdd}
-        style={({ pressed }) => [styles.stashAdd, pressed && styles.pressed, webCursor]}
-      >
-        <Text style={styles.stashAddText}>Add yarn</Text>
-      </Pressable>
-    </View>
-  );
-}
-
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.miniStat}>
@@ -1225,53 +1164,6 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: Spacing.md,
-  },
-  stashTitle: {
-    ...Typography.headline,
-    color: Colors.textPrimary,
-  },
-  stashList: {
-    gap: Spacing.sm,
-  },
-  stashRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.cardSurface,
-  },
-  stashSwatch: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.pill,
-    borderWidth: 2,
-    borderColor: Colors.border,
-  },
-  stashCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  stashName: {
-    ...Typography.label,
-    color: Colors.textPrimary,
-  },
-  stashMeta: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-  },
-  stashAdd: {
-    minHeight: 48,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.elevatedControl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  stashAddText: {
-    ...Typography.label,
-    color: Colors.textPrimary,
   },
   folderGrid: {
     flexDirection: 'row',
