@@ -18,6 +18,7 @@ import {
   type YarnWeight,
 } from '@/store/machine';
 import { patternsForScrapProjects } from '@/utils/patternCatalog';
+import { extractYarnColorsFromUri, formatYarnColorLabel, yarnColorLabelName } from '@/utils/yarnColorExtractor';
 
 export const SCRAP_MODEL_FILENAME = 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf';
 
@@ -511,10 +512,10 @@ function placement(colors: readonly string[], kind: 'stripe' | 'block' | 'detail
       ? `Color-block the body in ${primary} and the edge in ${second}${accent}. Keep the yarn ${weightLabel} weight.`
       : `Keep the body and the edge in ${primary} ${weightLabel} weight.`;
   }
-  const accent = colors.length > 2 ? `, and ${third} for one tiny accent` : '';
+  const accent = colors.length > 2 ? `, with ${third} as a tiny accent` : '';
   return colors.length > 1
-    ? `Use ${primary} for the main shape and ${second} for the face, stem, or loop${accent}. ${weightLabel} weight throughout.`
-    : `Use ${primary} for the shape and the small details, in ${weightLabel} weight.`;
+    ? `Use ${primary} for the amigurumi body and ${second} for the shell stripes${accent}. Work it in ${weightLabel} weight.`
+    : `Use ${primary} for the amigurumi body and the small details, in ${weightLabel} weight.`;
 }
 
 export function fallbackScrapIdeas(input: {
@@ -522,31 +523,32 @@ export function fallbackScrapIdeas(input: {
   weight: YarnWeight;
   yardageTier: YardageTier;
 }): ScrapProjectIdea[] {
-  const colors = input.colors.map((color) => color.trim()).filter((color) => color.length > 0);
-  const phrase = colorPhrase(colors);
-  const primary = colors[0] ?? 'Leftover';
-  const second = colors[1] ?? primary;
+  const labels = input.colors.map((color) => color.trim()).filter((color) => color.length > 0);
+  const names = labels.map((color) => yarnColorLabelName(color));
+  const phrase = colorPhrase(names);
+  const primary = names[0] ?? 'Leftover';
+  const second = names[1] ?? primary;
   const hookSize = hookForYarnWeight(input.weight);
   if (input.yardageTier === 'scrap_under_25yd') {
     return [
       {
         title: `${primary} keychain charm`,
         estimatedYardage: '12–18 yd',
-        colorPlacement: placement(colors, 'detail', input.weight),
+        colorPlacement: placement(labels, 'detail', input.weight),
         hookSize,
         difficulty: 'beginner',
       },
       {
         title: `${phrase} hair scrunchie`,
         estimatedYardage: '15–24 yd',
-        colorPlacement: placement(colors, 'stripe', input.weight),
+        colorPlacement: placement(labels, 'stripe', input.weight),
         hookSize,
         difficulty: 'beginner',
       },
       {
         title: `${primary} mug coaster`,
         estimatedYardage: '18–25 yd',
-        colorPlacement: placement(colors, 'block', input.weight),
+        colorPlacement: placement(labels, 'block', input.weight),
         hookSize,
         difficulty: 'easy',
       },
@@ -557,21 +559,21 @@ export function fallbackScrapIdeas(input: {
       {
         title: `${phrase} color-block headband`,
         estimatedYardage: '80–110 yd',
-        colorPlacement: placement(colors, 'block', input.weight),
+        colorPlacement: placement(labels, 'block', input.weight),
         hookSize,
         difficulty: 'easy',
       },
       {
         title: `${primary} mini amigurumi`,
         estimatedYardage: '90–140 yd',
-        colorPlacement: placement(colors, 'detail', input.weight),
+        colorPlacement: placement(labels, 'detail', input.weight),
         hookSize,
         difficulty: 'intermediate',
       },
       {
         title: `${phrase} striped dishcloth`,
         estimatedYardage: '75–120 yd',
-        colorPlacement: placement(colors, 'stripe', input.weight),
+        colorPlacement: placement(labels, 'stripe', input.weight),
         hookSize,
         difficulty: 'beginner',
       },
@@ -581,21 +583,21 @@ export function fallbackScrapIdeas(input: {
     {
       title: `${phrase} striped coaster pair`,
       estimatedYardage: '40–70 yd',
-      colorPlacement: placement(colors, 'stripe', input.weight),
+      colorPlacement: placement(labels, 'stripe', input.weight),
       hookSize,
       difficulty: 'easy',
     },
     {
       title: `${primary} amigurumi keychain`,
       estimatedYardage: '30–55 yd',
-      colorPlacement: placement(colors, 'detail', input.weight),
+      colorPlacement: placement(labels, 'detail', input.weight),
       hookSize,
       difficulty: 'easy',
     },
     {
-      title: colors.length > 1 ? `${second} and ${primary} scrunchie set` : `${primary} scrunchie set`,
+      title: labels.length > 1 ? `${second} and ${primary} scrunchie set` : `${primary} scrunchie set`,
       estimatedYardage: '35–60 yd',
-      colorPlacement: placement(colors, 'block', input.weight),
+      colorPlacement: placement(labels, 'block', input.weight),
       hookSize,
       difficulty: 'beginner',
     },
@@ -605,7 +607,12 @@ export function fallbackScrapIdeas(input: {
 function ideaMentionsColors(idea: ScrapProjectIdea, colors: readonly string[]): boolean {
   if (colors.length === 0) return true;
   const haystack = `${idea.title} ${idea.colorPlacement}`.toLowerCase();
-  return colors.some((color) => color.trim().length > 0 && haystack.includes(color.trim().toLowerCase()));
+  return colors.some((color) => {
+    const full = color.trim().toLowerCase();
+    const name = yarnColorLabelName(color).toLowerCase();
+    if (!full) return false;
+    return haystack.includes(full) || (name.length > 0 && haystack.includes(name));
+  });
 }
 
 function readText(value: unknown, max: number): string {
@@ -678,14 +685,14 @@ function buildMessages(input: {
     {
       role: 'user',
       content: [
-        `Leftover colors (use these exact names): ${colors || 'unspecified leftover yarn'}.`,
+        `Leftover colors (use these exact names and hex codes): ${colors || 'unspecified leftover yarn'}.`,
         `Yarn weight: ${input.weight}.`,
         `Leftover amount: ${tier}.`,
         `Hook to prefer: ${hookForYarnWeight(input.weight)}.`,
         'A photo of the leftovers was taken on device. Trust the color list above.',
         'Suggest exactly 3 small projects that use only these leftover colors.',
         'Prefer color-blocking, stripes, amigurumi details, coasters, keychains, or scrunchies.',
-        'Each title and colorPlacement must include the exact color names above.',
+        'Each title should use the color names. Each colorPlacement must say where each color goes and include the name and hex, for example "Use Cream (#F4F1DE) for the amigurumi body and Teal (#2A9D8F) for the shell stripes."',
         catalog ? `Nearby catalog tutorials, for inspiration only:\n${catalog}` : '',
         'Return {"projects":[{"title":"","estimatedYardage":"","colorPlacement":"","hookSize":"","difficulty":"beginner|easy|intermediate|advanced"}]}',
       ]
@@ -731,7 +738,9 @@ export async function analyzeLeftoverYarnAndSuggest(params: AnalyzeLeftoverYarnP
   const yardageTier = isYardageTier(params.yardageTier) ? params.yardageTier : 'small_25_75yd';
   const provided = params.colors.map((color) => color.trim()).filter((color) => color.length > 0).slice(0, 4);
   const detected =
-    provided.length > 0 ? provided : (await detectYarnColors(params.imageUri)).map((color) => color.name);
+    provided.length > 0
+      ? provided
+      : (await extractYarnColorsFromUri(params.imageUri)).slice(0, 4).map((color) => formatYarnColorLabel(color));
   const colors = detected.length > 0 ? detected : provided;
   const patterns = patternsForScrapProjects({ yarnWeight: weight, limit: 6 });
   const ideas = fallbackScrapIdeas({ colors, weight, yardageTier });

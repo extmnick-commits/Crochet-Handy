@@ -6,8 +6,8 @@
 import { useEffect, useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { WebView } from 'react-native-webview';
 
+import { YarnColorSwatchPicker } from '@/components/YarnColorSwatchPicker';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { YARN_WEIGHTS, useCrochetStore, type CrochetPattern, type YarnWeight } from '@/store/useCrochetStore';
@@ -16,23 +16,18 @@ import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@
 import {
   LOCAL_AI_ENGINE_LABEL,
   YARDAGE_TIERS,
-  YARN_COLOR_SWATCHES,
   analyzeLeftoverYarnAndSuggest,
   deleteScrapModel,
-  detectYarnColors,
   downloadScrapModel,
   hookForYarnWeight,
   isLocalScrapAiSupported,
   isScrapModelDownloaded,
-  yarnColorProbeHtml,
-  yarnColorsFromProbeMessage,
   type ScannedLeftoverDraft,
   type ScrapSuggestionResult,
   type ScrapYarnColor,
   type YardageTier,
 } from '@/utils/scrapYarnAi';
-
-const MAX_COLORS = 4;
+import { formatYarnColorLabel, type YarnNamedColor } from '@/utils/yarnColorExtractor';
 
 type ScrapBusterModalProps = {
   visible: boolean;
@@ -91,7 +86,6 @@ function ScrapBusterForm({
   const [result, setResult] = useState<ScrapSuggestionResult | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [probeUri, setProbeUri] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLocalScrapAiSupported()) return undefined;
@@ -103,15 +97,6 @@ function ScrapBusterForm({
       alive = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!probeUri) return undefined;
-    const timer = setTimeout(() => {
-      setProbeUri(null);
-      setStatus('Could not read colors from that photo. Tap the swatches that match your yarn.');
-    }, 8000);
-    return () => clearTimeout(timer);
-  }, [probeUri]);
 
   const onCapture = async (source: CaptureSource) => {
     setStatus(null);
@@ -126,41 +111,9 @@ function ScrapBusterForm({
     setSelected([]);
   };
 
-  const onDetect = async () => {
-    if (!photoUri) return;
-    setStatus(null);
+  const onDetectedColors = (colors: YarnNamedColor[]) => {
     setResult(null);
-    if (Platform.OS === 'web') {
-      const colors = await detectYarnColors(photoUri);
-      if (colors.length === 0) {
-        setStatus('Could not read colors from that photo. Tap the swatches that match your yarn.');
-        return;
-      }
-      setSelected(colors.slice(0, MAX_COLORS));
-      return;
-    }
-    setProbeUri(photoUri);
-  };
-
-  const onProbeMessage = (message: string) => {
-    setProbeUri(null);
-    const colors = yarnColorsFromProbeMessage(message);
-    if (colors.length === 0) {
-      setStatus('Could not read colors from that photo. Tap the swatches that match your yarn.');
-      return;
-    }
-    setSelected(colors.slice(0, MAX_COLORS));
-  };
-
-  const toggleColor = (color: ScrapYarnColor) => {
-    setResult(null);
-    setSelected((current) => {
-      if (current.some((item) => item.hex === color.hex)) {
-        return current.filter((item) => item.hex !== color.hex);
-      }
-      if (current.length >= MAX_COLORS) return current;
-      return [...current, color];
-    });
+    setSelected(colors.map((color) => ({ hex: color.hex, name: color.name })));
   };
 
   const onDownload = async () => {
@@ -194,7 +147,7 @@ function ScrapBusterForm({
     try {
       const next = await analyzeLeftoverYarnAndSuggest({
         imageUri: photoUri,
-        colors: selected.map((color) => color.name),
+        colors: selected.map((color) => formatYarnColorLabel(color)),
         weight,
         yardageTier: tier,
       });
@@ -205,13 +158,6 @@ function ScrapBusterForm({
       setBusy(false);
     }
   };
-
-  const extraSwatches = selected.filter(
-    (color) => !YARN_COLOR_SWATCHES.some((swatch) => swatch.hex === color.hex),
-  );
-  const swatches = [...extraSwatches, ...YARN_COLOR_SWATCHES];
-  const readAccess =
-    probeUri && probeUri.startsWith('file://') ? probeUri.slice(0, probeUri.lastIndexOf('/') + 1) : undefined;
 
   return (
     <View style={styles.form}>
@@ -242,40 +188,12 @@ function ScrapBusterForm({
       {photoUri ? <Image accessible={false} source={{ uri: photoUri }} style={styles.preview} /> : null}
 
       <View style={styles.field}>
-        <View style={styles.fieldHeader}>
-          <Text style={styles.label}>Leftover colors</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Detect colors from the photo"
-            disabled={!photoUri}
-            onPress={() => {
-              void onDetect();
-            }}
-            style={({ pressed }) => [styles.textButton, !photoUri && styles.disabled, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.textButtonLabel}>Detect colors</Text>
-          </Pressable>
-        </View>
-        <View style={styles.presets}>
-          {swatches.map((color) => {
-            const active = selected.some((item) => item.hex === color.hex);
-            return (
-              <Pressable
-                key={`${color.hex}-${color.name}`}
-                accessibilityRole="button"
-                accessibilityLabel={color.name}
-                accessibilityState={{ selected: active }}
-                onPress={() => toggleColor(color)}
-                style={({ pressed }) => [styles.swatchWrap, pressed && styles.pressed, webCursor]}
-              >
-                <View style={[styles.swatch, { backgroundColor: color.hex }, active && styles.swatchSelected]} />
-                <Text style={[styles.swatchName, active && styles.swatchNameSelected]} numberOfLines={1}>
-                  {color.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Text style={styles.label}>Leftover colors</Text>
+        {photoUri ? (
+          <YarnColorSwatchPicker imageUri={photoUri} maxColors={4} onChange={onDetectedColors} />
+        ) : (
+          <Text style={styles.note}>Take a photo, then keep the yarn colors and drop the table.</Text>
+        )}
       </View>
 
       <View style={styles.field}>
@@ -409,16 +327,6 @@ function ScrapBusterForm({
             <Text style={styles.saveStashText}>Save leftover to stash</Text>
           </Pressable>
         </View>
-      ) : null}
-
-      {probeUri && Platform.OS !== 'web' ? (
-        <WebView
-          originWhitelist={['*']}
-          source={{ html: yarnColorProbeHtml(probeUri) }}
-          allowingReadAccessToURL={readAccess}
-          onMessage={(event) => onProbeMessage(event.nativeEvent.data)}
-          style={styles.probe}
-        />
       ) : null}
     </View>
   );
@@ -604,51 +512,9 @@ const styles = StyleSheet.create({
   field: {
     gap: Spacing.sm,
   },
-  fieldHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.sm,
-  },
   label: {
     ...Typography.caption,
     color: Colors.textSecondary,
-  },
-  textButton: {
-    paddingVertical: Spacing.xxs,
-  },
-  textButtonLabel: {
-    ...Typography.caption,
-    color: Colors.accentPrimary,
-    fontWeight: FontWeight.semibold,
-  },
-  presets: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  swatchWrap: {
-    width: 72,
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  swatch: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.pill,
-    borderWidth: 2,
-    borderColor: Colors.transparent,
-  },
-  swatchSelected: {
-    borderColor: Colors.accentPrimary,
-  },
-  swatchName: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  swatchNameSelected: {
-    color: Colors.accentPrimary,
   },
   chips: {
     flexDirection: 'row',
@@ -788,10 +654,5 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.72,
-  },
-  probe: {
-    width: 1,
-    height: 1,
-    opacity: 0,
   },
 });

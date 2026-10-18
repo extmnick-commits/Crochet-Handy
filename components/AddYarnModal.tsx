@@ -3,16 +3,20 @@
  * name, so this sheet checks both before calling `addStashItem`.
  */
 import { useState, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import { UploadLimitPaywall } from '@/components/UploadLimitPaywall';
+import { YarnColorSwatchPicker } from '@/components/YarnColorSwatchPicker';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { MAX_SKEINS, YARN_WEIGHTS, useCrochetStore, type YarnWeight } from '@/store/useCrochetStore';
 import { createId, decideUploadAccess, DAILY_UPLOAD_LIMIT, normalizeHex } from '@/store/machine';
 import { isFirebaseConfigured } from '@/utils/firebase';
 import { yarnWeightMeta } from '@/utils/patternDisplay';
+import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@/utils/progressPhoto';
 import { YARDAGE_TIERS, hookForYarnWeight, type ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
+import { hexToYarnColorName, type YarnNamedColor } from '@/utils/yarnColorExtractor';
 import { reserveDailyUpload } from '@/utils/uploadQuota';
 import { uploadsRemainingToday } from '@/utils/uploadQuotaTesting';
 
@@ -96,6 +100,7 @@ function AddYarnForm({
   const [skeinCount, setSkeinCount] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [paywall, setPaywall] = useState(false);
+  const [yarnPhotoUri, setYarnPhotoUri] = useState<string | null>(null);
   const normalized = normalizeHex(hex);
   const uploadsLeft = uploadsRemainingToday(account);
 
@@ -208,6 +213,25 @@ function AddYarnForm({
     ? YARDAGE_TIERS.find((tier) => tier.id === scannedLeftover.yardageTier)?.label
     : null;
 
+  const onSnapYarn = async (source: CaptureSource) => {
+    setError(null);
+    const captured = await captureProgressPhoto(source);
+    if (captured.status === 'canceled') return;
+    if (captured.status === 'error') {
+      setError(captureErrorMessage(captured.reason, source));
+      return;
+    }
+    setYarnPhotoUri(captured.uri);
+  };
+
+  const onDetectedColors = (colors: YarnNamedColor[]) => {
+    const primary = colors[0];
+    if (!primary) return;
+    setHex(primary.hex);
+    setColorName(primary.name);
+    setError(null);
+  };
+
   if (paywall) {
     return (
       <View style={styles.form}>
@@ -252,6 +276,39 @@ function AddYarnForm({
           {uploadsLeft} of {DAILY_UPLOAD_LIMIT} uploads left today (patterns + yarn).
         </Text>
       ) : null}
+
+      <View style={styles.snapBlock}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Snap Yarn Photo to Auto-Fill Color"
+          testID="snap-yarn-photo"
+          onPress={() => {
+            void onSnapYarn('camera');
+          }}
+          style={({ pressed }) => [styles.snap, pressed && styles.pressed, webCursor]}
+        >
+          <CameraIcon color={Colors.accentPrimary} />
+          <Text style={styles.snapText}>Snap Yarn Photo to Auto-Fill Color</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Choose a yarn photo"
+          onPress={() => {
+            void onSnapYarn('library');
+          }}
+          style={({ pressed }) => [styles.choosePhoto, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.choosePhotoText}>Choose a photo</Text>
+        </Pressable>
+      </View>
+
+      {yarnPhotoUri ? (
+        <View style={styles.photoBlock}>
+          <Image accessible accessibilityLabel="Yarn photo" source={{ uri: yarnPhotoUri }} style={styles.photo} />
+          <YarnColorSwatchPicker imageUri={yarnPhotoUri} onChange={onDetectedColors} />
+        </View>
+      ) : null}
+
       <Field label="Color">
         <View style={styles.presets}>
           {PRESET_COLORS.map((color) => {
@@ -263,7 +320,9 @@ function AddYarnForm({
                 accessibilityLabel={color}
                 accessibilityState={{ selected }}
                 onPress={() => {
-                  setHex(color);
+                  const named = hexToYarnColorName(color);
+                  setHex(named.hex);
+                  setColorName(named.name);
                   setError(null);
                 }}
                 style={({ pressed }) => [
@@ -387,6 +446,20 @@ function AddYarnForm({
   );
 }
 
+function CameraIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 8.5h3.1l1.2-2h7.4l1.2 2H20v10H4v-10Z"
+        stroke={color}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="13.2" r="2.7" stroke={color} strokeWidth={1.6} />
+    </Svg>
+  );
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <View style={styles.field}>
@@ -448,6 +521,42 @@ const styles = StyleSheet.create({
   quotaHint: {
     ...Typography.caption,
     color: Colors.textSecondary,
+  },
+  snapBlock: {
+    gap: Spacing.sm,
+  },
+  snap: {
+    minHeight: 48,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    backgroundColor: Colors.elevatedControl,
+    paddingHorizontal: Spacing.md,
+  },
+  snapText: {
+    ...Typography.label,
+    flexShrink: 1,
+    color: Colors.textPrimary,
+  },
+  choosePhoto: {
+    alignSelf: 'flex-start',
+    paddingVertical: Spacing.xxs,
+  },
+  choosePhotoText: {
+    ...Typography.caption,
+    color: Colors.accentPrimary,
+    fontWeight: FontWeight.semibold,
+  },
+  photoBlock: {
+    gap: Spacing.sm,
+  },
+  photo: {
+    width: '100%',
+    height: 160,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.elevatedControl,
   },
   input: {
     ...Typography.body,
