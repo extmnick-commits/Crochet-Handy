@@ -10,8 +10,9 @@ import { Colors, FontFamily, FontWeight, Radius, Spacing, Typography } from '@/c
 import {
   YARN_COLOR_DICTIONARY,
   YARN_COLOR_FAMILIES,
-  downscaleYarnPhoto,
   extractYarnColorsFromUri,
+  isYarnNativePaletteAvailable,
+  prepareYarnColorProbeUri,
   yarnColorSampleHtml,
   yarnSwatchesFromProbeMessage,
   type YarnNamedColor,
@@ -71,7 +72,7 @@ function PickerForPhoto({
         publish([]);
         return;
       }
-      const sampleUri = await downscaleYarnPhoto(imageUri);
+      const sampleUri = await prepareYarnColorProbeUri(imageUri);
       if (cancelled) return;
       setProbeUri(sampleUri);
     });
@@ -89,7 +90,7 @@ function PickerForPhoto({
       setSelected([]);
       setStatus('empty');
       onChangeRef.current([]);
-    }, 8000);
+    }, 15000);
     return () => clearTimeout(timer);
   }, [probeUri]);
 
@@ -141,7 +142,9 @@ function PickerForPhoto({
       ) : (
         <Text style={styles.hint}>
           {status === 'empty'
-            ? 'No yarn color stood out. Add one with +.'
+            ? isYarnNativePaletteAvailable()
+              ? 'No yarn color stood out in this photo. Tap + to add one.'
+              : 'No colors detected from this photo. Tap + to add one. Local AI only suggests scrap projects after you pick colors (dev build + downloaded engine).'
             : 'Tap a swatch to drop a background color. The first selected swatch is the one that gets used.'}
         </Text>
       )}

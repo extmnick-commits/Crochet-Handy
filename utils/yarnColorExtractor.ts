@@ -7,6 +7,10 @@
  * On native without a DOM, the photo is downscaled with `expo-image-manipulator`
  * and the swatch picker samples that bitmap in a tiny canvas page.
  */
+import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
+
 import { normalizeHex } from '@/store/machine';
 
 export type YarnColorFamily =
@@ -216,6 +220,36 @@ export async function extractYarnColorsFromUri(imageUri: string): Promise<YarnNa
 }
 
 /** Shrink a photo before the native canvas probe. The original uri is kept if resize fails. */
+/** True when `react-native-image-colors` is linked (not Expo Go / web). */
+export function isYarnNativePaletteAvailable(): boolean {
+  if (Platform.OS === 'web') return false;
+  if (Constants.executionEnvironment === 'storeClient') return false;
+  return hasImageColorsNativeModule();
+}
+
+/**
+ * Expo Go samples yarn colors in a hidden WebView. `content://` and some `file://`
+ * URIs cannot be drawn to canvas there, so convert to a JPEG data URL when needed.
+ */
+export async function prepareYarnColorProbeUri(imageUri: string): Promise<string> {
+  const uri = imageUri.trim();
+  if (!uri) return uri;
+  const scaled = await downscaleYarnPhoto(uri);
+  const candidate = scaled.trim() || uri;
+  if (candidate.startsWith('data:image/')) return candidate;
+  try {
+    const base64 = await FileSystem.readAsStringAsync(candidate, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    if (!base64) return candidate;
+    const lower = candidate.toLowerCase();
+    const mime = lower.includes('.png') ? 'image/png' : 'image/jpeg';
+    return `data:${mime};base64,${base64}`;
+  } catch {
+    return candidate;
+  }
+}
+
 export async function downscaleYarnPhoto(imageUri: string): Promise<string> {
   const uri = imageUri.trim();
   if (!uri) return imageUri;
@@ -378,18 +412,49 @@ async function readNativePalette(uri: string): Promise<string[]> {
   }
 }
 
+let imageColorsGetColors: ImageColorsModule['getColors'] | null | undefined;
+
 function loadImageColors(): ImageColorsModule['getColors'] | null {
+  if (imageColorsGetColors !== undefined) return imageColorsGetColors;
+  imageColorsGetColors = null;
+
+  if (Platform.OS === 'web') return imageColorsGetColors;
+  // Expo Go cannot load custom native modules; the swatch picker falls back to the canvas WebView probe.
+  if (Constants.executionEnvironment === 'storeClient') return imageColorsGetColors;
+  if (!hasImageColorsNativeModule()) return imageColorsGetColors;
+
   try {
-    // Dynamic require: Expo Go has no ImageColors native module and must not crash at import.
+    // Dynamic require: the package calls requireNativeModule at import time and must not load without ImageColors.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const loaded: unknown = require('react-native-image-colors');
-    if (!loaded || typeof loaded !== 'object') return null;
+    if (!loaded || typeof loaded !== 'object') return imageColorsGetColors;
     const module = loaded as ImageColorsModule;
-    if (typeof module.getColors === 'function') return module.getColors;
-    if (typeof module.default?.getColors === 'function') return module.default.getColors;
-    return null;
+    if (typeof module.getColors === 'function') {
+      imageColorsGetColors = module.getColors;
+      return imageColorsGetColors;
+    }
+    if (typeof module.default?.getColors === 'function') {
+      imageColorsGetColors = module.default.getColors;
+      return imageColorsGetColors;
+    }
   } catch {
-    return null;
+    imageColorsGetColors = null;
+  }
+  return imageColorsGetColors;
+}
+
+function hasImageColorsNativeModule(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const core = require('expo-modules-core') as {
+      requireOptionalNativeModule?: (name: string) => unknown;
+    };
+    return (
+      typeof core.requireOptionalNativeModule === 'function' &&
+      core.requireOptionalNativeModule('ImageColors') != null
+    );
+  } catch {
+    return false;
   }
 }
 

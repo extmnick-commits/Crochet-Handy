@@ -38,6 +38,7 @@
       "themeColor": "#121212"
     },
     "plugins": [
+      "expo-dev-client",
       [
         "expo-build-properties",
         {
