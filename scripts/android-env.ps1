@@ -66,7 +66,8 @@ Install: winget install Microsoft.OpenJDK.17
 $env:JAVA_HOME = $jdk17
 $pathParts = @("$jdk17\bin") + ($env:PATH -split ';' | Where-Object { $_ -and $_ -notmatch '(?i)\\java\\' })
 $env:PATH = ($pathParts | Select-Object -Unique) -join ';'
-$env:GRADLE_USER_HOME = if ($env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME } else { Join-Path $env:USERPROFILE ".gradle" }
+# Always use the user Gradle cache (sandboxed shells may point elsewhere and break dependency downloads).
+$env:GRADLE_USER_HOME = Join-Path $env:USERPROFILE ".gradle"
 $env:NODE_ENV = if ($env:NODE_ENV) { $env:NODE_ENV } else { "development" }
 
 Write-AndroidLocalProperties -ProjectRoot $projectRoot
