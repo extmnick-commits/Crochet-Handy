@@ -11,7 +11,7 @@ import {
   type ScrapSizeClass,
 } from '@/utils/scrapCatalogRank';
 import { scrapCatalogSuggestions, type ScrapCatalogSuggestion } from '@/utils/patternCatalog';
-import { searchAmount, type QuantityCategory } from '@/utils/scrapVisionOutput';
+import { searchAmount, type QuantityCategory, type VisionSubject } from '@/utils/scrapVisionOutput';
 
 export type VisionCatalogCard = ScrapCatalogSuggestion & {
   reason: string;
@@ -35,16 +35,32 @@ export function recommendConfirmedCatalog(input: ConfirmedYarnSearch): Confirmed
   if (input.yarnCategory === 'uncertain') return { status: 'need-category' };
   const amount = searchAmount(input);
   if (!amount) return { status: 'need-amount' };
-  const weight = input.yarnCategory;
+  return catalogResults(input);
+}
+
+/** Missing estimates widen the suggestions instead of blocking the results screen. */
+export function recommendScannedCatalog(
+  input: ConfirmedYarnSearch & { subjects: readonly VisionSubject[] },
+): ConfirmedCatalogResult {
+  const showsYarn = input.subjects.some((subject) => subject === 'loose-yarn' || subject === 'fabric' || subject === 'label');
+  if (!showsYarn && (input.subjects.includes('none') || !input.subjects.includes('uncertain'))) {
+    return { status: 'results', cards: [], amountNote: 'No yarn was identified. Try a clearer photo, or edit the yarn details.' };
+  }
+  return catalogResults(input);
+}
+
+function catalogResults(input: ConfirmedYarnSearch): ConfirmedCatalogResult {
+  const amount = searchAmount(input);
+  const weight = input.yarnCategory === 'uncertain' ? undefined : input.yarnCategory;
   const ranked = scrapCatalogSuggestions({
     yarnWeight: weight,
-    availableYards: amount.yards,
-    limit: 12,
+    availableYards: amount?.yards,
+    // Filter before taking six: the highest-ranked rows may all be a larger size.
+    limit: Number.MAX_SAFE_INTEGER,
   });
   const cards: VisionCatalogCard[] = [];
   for (const item of ranked) {
-    const distance = weightDistance(item.pattern.yarnWeight, weight);
-    if (distance > 1) continue;
+    if (weight && weightDistance(item.pattern.yarnWeight, weight) > 1) continue;
     const size = planningSizeForPattern({
       id: item.pattern.id,
       title: item.pattern.title,
@@ -53,19 +69,26 @@ export function recommendConfirmedCatalog(input: ConfirmedYarnSearch): Confirmed
       yarnWeight: item.pattern.yarnWeight,
     });
     if (!size) continue;
+    if (!amount && size.id === 'medium') continue;
     const seed = SEED_PATTERNS.find((entry) => entry.id === item.pattern.id);
     cards.push({
       ...item,
       sizeClass: size.id,
-      reason: visionFitReason(item.pattern.yarnWeight, weight, size.id),
+      reason: weight
+        ? visionFitReason(item.pattern.yarnWeight, weight, size.id).replace('the yarn you confirmed', 'your selected or estimated yarn')
+        : 'A small-project idea. Check the tutorial’s yarn weight and hook before starting.',
       materialsNote: tutorialMaterialsNote(seed ? seed.materials : null),
     });
     if (cards.length === 6) break;
   }
-  const amountNote =
-    amount.kind === 'entered-yards'
+  const amountNote = [
+    !weight ? 'Yarn thickness is uncertain, so these ideas cover different yarn weights.' : '',
+    !amount
+      ? 'Amount is unknown. Showing small-project ideas; check the yarn needed in each tutorial.'
+      : amount.kind === 'entered-yards'
       ? 'Searching with the yards you entered. A match is not a guarantee that the leftovers are enough.'
-      : 'Searching with a rough amount, not a measured yardage. A match is not a guarantee that the leftovers are enough.';
+      : 'Using a rough amount estimate. Check that you have enough yarn for the tutorial.',
+  ].filter(Boolean).join(' ');
   return { status: 'results', cards, amountNote };
 }
 

@@ -14,6 +14,7 @@ import {
 import { visionModelPair } from '@/utils/scrapModelPin';
 import { modelTransferStatusLabel, ScrapEngineBusyError, ScrapTransferCancelledError, type ModelTransferProgress } from '@/utils/scrapModelTransfer';
 import type { PatternDraftCheck, PatternDraftRequest } from '@/utils/scrapPatternDraft';
+import type { VisionScanDetail } from '@/utils/scrapVisionConfig';
 import { isLocalScrapAiSupported } from '@/utils/scrapYarnAi';
 import {
   cancelActiveVisionAnalysis,
@@ -123,6 +124,7 @@ async function prepareVisionPair(): Promise<{ textPath: string; projectorPath: s
 export async function analyzeLeftoverPhoto(input: {
   imageUri: string;
   photoGeneration: number;
+  scanDetail?: VisionScanDetail;
   isCurrent: () => boolean;
   onProgress?: (update: ModelTransferProgress) => void;
   onPhase?: (phase: 'load' | 'read') => void;
@@ -156,6 +158,7 @@ export async function analyzeLeftoverPhoto(input: {
     projectorPath: paths.projectorPath,
     imageUri: input.imageUri,
     photoGeneration: input.photoGeneration,
+    scanDetail: input.scanDetail,
     isCurrent: input.isCurrent,
     onPhase: input.onPhase,
   });

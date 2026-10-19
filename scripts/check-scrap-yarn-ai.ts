@@ -21,6 +21,7 @@ import {
 import { hookRangeLabel } from '../utils/scrapHookRange';
 import { checkPatternDraft } from '../utils/scrapPatternDraft';
 import { parseVisionFindings, searchAmount, visionPromptMentionsColor } from '../utils/scrapVisionOutput';
+import { VISION_SCAN_PROFILES } from '../utils/scrapVisionConfig';
 import {
   resetVisionSessionForTests,
   runVisionAnalysis,
@@ -80,6 +81,7 @@ async function main() {
   checkVisionFindings();
   checkVisionCatalog();
   await checkVisionSessions();
+  await checkQuickScanAndOverlap();
   checkPatternDrafts();
   checkComparison();
   checkNativeConfig();
@@ -794,6 +796,42 @@ async function checkVisionSessions() {
     ScrapChecksumError,
     'a corrupt projector',
   );
+}
+
+async function checkQuickScanAndOverlap() {
+  assert(VISION_SCAN_PROFILES.quick.longEdge < VISION_SCAN_PROFILES.detailed.longEdge, 'quick scans reduce the photo dimensions');
+  resetVisionSessionForTests();
+  let resolveInit: (context: VisionLlamaContext) => void = () => undefined;
+  let requestedTokens = 0;
+  let contextTokens = 0;
+  const args = {
+    runtime: {
+      initLlama: (params: { n_ctx: number }) => {
+        contextTokens = params.n_ctx;
+        return new Promise<VisionLlamaContext>((resolve) => { resolveInit = resolve; });
+      },
+    },
+    supported: true,
+    platform: 'android' as const,
+    modelPath: 'file://model.gguf',
+    projectorPath: 'file://projector.gguf',
+    imageUri: 'file://first-photo.jpg',
+    photoGeneration: 100,
+    isCurrent: () => true,
+  };
+  const first = runVisionAnalysis(args);
+  equal(runVisionAnalysis(args), first, 'the same pending photo joins its existing scan');
+  const overlap = await runVisionAnalysis({ ...args, imageUri: 'file://different-photo.jpg', photoGeneration: 101 });
+  equal(overlap.status, 'failed', 'a new photo never receives the previous photo’s pending result');
+  const context = visionContext('{"subjects":["loose-yarn"],"yarnCategory":"dk","quantityCategory":"25-75"}');
+  context.initMultimodal = async (params) => { requestedTokens = params.image_max_tokens ?? 0; return true; };
+  resolveInit(context);
+  equal((await first).status, 'findings', 'the original scan still finishes');
+  equal(requestedTokens, VISION_SCAN_PROFILES.quick.imageTokens, 'default scans actually apply the smaller image token budget');
+  assert(contextTokens >= requestedTokens + 700 && contextTokens < 4096, 'quick scans retain room for prompt and reply in a smaller context');
+  resetVisionSessionForTests();
+  await runVisionAnalysis({ ...args, scanDetail: 'detailed', runtime: { initLlama: async () => context } });
+  equal(requestedTokens, VISION_SCAN_PROFILES.detailed.imageTokens, 'a detailed rescan restores the larger token budget');
 }
 
 function checkPatternDrafts() {

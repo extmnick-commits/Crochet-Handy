@@ -11,6 +11,7 @@ import {
   type PatternDraftRequest,
 } from '@/utils/scrapPatternDraft';
 import { visionModelPair, type VisionModelPair } from '@/utils/scrapModelPin';
+import { VISION_SCAN_PROFILES, type VisionScanDetail } from '@/utils/scrapVisionConfig';
 import {
   parseVisionFindings,
   VISION_FINDINGS_SCHEMA,
@@ -21,8 +22,7 @@ import {
 
 export const VISION_TIMEOUT_MS = 300_000;
 export const VISION_TIMEOUT_ANDROID_MS = 720_000;
-export const VISION_CONTEXT_TOKENS = 4096;
-export const VISION_IMAGE_TOKENS = 512;
+export const VISION_CONTEXT_TOKENS = 2048;
 
 const visionDevLog = (label: string, detail: string): void => {
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
@@ -68,6 +68,7 @@ export type VisionAnalysisArgs = {
   modelPath: string;
   projectorPath: string;
   imageUri: string;
+  scanDetail?: VisionScanDetail;
   photoGeneration: number;
   isCurrent: () => boolean;
   timeoutMs?: number;
@@ -83,11 +84,13 @@ type SessionControl = {
 
 let activeControl: SessionControl | null = null;
 let inFlight: Promise<VisionAnalysisResult> | null = null;
+let inFlightKey: string | null = null;
 
 export function resetVisionSessionForTests(): void {
   activeControl?.cancel();
   activeControl = null;
   inFlight = null;
+  inFlightKey = null;
   resetScrapEngineLockForTests();
 }
 
@@ -100,11 +103,19 @@ export function visionInitPlan(platform: VisionSessionPlatform): VisionModelPair
 }
 
 export function runVisionAnalysis(args: VisionAnalysisArgs): Promise<VisionAnalysisResult> {
-  if (inFlight) return inFlight;
+  const key = JSON.stringify([args.modelPath, args.projectorPath, args.imageUri, args.photoGeneration, args.scanDetail ?? 'quick']);
+  if (inFlight) {
+    if (inFlightKey === key) return inFlight;
+    return Promise.resolve({ status: 'failed', message: 'On-device analysis is busy stopping the previous scan. Try again in a moment.' });
+  }
+  inFlightKey = key;
   const promise = executeVision(args);
   inFlight = promise;
   void promise.finally(() => {
-    if (inFlight === promise) inFlight = null;
+    if (inFlight === promise) {
+      inFlight = null;
+      inFlightKey = null;
+    }
   });
   return promise;
 }
@@ -128,7 +139,7 @@ async function executeVision(args: VisionAnalysisArgs): Promise<VisionAnalysisRe
       let loaded = false;
       try {
         args.onPhase?.('load');
-        context = await initVisionContext(args.runtime!, args.modelPath, args.platform);
+        context = await initVisionContext(args.runtime!, args.modelPath, args.platform, VISION_CONTEXT_TOKENS);
         loaded = true;
         control.context = context;
         if (control.cancelled) return { status: 'cancelled' };
@@ -136,7 +147,7 @@ async function executeVision(args: VisionAnalysisArgs): Promise<VisionAnalysisRe
         const enabled = await context.initMultimodal({
           path: args.projectorPath,
           use_gpu: args.platform === 'ios',
-          image_max_tokens: VISION_IMAGE_TOKENS,
+          image_max_tokens: VISION_SCAN_PROFILES[args.scanDetail ?? 'quick'].imageTokens,
         });
         const support = enabled ? await context.getMultimodalSupport() : { vision: false, audio: false };
         if (!enabled || !support.vision) {
@@ -237,10 +248,11 @@ async function initVisionContext(
   runtime: VisionLlamaRuntime,
   model: string,
   platform: VisionSessionPlatform,
+  contextTokens = 4096,
 ): Promise<VisionLlamaContext> {
   const params = {
     model,
-    n_ctx: VISION_CONTEXT_TOKENS,
+    n_ctx: contextTokens,
     n_gpu_layers: 99,
     ctx_shift: false as const,
   };
