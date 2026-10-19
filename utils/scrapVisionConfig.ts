@@ -2,6 +2,7 @@
 export type VisionScanDetail = 'quick' | 'detailed';
 
 export const VISION_SCAN_PROFILES = {
-  quick: { longEdge: 448, imageTokens: 256 },
+  /** Tuned for ~60s scans on mid-range Android (smaller encoder budget than detailed). */
+  quick: { longEdge: 384, imageTokens: 128 },
   detailed: { longEdge: 768, imageTokens: 512 },
 } as const;

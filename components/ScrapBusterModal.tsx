@@ -37,6 +37,7 @@ import {
   analyzeLeftoverPhoto,
   cancelActiveVisionAnalysis,
   cancelVisionDownload,
+  warmLeftoverVisionEngine,
 } from '@/utils/scrapVisionRun';
 
 type ScrapBusterModalProps = {
@@ -53,6 +54,9 @@ function useLeftoverYarnDraft() {
 
 export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern, onSaveToStash }: ScrapBusterModalProps) {
   const draft = useLeftoverYarnDraft();
+  useEffect(() => {
+    if (visible) warmLeftoverVisionEngine();
+  }, [visible]);
   return (
     <BottomSheet
       visible={visible}
@@ -150,6 +154,7 @@ function ScrapBusterForm({
     setMessage(null);
     setProgress(null);
     setBusy('Preparing your photo');
+    const startedAt = Date.now();
     try {
       const imageUri = await prepareVisionPhoto(source.photoUri, detail);
       if (!isCurrent()) return;
@@ -170,6 +175,15 @@ function ScrapBusterForm({
         },
       });
       if (!isCurrent()) return;
+      if (__DEV__) {
+        console.warn('[vision-measure]', JSON.stringify({
+          phase: 'sheet',
+          detail,
+          totalMs: Date.now() - startedAt,
+          status: result.status,
+          findings: result.status === 'findings' ? result.findings : null,
+        }));
+      }
       if (result.status === 'findings') {
         if (applyVisionFindings(source.photoGeneration, result.findings)) refreshMatches();
       } else if (result.status === 'failed' || result.status === 'unsupported') {

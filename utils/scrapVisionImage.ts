@@ -12,6 +12,16 @@ export async function prepareVisionPhoto(uri: string, detail: VisionScanDetail =
   const actions = size ? resizeActions(size.width, size.height, longEdge) : [{ resize: { width: longEdge } }];
   const result = await manipulateAsync(uri, actions, { compress: 0.85, format: SaveFormat.JPEG });
   if (!result.uri) throw new Error('The photo could not be prepared.');
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    console.warn('[vision-measure]', JSON.stringify({
+      phase: 'prepare',
+      detail,
+      sourceWidth: size?.width ?? null,
+      sourceHeight: size?.height ?? null,
+      width: result.width,
+      height: result.height,
+    }));
+  }
   return result.uri.startsWith('file://') || result.uri.startsWith('data:') ? result.uri : `file://${result.uri}`;
 }
 

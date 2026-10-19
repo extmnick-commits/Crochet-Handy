@@ -20,6 +20,7 @@ import {
   cancelActiveVisionAnalysis,
   runPatternDraft,
   runVisionAnalysis,
+  warmVisionAnalysisPool,
   type VisionAnalysisResult,
   type VisionLlamaRuntime,
   type VisionSessionPlatform,
@@ -69,6 +70,27 @@ function publishVisionStatus(next: VisionModelStatus, force = false): void {
 /** Start the platform vision download without blocking launch. A later scan joins the same download. */
 export function prefetchVisionModels(): void {
   void ensureVisionPair().catch(() => undefined);
+}
+
+/** Load the on-device vision stack while the leftover-yarn sheet is open (best-effort). */
+export function warmLeftoverVisionEngine(onProgress?: (update: ModelTransferProgress) => void): void {
+  void (async () => {
+    try {
+      const platform = sessionPlatform();
+      const runtime = loadVisionRuntime();
+      if (!isLocalScrapAiSupported() || visionModelPair(platform) == null || runtime == null) return;
+      const paths = await ensureVisionPair(onProgress);
+      await warmVisionAnalysisPool({
+        runtime,
+        platform,
+        modelPath: paths.textPath,
+        projectorPath: paths.projectorPath,
+        scanDetail: 'quick',
+      });
+    } catch {
+      // Warming is optional.
+    }
+  })();
 }
 
 export function ensureVisionPair(

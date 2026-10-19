@@ -696,7 +696,7 @@ async function checkVisionSessions() {
   equal(android.status, 'findings', 'a CPU retry can still return findings');
   equal(projectorGpu, false, 'the Android projector stays on the CPU');
   assert(projectorPath.includes('mmproj-F16'), 'Android loads the projector path it was given');
-  equal(released, 1, 'the vision context is released');
+  equal(released, 0, 'the vision context stays warm after a scan');
 
   resetVisionSessionForTests();
   let sawImage = false;
