@@ -31,6 +31,7 @@ import {
   updateLeftoverYarnDraft,
 } from '../utils/leftoverYarnDraft';
 import { colorsFromRegionPixels, yarnCropSampleHtml } from '../utils/yarnColorMath';
+import { ideasFromPlans, rankScrapPlans } from '../utils/scrapPlans';
 import {
   containImageRect,
   framePointToImageNorm,
@@ -74,6 +75,7 @@ function main() {
   checkCoordinates();
   checkProbeHtml();
   checkThumbnails();
+  checkProjectsWithoutColors();
   checkSessionAndPreview();
   console.log('leftover yarn checks passed');
 }
@@ -218,6 +220,20 @@ function checkThumbnails() {
   equal(displayThumbnail('https://example.com/thumb.jpg', true), null, 'broken image uses the fallback');
   equal(displayThumbnail('https://example.com/thumb.jpg', false), 'https://example.com/thumb.jpg', 'loaded image stays');
   equal(displayThumbnail(null, false), null, 'missing image uses the fallback');
+}
+
+function checkProjectsWithoutColors() {
+  const ideas = ideasFromPlans(rankScrapPlans(75), [], 'worsted');
+  equal(ideas.length, 3, 'three projects for a 75 yard ball');
+  equal(ideas[0]?.title, 'Striped coaster pair', 'largest fitting project');
+  assert(
+    ideas.every((idea) => !idea.title.includes('#') && !/cream|teal|navy|color/i.test(idea.title)),
+    `project titles, got ${ideas.map((idea) => idea.title).join(', ')}`,
+  );
+  assert(
+    ideas.every((idea) => !idea.colorPlacement.toLowerCase().includes('color')),
+    'project copy does not talk about a sampled color',
+  );
 }
 
 function checkSessionAndPreview() {

@@ -61,7 +61,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 12,
     difficulty: 'beginner',
     layout: 'detail',
-    title: (colors) => `${primaryName(colors)} keychain charm`,
+    title: (colors) => projectTitle(colors, 'Keychain charm'),
   },
   {
     id: 'hair-scrunchie',
@@ -69,7 +69,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 20,
     difficulty: 'beginner',
     layout: 'stripe',
-    title: (colors) => `${colorPhrase(colors)} hair scrunchie`,
+    title: (colors) => projectTitle(colors, 'Hair scrunchie'),
   },
   {
     id: 'mug-coaster',
@@ -77,7 +77,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 24,
     difficulty: 'easy',
     layout: 'block',
-    title: (colors) => `${primaryName(colors)} mug coaster`,
+    title: (colors) => projectTitle(colors, 'Mug coaster'),
   },
   {
     id: 'scrunchie-set',
@@ -85,7 +85,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 36,
     difficulty: 'beginner',
     layout: 'block',
-    title: (colors) => `${colorPhrase(colors)} scrunchie set`,
+    title: (colors) => projectTitle(colors, 'Scrunchie set'),
   },
   {
     id: 'amigurumi-keychain',
@@ -93,7 +93,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 45,
     difficulty: 'easy',
     layout: 'detail',
-    title: (colors) => `${primaryName(colors)} amigurumi keychain`,
+    title: (colors) => projectTitle(colors, 'Amigurumi keychain'),
   },
   {
     id: 'coaster-pair',
@@ -101,7 +101,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 55,
     difficulty: 'easy',
     layout: 'stripe',
-    title: (colors) => `${colorPhrase(colors)} striped coaster pair`,
+    title: (colors) => projectTitle(colors, 'Striped coaster pair'),
   },
   {
     id: 'striped-dishcloth',
@@ -109,7 +109,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 80,
     difficulty: 'beginner',
     layout: 'stripe',
-    title: (colors) => `${colorPhrase(colors)} striped dishcloth`,
+    title: (colors) => projectTitle(colors, 'Striped dishcloth'),
   },
   {
     id: 'color-block-headband',
@@ -117,7 +117,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 95,
     difficulty: 'easy',
     layout: 'block',
-    title: (colors) => `${colorPhrase(colors)} color-block headband`,
+    title: (colors) => projectTitle(colors, 'Color-block headband'),
   },
   {
     id: 'mini-amigurumi',
@@ -125,7 +125,7 @@ export const SCRAP_PLANS: readonly ScrapPlan[] = [
     estimatedYards: 120,
     difficulty: 'intermediate',
     layout: 'detail',
-    title: (colors) => `${primaryName(colors)} mini amigurumi`,
+    title: (colors) => projectTitle(colors, 'Mini amigurumi'),
   },
 ];
 
@@ -202,13 +202,14 @@ export function colorToken(color: ScrapColorRef): string {
   return `${color.name.trim()} (${color.hex.trim()})`;
 }
 
-function primaryName(colors: readonly ScrapColorRef[]): string {
-  return colors[0]?.name.trim() || 'Leftover';
+function projectTitle(colors: readonly ScrapColorRef[], project: string): string {
+  const name = colorPhrase(colors);
+  return name ? `${name} ${project.charAt(0).toLowerCase()}${project.slice(1)}` : project;
 }
 
 function colorPhrase(colors: readonly ScrapColorRef[]): string {
   const names = colors.map((color) => color.name.trim()).filter((name) => name.length > 0);
-  if (names.length === 0) return 'Leftover';
+  if (names.length === 0) return '';
   if (names.length === 1) return names[0];
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
@@ -219,8 +220,12 @@ export function placementFor(
   colors: readonly ScrapColorRef[],
   weight: YarnWeight,
 ): string {
+  if (colors.length === 0) {
+    const weightLabel = weight === 'super-bulky' ? 'super bulky' : weight;
+    return `Use ${weightLabel} weight. Yardage is a planning estimate for this project.`;
+  }
   const labels = colors.map(colorToken);
-  const primary = labels[0] ?? 'the main color';
+  const primary = labels[0] ?? 'the yarn';
   const second = labels[1] ?? primary;
   const third = labels[2] ?? second;
   const weightLabel = weight === 'super-bulky' ? 'super bulky' : weight;

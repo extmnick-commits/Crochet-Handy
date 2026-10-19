@@ -434,11 +434,9 @@ export function offlineScrapSuggestion(input: {
     limit: 6,
   });
   const note =
-    input.colors.length === 0
-      ? 'Confirm at least one sampled color. The text model does not look at the photo.'
-      : ideas.length === 0
-        ? 'None of the planning estimates fit this yard total.'
-        : 'These are planning estimates for the colors you confirmed. The text model does not see the photo.';
+    ideas.length === 0
+      ? 'None of the planning estimates fit this yard total.'
+      : 'These projects fit the yarn weight and yards. Yardage is a planning estimate.';
   return {
     source: 'offline-rules',
     ideas,
