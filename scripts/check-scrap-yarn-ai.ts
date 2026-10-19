@@ -503,6 +503,15 @@ function checkVisionFindings() {
   assert(fabric?.stitches !== 'uncertain' && fabric?.stitches[0]?.name === 'single crochet', 'a clear fabric photo can name a stitch');
   equal(fabric?.hookObservedMarking, null, 'a hook marking is ignored when no hook is visible');
   equal(parseVisionFindings('not json'), null, 'invalid model text is rejected');
+  const fenced = parseVisionFindings(
+    'Here is the photo:\n```json\n{"subjects":["yarn","hook"],"yarnCategory":"worsted weight","categorySource":"guess","labelText":null,"hookObservedMarking":"5.0 mm","stitches":"uncertain","quantityCategory":"a skein"}\n```',
+  );
+  assert(fenced?.subjects.includes('loose-yarn') && fenced.subjects.includes('hook'), 'a fenced reply with plain names is kept');
+  equal(fenced?.yarnCategory, 'worsted', 'a weight phrase in the category is kept');
+  equal(fenced?.quantityCategory, 'uncertain', 'an unknown amount stays uncertain');
+  const prose = parseVisionFindings('The photo shows balls of yarn and a crochet hook.');
+  assert(prose?.subjects.includes('loose-yarn') && prose.subjects.includes('hook'), 'a plain description can name yarn and a hook');
+  equal(prose?.yarnCategory, 'uncertain', 'a description without a weight does not invent one');
 }
 
 function checkVisionCatalog() {
@@ -579,7 +588,7 @@ async function checkVisionSessions() {
   equal(androidCalls.join(','), '99,0', 'Android retries the text model once on CPU');
   equal(android.status, 'findings', 'a CPU retry can still return findings');
   equal(projectorGpu, false, 'the Android projector stays on the CPU');
-  assert(projectorPath.includes('mmproj-F16'), 'Android loads the F16 projector');
+  assert(projectorPath.includes('mmproj-F16'), 'Android loads the projector path it was given');
   equal(released, 1, 'the vision context is released');
 
   resetVisionSessionForTests();

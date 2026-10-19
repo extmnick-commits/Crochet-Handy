@@ -4,7 +4,13 @@
  */
 import { Directory, File, FileMode, Paths } from 'expo-file-system';
 
-import { SCRAP_HASH_CHUNK_BYTES, SCRAP_MODEL_PIN, visionModelPair, type VisionModelPair } from '@/utils/scrapModelPin';
+import {
+  OBSOLETE_ANDROID_VISION_FILENAMES,
+  SCRAP_HASH_CHUNK_BYTES,
+  SCRAP_MODEL_PIN,
+  visionModelPair,
+  type VisionModelPair,
+} from '@/utils/scrapModelPin';
 import {
   deletePinnedModel,
   downloadPinnedModel,
@@ -85,8 +91,18 @@ function expoTransferIO(): ModelTransferIO {
     download: async ({ url, destination, onProgress, bindCancel }) => {
       const file = fileAt(destination);
       if (file.exists) file.delete();
+      let lastAt = 0;
+      let lastRatio = -1;
       const task = File.createDownloadTask(url, file, {
-        onProgress: ({ bytesWritten, totalBytes }) => onProgress(bytesWritten, totalBytes),
+        onProgress: ({ bytesWritten, totalBytes }) => {
+          const now = Date.now();
+          const ratio = totalBytes > 0 ? bytesWritten / totalBytes : 0;
+          const finished = totalBytes > 0 && bytesWritten >= totalBytes;
+          if (!finished && now - lastAt < 400 && ratio - lastRatio < 0.01) return;
+          lastAt = now;
+          lastRatio = ratio;
+          onProgress(bytesWritten, totalBytes);
+        },
       });
       bindCancel(() => task.cancel());
       await task.downloadAsync();
@@ -115,6 +131,17 @@ export async function downloadInstalledScrapModel(
     onProgress,
     cancel,
   );
+}
+
+/** Paths when inspectInstalledVisionPair already returned ready. Does not download. */
+export function installedVisionPairPaths(platform: string): { textPath: string; projectorPath: string } | null {
+  const pair = visionModelPair(platform);
+  const directory = scrapModelDirectoryUri();
+  if (!pair || !directory) return null;
+  return {
+    textPath: scrapModelPaths(directory, pair.text.filename).final,
+    projectorPath: scrapModelPaths(directory, pair.projector.filename).final,
+  };
 }
 
 export async function inspectInstalledVisionPair(
@@ -149,6 +176,18 @@ function visionTransferItems(directory: string, pair: VisionModelPair) {
     { pin: pair.text, paths: scrapModelPaths(directory, pair.text.filename) },
     { pin: pair.projector, paths: scrapModelPaths(directory, pair.projector.filename) },
   ];
+}
+
+export async function deleteObsoleteAndroidVisionFiles(): Promise<void> {
+  const directory = scrapModelDirectoryUri();
+  if (!directory) return;
+  const io = expoTransferIO();
+  for (const filename of OBSOLETE_ANDROID_VISION_FILENAMES) {
+    const paths = scrapModelPaths(directory, filename);
+    await io.deleteFile(paths.final);
+    await io.deleteFile(paths.partial);
+    await io.deleteFile(paths.receipt);
+  }
 }
 
 export async function deleteInstalledScrapModel(): Promise<void> {

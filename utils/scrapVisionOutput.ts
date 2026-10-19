@@ -118,23 +118,27 @@ export const VISION_SYSTEM_PROMPT = [
   'Name stitches only when crocheted fabric is clear.',
 ].join(' ');
 
-export const VISION_USER_PROMPT =
-  'What is in this photo? Identify loose yarn, crocheted fabric, a hook, or a readable yarn label. Estimate a yarn category only when the photo supports it.';
+export const VISION_USER_PROMPT = [
+  'What is in this photo? Identify loose yarn, crocheted fabric, a hook, or a readable yarn label. Estimate a yarn category only when the photo supports it.',
+  'Reply with one JSON object and no other text.',
+  '{"subjects":["loose-yarn"],"yarnCategory":"uncertain","categorySource":"uncertain","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}',
+].join(' ');
 
 export function visionPromptMentionsColor(): boolean {
   return /color/i.test(`${VISION_SYSTEM_PROMPT}\n${VISION_USER_PROMPT}`);
 }
 
 export function parseVisionFindings(text: string): YarnVisionFindings | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return null;
+  const parsed = extractJsonObject(text);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const findings = findingsFromRecord(parsed as Record<string, unknown>);
+    if (findings) return findings;
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  const record = parsed as Record<string, unknown>;
-  const subjects = readSubjects(record.subjects);
+  return findingsFromProse(text);
+}
+
+function findingsFromRecord(record: Record<string, unknown>): YarnVisionFindings | null {
+  const subjects = readSubjects(record.subjects) ?? subjectsFromText(Object.values(record).join(' '));
   if (!subjects) return null;
   const labelText = readOptionalText(record.labelText);
   const labeled = weightFromLabel(labelText);
@@ -144,7 +148,7 @@ export function parseVisionFindings(text: string): YarnVisionFindings | null {
     ? 'label'
     : yarnCategory === 'uncertain'
       ? 'uncertain'
-      : 'visual';
+      : readCategorySource(record.categorySource, yarnCategory);
   const seesHook = subjects.includes('hook');
   const hookObservedMarking = seesHook ? readHookMarking(record.hookObservedMarking) : null;
   const stitches = subjects.includes('fabric') ? readStitches(record.stitches) : 'uncertain';
@@ -158,6 +162,44 @@ export function parseVisionFindings(text: string): YarnVisionFindings | null {
     stitches,
     quantityCategory,
   };
+}
+
+function findingsFromProse(text: string): YarnVisionFindings | null {
+  const subjects = subjectsFromText(text);
+  if (!subjects) return null;
+  const yarnCategory = weightFromLabel(text) ?? 'uncertain';
+  return {
+    subjects,
+    yarnCategory,
+    categorySource: yarnCategory === 'uncertain' ? 'uncertain' : 'visual',
+    labelText: null,
+    hookObservedMarking: subjects.includes('hook') ? readHookMarking(text) : null,
+    stitches: 'uncertain',
+    quantityCategory: 'uncertain',
+  };
+}
+
+function extractJsonObject(text: string): unknown | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const source = fenced?.[1] ?? text;
+  const start = source.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return JSON.parse(source.slice(start, index + 1)) as unknown;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export function weightFromLabel(text: string | null): YarnWeight | null {
@@ -204,21 +246,64 @@ export function emptyVisionFindings(): YarnVisionFindings {
   };
 }
 
+const SUBJECT_ALIASES: Record<string, VisionSubject> = {
+  'loose-yarn': 'loose-yarn',
+  'loose yarn': 'loose-yarn',
+  yarn: 'loose-yarn',
+  skein: 'loose-yarn',
+  skeins: 'loose-yarn',
+  ball: 'loose-yarn',
+  balls: 'loose-yarn',
+  fabric: 'fabric',
+  crochet: 'fabric',
+  crocheted: 'fabric',
+  'crocheted fabric': 'fabric',
+  hook: 'hook',
+  'crochet hook': 'hook',
+  label: 'label',
+  'yarn label': 'label',
+  none: 'none',
+  uncertain: 'uncertain',
+  unknown: 'uncertain',
+};
+
 function readSubjects(value: unknown): VisionSubject[] | null {
-  if (!Array.isArray(value) || value.length === 0) return null;
+  const entries = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/,|\/|\band\b/) : [];
   const subjects: VisionSubject[] = [];
-  for (const entry of value) {
-    if (typeof entry !== 'string' || !VISION_SUBJECTS.includes(entry as VisionSubject)) return null;
-    const subject = entry as VisionSubject;
-    if (!subjects.includes(subject)) subjects.push(subject);
+  for (const entry of entries) {
+    if (typeof entry !== 'string') continue;
+    const subject = SUBJECT_ALIASES[entry.trim().toLowerCase()];
+    if (subject && !subjects.includes(subject)) subjects.push(subject);
   }
-  return subjects;
+  const named = subjects.filter((subject) => subject !== 'none' && subject !== 'uncertain');
+  if (named.length > 0) return named;
+  return subjects.length > 0 ? subjects : null;
+}
+
+function subjectsFromText(text: string): VisionSubject[] | null {
+  const haystack = text.toLowerCase();
+  const subjects: VisionSubject[] = [];
+  if (/\b(loose yarn|skeins?|balls? of yarn|yarn balls?|balls? of wool)\b/.test(haystack)) subjects.push('loose-yarn');
+  else if (/\byarn\b/.test(haystack)) subjects.push('loose-yarn');
+  if (/\b(crocheted fabric|crochet fabric|finished fabric)\b/.test(haystack)) subjects.push('fabric');
+  if (/\b(crochet hook|hook)\b/.test(haystack)) subjects.push('hook');
+  if (/\b(yarn label|label)\b/.test(haystack)) subjects.push('label');
+  return subjects.length > 0 ? subjects : null;
 }
 
 function readCategory(value: unknown): YarnWeight | 'uncertain' | null {
-  if (value === 'uncertain') return 'uncertain';
+  if (value === 'uncertain' || value === 'unknown') return 'uncertain';
   if (typeof value !== 'string') return null;
-  return (YARN_WEIGHTS as readonly string[]).includes(value) ? (value as YarnWeight) : null;
+  if ((YARN_WEIGHTS as readonly string[]).includes(value)) return value as YarnWeight;
+  return weightFromLabel(value);
+}
+
+function readCategorySource(
+  value: unknown,
+  yarnCategory: YarnWeight | 'uncertain',
+): YarnVisionFindings['categorySource'] {
+  if (value === 'label' || value === 'visual' || value === 'uncertain') return value;
+  return yarnCategory === 'uncertain' ? 'uncertain' : 'visual';
 }
 
 function readOptionalText(value: unknown): string | null {

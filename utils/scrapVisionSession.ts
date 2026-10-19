@@ -19,9 +19,16 @@ import {
   type YarnVisionFindings,
 } from '@/utils/scrapVisionOutput';
 
-export const VISION_TIMEOUT_MS = 90_000;
+export const VISION_TIMEOUT_MS = 300_000;
+export const VISION_TIMEOUT_ANDROID_MS = 720_000;
 export const VISION_CONTEXT_TOKENS = 4096;
 export const VISION_IMAGE_TOKENS = 512;
+
+const visionDevLog = (label: string, detail: string): void => {
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    console.warn(label, detail);
+  }
+};
 
 export type VisionSessionPlatform = 'ios' | 'android' | 'web' | 'macos' | 'windows';
 
@@ -34,7 +41,7 @@ export type VisionLlamaContext = {
   getMultimodalSupport: () => Promise<{ vision: boolean; audio: boolean }>;
   releaseMultimodal: () => Promise<void>;
   completion: (params: Record<string, unknown>) => Promise<{ text?: string }>;
-  stopCompletion: () => Promise<void>;
+  stopCompletion: () => void | Promise<void>;
   release: () => Promise<void>;
 };
 
@@ -65,6 +72,7 @@ export type VisionAnalysisArgs = {
   isCurrent: () => boolean;
   timeoutMs?: number;
   scheduleTimeout?: (ms: number, fn: () => void) => { cancel: () => void };
+  onPhase?: (phase: 'load' | 'read') => void;
 };
 
 type SessionControl = {
@@ -119,7 +127,8 @@ async function executeVision(args: VisionAnalysisArgs): Promise<VisionAnalysisRe
       let context: VisionLlamaContext | null = null;
       let loaded = false;
       try {
-        context = await initVisionContext(args.runtime!, args.modelPath, args.platform, control);
+        args.onPhase?.('load');
+        context = await initVisionContext(args.runtime!, args.modelPath, args.platform);
         loaded = true;
         control.context = context;
         if (control.cancelled) return { status: 'cancelled' };
@@ -138,26 +147,34 @@ async function executeVision(args: VisionAnalysisArgs): Promise<VisionAnalysisRe
         }
         if (control.cancelled) return { status: 'cancelled' };
         if (!args.isCurrent()) return { status: 'discarded' };
+        args.onPhase?.('read');
         const completion = context.completion(visionCompletionParams(args.imageUri));
         const outcome = await raceCompletion(
           completion,
           context,
           control,
-          args.timeoutMs ?? VISION_TIMEOUT_MS,
+          args.timeoutMs ?? visionInferenceTimeoutMs(args.platform),
           args.scheduleTimeout,
         );
         if (outcome.kind === 'cancelled') return { status: 'cancelled' };
         if (!args.isCurrent()) return { status: 'discarded' };
+        if (outcome.kind === 'failed') {
+          return { status: 'failed', message: outcome.message };
+        }
         if (outcome.kind === 'timeout') {
           return { status: 'failed', message: 'Image analysis took too long and was stopped. The photo was not analyzed.' };
         }
         const findings = parseVisionFindings(outcome.text);
         if (!findings) {
+          visionDevLog('[vision] unusable reply', outcome.text.slice(0, 400));
           return { status: 'failed', message: 'Image analysis did not return findings this app can use. The photo was not analyzed.' };
         }
         return { status: 'findings', findings, photoGeneration: args.photoGeneration };
       } catch (error) {
         if (control.cancelled) return { status: 'cancelled' };
+        if (error instanceof Error) {
+          visionDevLog('[vision] analysis failed', error.message);
+        }
         if (error instanceof ScrapEngineBusyError) {
           return { status: 'failed', message: 'On-device analysis is busy. Wait for the current download or photo to finish.' };
         }
@@ -188,7 +205,7 @@ async function executeVision(args: VisionAnalysisArgs): Promise<VisionAnalysisRe
 }
 
 export function visionCompletionParams(imageUri: string): Record<string, unknown> {
-  return {
+  const params: Record<string, unknown> = {
     messages: [
       { role: 'system', content: VISION_SYSTEM_PROMPT },
       {
@@ -199,21 +216,27 @@ export function visionCompletionParams(imageUri: string): Record<string, unknown
         ],
       },
     ],
-    n_predict: 480,
+    n_predict: 320,
     temperature: 0.1,
-    stop: ['<|im_end|>', '<|endoftext|>'],
+    enable_thinking: false,
+    reasoning_format: 'none',
+    stop: ['<|im_end|>', '<|endoftext|>', '<end_of_utterance>'],
     response_format: {
       type: 'json_schema',
       json_schema: { schema: VISION_FINDINGS_SCHEMA },
     },
   };
+  return params;
+}
+
+export function visionInferenceTimeoutMs(platform: VisionSessionPlatform): number {
+  return platform === 'android' ? VISION_TIMEOUT_ANDROID_MS : VISION_TIMEOUT_MS;
 }
 
 async function initVisionContext(
   runtime: VisionLlamaRuntime,
   model: string,
   platform: VisionSessionPlatform,
-  control: SessionControl,
 ): Promise<VisionLlamaContext> {
   const params = {
     model,
@@ -225,13 +248,11 @@ async function initVisionContext(
   let context: VisionLlamaContext;
   try {
     context = await runtime.initLlama(params);
-  } catch (error) {
-    if (control.cancelled) throw error;
+  } catch {
     return runtime.initLlama({ ...params, n_gpu_layers: 0 });
   }
-  if (context.gpu || control.cancelled) return context;
+  if (context.gpu) return context;
   await releaseContext(context);
-  if (control.cancelled) throw new Error('cancelled');
   return runtime.initLlama({ ...params, n_gpu_layers: 0 });
 }
 
@@ -254,7 +275,7 @@ export async function runPatternDraft(args: {
     return await withScrapEngineLock('load', async () => {
       let context: VisionLlamaContext | null = null;
       try {
-        context = await initVisionContext(args.runtime!, args.modelPath, args.platform, control);
+        context = await initVisionContext(args.runtime!, args.modelPath, args.platform);
         control.context = context;
         if (control.cancelled) return { kind: 'cancelled' };
         if (!args.isCurrent()) return { kind: 'discarded' };
@@ -268,6 +289,8 @@ export async function runPatternDraft(args: {
           ],
           n_predict: 700,
           temperature: 0.2,
+          enable_thinking: false,
+          reasoning_format: 'none',
           stop: ['<|im_end|>', '<|endoftext|>'],
           response_format: {
             type: 'json_schema',
@@ -283,6 +306,9 @@ export async function runPatternDraft(args: {
         );
         if (outcome.kind === 'cancelled') return { kind: 'cancelled' };
         if (!args.isCurrent()) return { kind: 'discarded' };
+        if (outcome.kind === 'failed') {
+          return { kind: 'failed', message: outcome.message };
+        }
         if (outcome.kind === 'timeout') {
           return { kind: 'failed', message: 'The draft took too long and was stopped.' };
         }
@@ -306,12 +332,14 @@ export async function runPatternDraft(args: {
 }
 
 async function raceCompletion(
-  completion: Promise<{ text?: string }>,
+  completion: Promise<{ text?: string }> | { text?: string },
   context: VisionLlamaContext,
   control: SessionControl,
   timeoutMs: number,
   scheduleTimeout?: VisionAnalysisArgs['scheduleTimeout'],
-): Promise<{ kind: 'ok'; text: string } | { kind: 'timeout' } | { kind: 'cancelled' }> {
+): Promise<
+  { kind: 'ok'; text: string } | { kind: 'timeout' } | { kind: 'cancelled' } | { kind: 'failed'; message: string }
+> {
   let timedOut = false;
   const timer: { current: { cancel: () => void } | null } = { current: null };
   const timeout = new Promise<'timeout'>((resolve) => {
@@ -323,22 +351,24 @@ async function raceCompletion(
       });
     timer.current = start(timeoutMs, () => {
       timedOut = true;
-      void context.stopCompletion().catch(() => undefined);
+      fireStopCompletion(context);
       resolve('timeout');
     });
   });
   try {
     const winner = await Promise.race([
-      completion.then((result) => ({ kind: 'ok' as const, text: result.text ?? '' })),
+      asCompletionPromise(completion).then((result) => ({ kind: 'ok' as const, text: result.text ?? '' })),
       timeout.then(() => ({ kind: 'timeout' as const })),
     ]);
     if (control.cancelled) return { kind: 'cancelled' };
     if (winner.kind === 'timeout' || timedOut) return { kind: 'timeout' };
     return winner;
-  } catch {
+  } catch (error) {
     if (control.cancelled) return { kind: 'cancelled' };
     if (timedOut) return { kind: 'timeout' };
-    throw new Error('completion-failed');
+    const detail = error instanceof Error ? error.message : 'completion-failed';
+    visionDevLog('[vision] completion failed', detail);
+    return { kind: 'failed', message: 'Image analysis could not finish. The photo was not analyzed.' };
   } finally {
     timer.current?.cancel();
   }
@@ -346,17 +376,17 @@ async function raceCompletion(
 
 async function releaseContext(context: VisionLlamaContext): Promise<void> {
   try {
-    await context.stopCompletion();
+    await awaitStopCompletion(context);
   } catch {
     // Stopping a context that already finished is fine.
   }
   try {
-    await context.releaseMultimodal();
+    await Promise.resolve(context.releaseMultimodal());
   } catch {
     // The projector may never have loaded.
   }
   try {
-    await context.release();
+    await Promise.resolve(context.release());
   } catch {
     // The context still has to drop if release throws.
   }
@@ -369,8 +399,39 @@ function createControl(): SessionControl {
     cancel() {
       control.cancelled = true;
       const current = control.context;
-      if (current) void current.stopCompletion().catch(() => undefined);
+      if (current) fireStopCompletion(current);
     },
   };
   return control;
+}
+
+function asCompletionPromise(
+  completion: Promise<{ text?: string }> | { text?: string },
+): Promise<{ text?: string }> {
+  if (completion != null && typeof (completion as Promise<{ text?: string }>).then === 'function') {
+    return completion as Promise<{ text?: string }>;
+  }
+  if (completion == null) {
+    return Promise.reject(new Error('completion-missing'));
+  }
+  return Promise.resolve(completion);
+}
+
+/** llama.rn may return void from stopCompletion on some native builds. */
+function fireStopCompletion(context: { stopCompletion?: () => void | Promise<void> }): void {
+  void (async () => {
+    try {
+      const stop = context.stopCompletion;
+      if (typeof stop !== 'function') return;
+      await stop();
+    } catch {
+      // Stopping mid-flight is best-effort.
+    }
+  })();
+}
+
+async function awaitStopCompletion(context: { stopCompletion?: () => void | Promise<void> }): Promise<void> {
+  const stop = context.stopCompletion;
+  if (typeof stop !== 'function') return;
+  await stop();
 }

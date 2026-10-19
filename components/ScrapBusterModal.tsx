@@ -33,7 +33,12 @@ import { hookForYarnWeight, parseAvailableYards, tierForYards, type ScannedLefto
 import { recommendConfirmedCatalog, type VisionCatalogCard } from '@/utils/scrapVisionCatalog';
 import { prepareVisionPhoto } from '@/utils/scrapVisionImage';
 import { QUANTITY_CATEGORIES, VISION_SUBJECTS, weightFromLabel, type QuantityCategory, type VisionSubject } from '@/utils/scrapVisionOutput';
-import { analyzeLeftoverPhoto, cancelVisionDownload, createLeftoverPatternDraft } from '@/utils/scrapVisionRun';
+import {
+  analyzeLeftoverPhoto,
+  cancelActiveVisionAnalysis,
+  cancelVisionDownload,
+  createLeftoverPatternDraft,
+} from '@/utils/scrapVisionRun';
 
 type ScrapBusterModalProps = {
   visible: boolean;
@@ -73,7 +78,7 @@ export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern
               testID="leftover-start-over"
               hitSlop={Layout.hitSlop}
               onPress={() => {
-                cancelVisionDownload();
+                cancelActiveVisionAnalysis();
                 resetLeftoverYarnDraft();
               }}
               style={({ pressed }) => [styles.textAction, pressed && styles.pressed, webCursor]}
@@ -119,7 +124,7 @@ function ScrapBusterForm({
   }, []);
 
   const onCapture = async (source: CaptureSource) => {
-    cancelVisionDownload();
+    cancelActiveVisionAnalysis();
     setMessage(null);
     setBusy(null);
     const captured = await captureProgressPhoto(source);
@@ -155,6 +160,11 @@ function ScrapBusterForm({
           setRatio(update.ratio);
           setBusy(update.phase === 'download' ? 'Preparing on-device analysis' : 'Checking the on-device model');
         },
+        onPhase: (phase) => {
+          if (!mounted.current || !isCurrent()) return;
+          setRatio(0.2);
+          setBusy(phase === 'load' ? 'Loading the vision model' : 'Reading the photo');
+        },
       });
       if (!mounted.current || !isCurrent()) return;
       if (result.status === 'findings') {
@@ -164,7 +174,10 @@ function ScrapBusterForm({
         if (!result.message.includes('busy')) beginManualYarnFindings(true);
         setMessage(result.message);
       }
-    } catch {
+    } catch (error) {
+      if (__DEV__ && error instanceof Error) {
+        console.warn('[vision] analyze', error.message);
+      }
       if (mounted.current && isCurrent()) {
         beginManualYarnFindings(true);
         setMessage('The photo could not be prepared. You can still enter the yarn details yourself.');

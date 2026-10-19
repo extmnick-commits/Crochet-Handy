@@ -129,6 +129,12 @@ function progress(phase: ModelTransferProgress['phase'], written: number, total:
   };
 }
 
+function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 export async function hashFileChunks(
   read: (offset: number, length: number) => Uint8Array | Promise<Uint8Array>,
   size: number,
@@ -141,7 +147,9 @@ export async function hashFileChunks(
   const chunkBytes = options?.chunkBytes ?? SCRAP_HASH_CHUNK_BYTES;
   const hasher = createSha256();
   let offset = 0;
+  let reported = -1;
   while (offset < size) {
+    await yieldToUi();
     if (options?.cancelled?.()) throw new ScrapTransferCancelledError();
     const length = Math.min(chunkBytes, size - offset);
     const chunk = await read(offset, length);
@@ -150,7 +158,11 @@ export async function hashFileChunks(
     }
     hasher.update(chunk);
     offset += length;
-    options?.onProgress?.(progress('verify', offset, size));
+    const update = progress('verify', offset, size);
+    if (update.ratio === 1 || update.ratio - reported >= 0.02) {
+      reported = update.ratio;
+      options?.onProgress?.(update);
+    }
   }
   options?.onProgress?.(progress('verify', size, size));
   return hasher.digest();
@@ -287,8 +299,24 @@ export async function inspectPinnedPair(
   chunkBytes?: number,
 ): Promise<'ready' | 'missing'> {
   return withScrapEngineLock('verify', async () => {
-    for (const item of items) {
-      const status = await verifyPinnedFile(io, item.pin, item.paths, onProgress, undefined, chunkBytes);
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (!item) continue;
+      const status = await verifyPinnedFile(
+        io,
+        item.pin,
+        item.paths,
+        (update) => {
+          onProgress?.({
+            phase: update.phase,
+            written: update.written,
+            total: update.total,
+            ratio: items.length > 0 ? (index + update.ratio) / items.length : update.ratio,
+          });
+        },
+        undefined,
+        chunkBytes,
+      );
       if (status === 'invalid') {
         await io.deleteFile(item.paths.final);
         await io.deleteFile(item.paths.receipt);

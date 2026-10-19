@@ -4,7 +4,7 @@
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { signOut } from 'firebase/auth';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   Image,
   Linking,
@@ -47,6 +47,11 @@ import {
   packMasonryColumns,
 } from '@/utils/patternDisplay';
 import type { ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
+import {
+  getVisionModelStatus,
+  prefetchVisionModels,
+  subscribeVisionModelStatus,
+} from '@/utils/scrapVisionRun';
 import { patternPosterUri } from '@/utils/youtube';
 import {
   closeCatalogPreview,
@@ -747,7 +752,40 @@ function ProfileAccountBar({
         <MiniStat label="Completed" value={String(completed)} />
         <MiniStat label="Stitches" value={stitches.toLocaleString()} />
       </View>
+      <VisionModelStatus />
     </View>
+  );
+}
+
+function VisionModelStatus() {
+  const status = useSyncExternalStore(subscribeVisionModelStatus, getVisionModelStatus, getVisionModelStatus);
+  if (status.phase === 'idle') return null;
+  const ratio = status.phase === 'ready' ? 1 : status.phase === 'failed' ? 0 : status.ratio;
+  const percent = Math.round(ratio * 100);
+  const label =
+    status.phase === 'ready'
+      ? 'On-device model ready'
+      : status.phase === 'failed'
+        ? 'On-device model download stopped'
+        : status.phase === 'checking'
+          ? `Checking on-device model ${percent}%`
+          : `Downloading on-device model ${percent}%`;
+  return (
+    <Pressable
+      accessibilityRole="progressbar"
+      accessibilityLabel={label}
+      accessibilityValue={{ min: 0, max: 100, now: percent }}
+      disabled={status.phase !== 'failed'}
+      onPress={() => {
+        if (status.phase === 'failed') prefetchVisionModels();
+      }}
+      style={styles.modelCard}
+    >
+      <Text style={styles.modelLabel}>{label}</Text>
+      <View style={styles.modelTrack}>
+        <View style={[styles.modelFill, { width: `${Math.max(percent, status.phase === 'failed' ? 0 : 8)}%` }]} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -1018,6 +1056,24 @@ const styles = StyleSheet.create({
   statPills: {
     flexDirection: 'row',
     gap: Spacing.sm,
+  },
+  modelCard: {
+    gap: Spacing.xs,
+  },
+  modelLabel: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  modelTrack: {
+    height: 6,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.elevatedControl,
+    overflow: 'hidden',
+  },
+  modelFill: {
+    height: '100%',
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.accentPrimary,
   },
   miniStat: {
     flex: 1,

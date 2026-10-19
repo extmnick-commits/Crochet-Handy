@@ -5,7 +5,12 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-import { downloadInstalledVisionPair, inspectInstalledVisionPair } from '@/utils/scrapModelFiles';
+import {
+  deleteObsoleteAndroidVisionFiles,
+  downloadInstalledVisionPair,
+  inspectInstalledVisionPair,
+  installedVisionPairPaths,
+} from '@/utils/scrapModelFiles';
 import { visionModelPair } from '@/utils/scrapModelPin';
 import type { ModelTransferProgress } from '@/utils/scrapModelTransfer';
 import { ScrapEngineBusyError, ScrapTransferCancelledError } from '@/utils/scrapModelTransfer';
@@ -22,11 +27,100 @@ import {
 
 export { cancelActiveVisionAnalysis };
 
+const progressListeners = new Set<(update: ModelTransferProgress) => void>();
+let preparing: Promise<{ textPath: string; projectorPath: string }> | null = null;
+
+export type VisionModelStatus =
+  | { phase: 'idle' }
+  | { phase: 'checking' | 'download'; ratio: number }
+  | { phase: 'ready' }
+  | { phase: 'failed' };
+
+let visionStatus: VisionModelStatus = { phase: 'idle' };
+const statusListeners = new Set<() => void>();
+
+export function getVisionModelStatus(): VisionModelStatus {
+  return visionStatus;
+}
+
+export function subscribeVisionModelStatus(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+let lastStatusAt = 0;
+
+function publishVisionStatus(next: VisionModelStatus, force = false): void {
+  const now = Date.now();
+  const samePhase = visionStatus.phase === next.phase;
+  if (!force && samePhase && now - lastStatusAt < 400) return;
+  lastStatusAt = now;
+  visionStatus = next;
+  for (const listener of statusListeners) listener();
+}
+
+/** Start the platform vision download without blocking launch. A later scan joins the same download. */
+export function prefetchVisionModels(): void {
+  void ensureVisionPair().catch(() => undefined);
+}
+
+export function ensureVisionPair(
+  onProgress?: (update: ModelTransferProgress) => void,
+): Promise<{ textPath: string; projectorPath: string }> {
+  if (onProgress) progressListeners.add(onProgress);
+  if (!preparing) {
+    preparing = prepareVisionPair().finally(() => {
+      preparing = null;
+    });
+  }
+  const pending = preparing;
+  return pending.finally(() => {
+    if (onProgress) progressListeners.delete(onProgress);
+  });
+}
+
+function emitProgress(update: ModelTransferProgress): void {
+  publishVisionStatus({
+    phase: update.phase === 'download' ? 'download' : 'checking',
+    ratio: Math.max(0, Math.min(1, update.ratio)),
+  });
+  for (const listener of progressListeners) listener(update);
+}
+
+async function prepareVisionPair(): Promise<{ textPath: string; projectorPath: string }> {
+  const platform = sessionPlatform();
+  if (!isLocalScrapAiSupported() || visionModelPair(platform) == null || loadVisionRuntime() == null) {
+    publishVisionStatus({ phase: 'idle' });
+    throw new Error('Image analysis is not available on this device.');
+  }
+  try {
+    if (platform === 'android') await deleteObsoleteAndroidVisionFiles();
+    const installed = await inspectInstalledVisionPair(platform, emitProgress);
+    if (installed === 'ready') {
+      const ready = installedVisionPairPaths(platform);
+      if (ready) {
+        publishVisionStatus({ phase: 'ready' }, true);
+        return ready;
+      }
+    }
+    const saved = await downloadInstalledVisionPair(platform, emitProgress, downloadCancel());
+    publishVisionStatus({ phase: 'ready' }, true);
+    return saved;
+  } catch (error) {
+    if (error instanceof ScrapTransferCancelledError) publishVisionStatus({ phase: 'idle' }, true);
+    else publishVisionStatus({ phase: 'failed' }, true);
+    throw error;
+  }
+}
+
 export async function analyzeLeftoverPhoto(input: {
   imageUri: string;
   photoGeneration: number;
   isCurrent: () => boolean;
   onProgress?: (update: ModelTransferProgress) => void;
+  onPhase?: (phase: 'load' | 'read') => void;
 }): Promise<VisionAnalysisResult> {
   const platform = sessionPlatform();
   const runtime = loadVisionRuntime();
@@ -39,12 +133,8 @@ export async function analyzeLeftoverPhoto(input: {
   }
   let paths: { textPath: string; projectorPath: string };
   try {
-    const installed = await inspectInstalledVisionPair(platform, input.onProgress);
+    paths = await ensureVisionPair(input.onProgress);
     if (!input.isCurrent()) return { status: 'discarded' };
-    paths =
-      installed === 'ready'
-        ? await readyPaths(platform)
-        : await downloadInstalledVisionPair(platform, input.onProgress, downloadCancel());
   } catch (error) {
     if (error instanceof ScrapTransferCancelledError) return { status: 'cancelled' };
     if (error instanceof ScrapEngineBusyError) {
@@ -62,6 +152,7 @@ export async function analyzeLeftoverPhoto(input: {
     imageUri: input.imageUri,
     photoGeneration: input.photoGeneration,
     isCurrent: input.isCurrent,
+    onPhase: input.onPhase,
   });
 }
 
@@ -76,13 +167,7 @@ export async function createLeftoverPatternDraft(input: {
   }
   let textPath = '';
   try {
-    const installed = await inspectInstalledVisionPair(platform);
-    if (installed !== 'ready') {
-      const saved = await downloadInstalledVisionPair(platform, undefined, downloadCancel());
-      textPath = saved.textPath;
-    } else {
-      textPath = (await readyPaths(platform)).textPath;
-    }
+    textPath = (await ensureVisionPair()).textPath;
   } catch (error) {
     if (error instanceof ScrapTransferCancelledError) return { kind: 'cancelled' };
     return { kind: 'failed', message: 'The on-device model could not be prepared for a draft.' };
@@ -95,10 +180,6 @@ export async function createLeftoverPatternDraft(input: {
     request: input.request,
     isCurrent: input.isCurrent,
   });
-}
-
-function readyPaths(platform: string): Promise<{ textPath: string; projectorPath: string }> {
-  return downloadInstalledVisionPair(platform);
 }
 
 let activeDownloadCancel: (() => void) | null = null;

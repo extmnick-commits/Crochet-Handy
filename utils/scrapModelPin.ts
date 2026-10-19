@@ -97,6 +97,12 @@ export const ANDROID_VISION_PROJECTOR_PIN: ScrapModelPin = {
   sha256: '4c1240f514de94c81b70709b0f9a80c7e3297598ea7c83f39dc00b18ee5be60c',
 };
 
+/** Files from the smaller Android trial. Removed so they are not hashed again. */
+export const OBSOLETE_ANDROID_VISION_FILENAMES = [
+  'SmolVLM-500M-Instruct-Q8_0.gguf',
+  'mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
+] as const;
+
 export const IOS_VISION_PAIR: VisionModelPair = {
   platform: 'ios',
   text: IOS_VISION_TEXT_PIN,
@@ -109,7 +115,7 @@ export const ANDROID_VISION_PAIR: VisionModelPair = {
   projector: ANDROID_VISION_PROJECTOR_PIN,
 };
 
-/** Metal on iOS, OpenCL Q4_0 on Android. Other platforms have no vision pair. */
+/** Metal 3B on iOS, OpenCL Q4_0 3B on Android. Other platforms have no vision pair. */
 export function visionModelPair(platform: string): VisionModelPair | null {
   if (platform === 'ios') return IOS_VISION_PAIR;
   if (platform === 'android') return ANDROID_VISION_PAIR;

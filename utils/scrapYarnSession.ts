@@ -26,7 +26,7 @@ export type ScrapLlamaContext = {
   devices?: string[];
   reasonNoGPU?: string;
   completion: (params: Record<string, unknown>) => Promise<{ text?: string }>;
-  stopCompletion: () => Promise<void>;
+  stopCompletion: () => void | Promise<void>;
   release: () => Promise<void>;
 };
 
@@ -229,7 +229,7 @@ async function raceCompletion(
       });
     timer.current = start(timeoutMs, () => {
       timedOut = true;
-      void context.stopCompletion().catch(() => undefined);
+      fireStopCompletion(context);
       resolve('timeout');
     });
   });
@@ -273,7 +273,7 @@ function benchEntry(
 
 async function releaseContext(context: ScrapLlamaContext): Promise<void> {
   try {
-    await context.stopCompletion();
+    await awaitStopCompletion(context);
   } catch {
     // Stopping a context that already finished is fine.
   }
@@ -291,8 +291,27 @@ function createControl(): SessionControl {
     cancel() {
       control.cancelled = true;
       const current = control.context;
-      if (current) void current.stopCompletion().catch(() => undefined);
+      if (current) fireStopCompletion(current);
     },
   };
   return control;
+}
+
+/** llama.rn may return void from stopCompletion on some native builds. */
+function fireStopCompletion(context: { stopCompletion?: () => void | Promise<void> }): void {
+  void (async () => {
+    try {
+      const stop = context.stopCompletion;
+      if (typeof stop !== 'function') return;
+      await stop();
+    } catch {
+      // Stopping mid-flight is best-effort.
+    }
+  })();
+}
+
+async function awaitStopCompletion(context: { stopCompletion?: () => void | Promise<void> }): Promise<void> {
+  const stop = context.stopCompletion;
+  if (typeof stop !== 'function') return;
+  await stop();
 }
