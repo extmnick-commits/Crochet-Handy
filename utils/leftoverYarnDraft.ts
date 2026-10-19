@@ -9,8 +9,9 @@ import type { PatternDifficulty, YarnWeight } from '@/store/machine';
 import type { ScrapSuggestionResult, ScrapYarnColor } from '@/utils/scrapYarnAi';
 import type { PatternDraftCheck, PatternDraftRequest } from '@/utils/scrapPatternDraft';
 import type { ConfirmedCatalogResult, VisionCatalogCard } from '@/utils/scrapVisionCatalog';
-import { emptyVisionFindings, type YarnVisionFindings } from '@/utils/scrapVisionOutput';
+import { emptyVisionFindings, searchAmount, type YarnVisionFindings } from '@/utils/scrapVisionOutput';
 import { regionSampleKey, type YarnSampleRegion } from '@/utils/yarnRegion';
+import { parseKnownYards } from '@/utils/yarnAmount';
 
 export type VisionCorrections = YarnVisionFindings & {
   gramsText: string;
@@ -122,6 +123,9 @@ export function replaceLeftoverPhoto(uri: string): void {
     imageWidth: 0,
     imageHeight: 0,
     photoGeneration: draft.photoGeneration + 1,
+    yardsText: '',
+    gramsText: '',
+    weight: 'worsted',
     regions: [],
     colors: [],
     sampledKey: null,
@@ -138,6 +142,12 @@ export function replaceLeftoverPhoto(uri: string): void {
     catalogNote: null,
     patternDraft: null,
   };
+  emit();
+}
+
+/** Invalidate pending prep/download/inference without discarding entered details. */
+export function invalidateVisionRequest(): void {
+  draft = { ...draft, sessionEpoch: draft.sessionEpoch + 1 };
   emit();
 }
 
@@ -281,7 +291,9 @@ export function confirmVisionFindings(result: ConfirmedCatalogResult): Confirmed
         ? result.amountNote
         : result.status === 'need-category'
           ? 'Choose a yarn category in the list above, then tap View matching projects again.'
-          : 'Choose a leftover amount above, or enter yards, then tap View matching projects again. Grams are not turned into yards.',
+          : result.status === 'invalid-amount'
+            ? 'Enter a positive number of yards, such as 40 or 40.5. Clear the yards field to use a rough amount. Grams are not turned into yards.'
+            : 'Choose a leftover amount above, or enter yards, then tap View matching projects again. Grams are not turned into yards.',
   };
   emit();
   return result;
@@ -298,8 +310,8 @@ export function storePatternDraft(patternDraft: LeftoverYarnDraft['patternDraft'
 }
 
 export function patternRequestFromDraft(source: LeftoverYarnDraft = draft): PatternDraftRequest | null {
-  if (!source.corrections || source.corrections.yarnCategory === 'uncertain') return null;
-  const yards = source.corrections.yardsText.trim().match(/^\d+$/) ? Number(source.corrections.yardsText) : null;
+  if (!source.confirmed || !source.corrections || source.corrections.yarnCategory === 'uncertain' || !searchAmount(source.corrections)) return null;
+  const yards = parseKnownYards(source.corrections.yardsText);
   return {
     make: source.patternMake.trim(),
     size: source.patternSize.trim(),

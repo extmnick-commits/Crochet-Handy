@@ -349,8 +349,9 @@ function checkSessionAndPreview() {
   equal(replaced.aiResult, null, 'new photo clears suggestions');
   equal(replaced.findings, null, 'new photo clears findings');
   equal(replaced.catalog, null, 'new photo clears tutorial results');
-  equal(replaced.weight, 'dk', 'new photo keeps the weight');
-  equal(replaced.yardsText, '40', 'new photo keeps the yards');
+  equal(replaced.weight, 'worsted', 'new photo resets the old weight preference');
+  equal(replaced.yardsText, '', 'new photo clears the previous yarn amount');
+  equal(replaced.gramsText, '', 'new photo clears the previous yarn grams');
   assert(replaced.photoGeneration > photoGeneration, 'new photo bumps the generation');
   assert(
     applyVisionFindings(photoGeneration, {

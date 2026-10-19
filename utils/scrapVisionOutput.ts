@@ -4,6 +4,7 @@
  */
 import { YARN_WEIGHTS, type YarnWeight } from '@/store/machine';
 import { yarnWeightMeta } from '@/utils/patternDisplay';
+import { parseKnownYards } from '@/utils/yarnAmount';
 
 export const VISION_SUBJECTS = ['loose-yarn', 'fabric', 'hook', 'label', 'none', 'uncertain'] as const;
 export type VisionSubject = (typeof VISION_SUBJECTS)[number];
@@ -213,23 +214,23 @@ export function weightFromLabel(text: string | null): YarnWeight | null {
   return best?.weight ?? null;
 }
 
-const CATEGORY_YARDS: Record<Exclude<QuantityCategory, 'uncertain'>, number> = {
+const CATEGORY_YARDS: Record<Exclude<QuantityCategory, 'uncertain'>, number | undefined> = {
   'under-25': 25,
   '25-75': 75,
   '75-150': 150,
-  'skein-or-more': 400,
+  // Skeins have no standard length. Do not invent a 400-yard total.
+  'skein-or-more': undefined,
 };
 
-/** Entered yards win. A rough category is only a ceiling. Grams are never converted. */
+/** Entered yards win. Rough ceilings scope ideas, never certify enough yarn. */
 export function searchAmount(input: { quantityCategory: QuantityCategory; yardsText: string }): {
-  yards: number;
+  yards: number | undefined;
   kind: 'entered-yards' | 'rough-category';
 } | null {
-  const match = input.yardsText.trim().match(/^(\d{1,5})$/);
-  if (match) {
-    const yards = Number(match[1]);
-    if (yards > 0) return { yards, kind: 'entered-yards' };
-  }
+  const yards = parseKnownYards(input.yardsText);
+  if (yards != null) return { yards, kind: 'entered-yards' };
+  // Invalid explicit measurements must not silently fall back to a larger range.
+  if (input.yardsText.trim()) return null;
   if (input.quantityCategory === 'uncertain') return null;
   return { yards: CATEGORY_YARDS[input.quantityCategory], kind: 'rough-category' };
 }

@@ -635,6 +635,34 @@ function checkVisionCatalog() {
 
 async function checkVisionSessions() {
   resetVisionSessionForTests();
+  let finishLoading: (context: VisionLlamaContext) => void = () => undefined;
+  const loading = new Promise<VisionLlamaContext>((resolve) => { finishLoading = resolve; });
+  const firstPhoto = runVisionAnalysis({
+    runtime: { initLlama: () => loading },
+    supported: true,
+    platform: 'ios',
+    modelPath: 'file://ios.gguf',
+    projectorPath: 'file://mmproj.gguf',
+    imageUri: 'file://first-yarn.jpg',
+    photoGeneration: 10,
+    isCurrent: () => true,
+  });
+  const secondPhoto = await runVisionAnalysis({
+    runtime: { initLlama: () => loading },
+    supported: true,
+    platform: 'ios',
+    modelPath: 'file://ios.gguf',
+    projectorPath: 'file://mmproj.gguf',
+    imageUri: 'file://second-yarn.jpg',
+    photoGeneration: 11,
+    isCurrent: () => true,
+  });
+  assert(secondPhoto.status === 'failed' && secondPhoto.message.includes('busy'), 'a new photo never joins an old photo’s inference');
+  finishLoading(visionContext('{"subjects":["loose-yarn"],"yarnCategory":"dk","categorySource":"visual","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}'));
+  const firstResult = await firstPhoto;
+  assert(firstResult.status === 'findings' && firstResult.photoGeneration === 10, 'findings remain tied to their own photo');
+
+  resetVisionSessionForTests();
   const imageParams = visionCompletionParams('file://yarn.jpg');
   const messages = imageParams.messages as { content: unknown }[];
   assert(JSON.stringify(messages).includes('file://yarn.jpg'), 'the completion payload contains the local image');

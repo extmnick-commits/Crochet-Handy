@@ -100,7 +100,8 @@ export function visionInitPlan(platform: VisionSessionPlatform): VisionModelPair
 }
 
 export function runVisionAnalysis(args: VisionAnalysisArgs): Promise<VisionAnalysisResult> {
-  if (inFlight) return inFlight;
+  // Never return findings for another request's image to the caller.
+  if (inFlight) return Promise.resolve({ status: 'failed', message: 'On-device analysis is busy. Wait for the current photo to finish.' });
   const promise = executeVision(args);
   inFlight = promise;
   void promise.finally(() => {

@@ -10,13 +10,14 @@ import {
   visionFitReason,
   type ScrapSizeClass,
 } from '@/utils/scrapCatalogRank';
-import { scrapCatalogSuggestions, type ScrapCatalogSuggestion } from '@/utils/patternCatalog';
+import { scrapCatalogSuggestions, type ScrapCatalogSuggestion } from '@/utils/scrapCatalogSource';
 import { searchAmount, type QuantityCategory } from '@/utils/scrapVisionOutput';
 
 export type VisionCatalogCard = ScrapCatalogSuggestion & {
   reason: string;
   materialsNote: string;
   sizeClass: ScrapSizeClass;
+  matchLabel: string;
 };
 
 export type ConfirmedYarnSearch = {
@@ -29,17 +30,18 @@ export type ConfirmedYarnSearch = {
 export type ConfirmedCatalogResult =
   | { status: 'need-category' }
   | { status: 'need-amount' }
+  | { status: 'invalid-amount' }
   | { status: 'results'; cards: VisionCatalogCard[]; amountNote: string };
 
 export function recommendConfirmedCatalog(input: ConfirmedYarnSearch): ConfirmedCatalogResult {
   if (input.yarnCategory === 'uncertain') return { status: 'need-category' };
   const amount = searchAmount(input);
-  if (!amount) return { status: 'need-amount' };
+  if (!amount) return { status: typeof input.yardsText === 'string' && input.yardsText.trim() ? 'invalid-amount' : 'need-amount' };
   const weight = input.yarnCategory;
   const ranked = scrapCatalogSuggestions({
     yarnWeight: weight,
     availableYards: amount.yards,
-    limit: 12,
+    limit: 6,
   });
   const cards: VisionCatalogCard[] = [];
   for (const item of ranked) {
@@ -56,6 +58,9 @@ export function recommendConfirmedCatalog(input: ConfirmedYarnSearch): Confirmed
     const seed = SEED_PATTERNS.find((entry) => entry.id === item.pattern.id);
     cards.push({
       ...item,
+      matchLabel: amount.kind === 'entered-yards' && item.tutorialYards != null && distance === 0
+        ? 'Within your entered yardage'
+        : 'Project idea · check yarn needed',
       sizeClass: size.id,
       reason: visionFitReason(item.pattern.yarnWeight, weight, size.id),
       materialsNote: tutorialMaterialsNote(seed ? seed.materials : null),
@@ -64,8 +69,8 @@ export function recommendConfirmedCatalog(input: ConfirmedYarnSearch): Confirmed
   }
   const amountNote =
     amount.kind === 'entered-yards'
-      ? 'Searching with the yards you entered. A match is not a guarantee that the leftovers are enough.'
-      : 'Searching with a rough amount, not a measured yardage. A match is not a guarantee that the leftovers are enough.';
+      ? 'Searching with the yards you entered. Projects without listed yardage are estimates. Check the tutorial’s materials, fiber, colors and gauge before starting; allow extra yarn for differences in tension.'
+      : 'Searching for project ideas using your rough amount. A range or skein is not a measured yard total. Check the tutorial’s yarn requirements before starting.';
   return { status: 'results', cards, amountNote };
 }
 

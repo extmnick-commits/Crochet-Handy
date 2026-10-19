@@ -96,7 +96,7 @@ function AddYarnForm({
   const setUploadQuota = useCrochetStore((state) => state.setUploadQuota);
   const scannedColor = scannedLeftover?.colors[0];
   const [colorName, setColorName] = useState(scannedColor?.name ?? '');
-  const [brand, setBrand] = useState(scannedColor ? 'Leftover scrap' : '');
+  const [brand, setBrand] = useState(scannedLeftover ? 'Leftover scrap' : '');
   const [hex, setHex] = useState(scannedColor?.hex ?? '#C6A36E');
   const [yarnWeight, setYarnWeight] = useState<YarnWeight>(scannedLeftover?.yarnWeight ?? 'worsted');
   const [skeinCount, setSkeinCount] = useState(1);
@@ -221,7 +221,7 @@ function AddYarnForm({
   const scannedLabel = scannedLeftover
     ? scannedLeftover.availableYards != null
       ? `${scannedLeftover.availableYards} yd leftover`
-      : YARDAGE_TIERS.find((tier) => tier.id === scannedLeftover.yardageTier)?.label
+      : scannedLeftover.amountLabel ?? YARDAGE_TIERS.find((tier) => tier.id === scannedLeftover.yardageTier)?.label
     : null;
 
   const onSnapYarn = async (source: CaptureSource) => {
@@ -259,6 +259,13 @@ function AddYarnForm({
 
   return (
     <View style={styles.form}>
+      {scannedLeftover && scannedLeftover.colors.length === 0 ? (
+        <View style={styles.scannedCard}>
+          <Text style={styles.scannedTitle}>Leftover yarn</Text>
+          <Text style={styles.scannedMeta}>Yarn category filled in. Choose a color and review the details below to save it.</Text>
+          {scannedLabel ? <Text style={styles.scannedMeta}>{scannedLabel}</Text> : null}
+        </View>
+      ) : null}
       {scannedLeftover && scannedLeftover.colors.length > 0 ? (
         <View style={styles.scannedCard}>
           <Text style={styles.scannedTitle}>Scanned leftover yarn</Text>
