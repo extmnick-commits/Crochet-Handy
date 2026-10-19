@@ -92,6 +92,13 @@ export class ScrapChecksumError extends Error {
 }
 
 let lockKind: string | null = null;
+const idleCleanups = new Map<() => Promise<void>, string>();
+
+/** Release an idle model before a different engine operation allocates native memory. */
+export function registerScrapIdleCleanup(owner: string, cleanup: () => Promise<void>): () => void {
+  idleCleanups.set(cleanup, owner);
+  return () => { idleCleanups.delete(cleanup); };
+}
 
 export function scrapEngineLockKind(): string | null {
   return lockKind;
@@ -105,6 +112,9 @@ export async function withScrapEngineLock<T>(kind: string, fn: () => Promise<T>)
   if (lockKind) throw new ScrapEngineBusyError();
   lockKind = kind;
   try {
+    for (const [cleanup, owner] of idleCleanups) {
+      if (owner !== kind) await cleanup();
+    }
     return await fn();
   } finally {
     lockKind = null;

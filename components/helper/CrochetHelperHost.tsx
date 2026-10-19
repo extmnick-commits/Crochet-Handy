@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
-  ActivityIndicator, BackHandler, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, AppState, BackHandler, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
 } from 'react-native';
 import { usePathname } from 'expo-router';
@@ -18,6 +18,7 @@ import {
 } from '@/utils/helper/calculators';
 import { contextKey, contextLabel, HELPER_GREETING, type HelperContext, type HelperMessage } from '@/utils/helper/context';
 import { answerHelper } from '@/utils/helper/service';
+import { helperInference } from '@/utils/helper/inference';
 import { helperSession } from '@/utils/helper/session';
 
 type Props = {
@@ -63,8 +64,21 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
 
   useEffect(() => {
     helperSession.bindOwner(uid);
-    return () => { if (surface === 'main') helperSession.bindOwner(null); };
+    if (surface === 'main') void helperInference.dispose().catch(() => undefined);
+    return () => {
+      if (surface === 'main') {
+        helperSession.bindOwner(null);
+        void helperInference.dispose().catch(() => undefined);
+      }
+    };
   }, [uid, surface]);
+  useEffect(() => {
+    if (surface !== 'main') return;
+    const release = () => { helperSession.cancel(); void helperInference.dispose().catch(() => undefined); };
+    const stateSubscription = AppState.addEventListener('change', (next) => { if (next !== 'active') release(); });
+    const memorySubscription = AppState.addEventListener('memoryWarning', release);
+    return () => { stateSubscription.remove(); memorySubscription.remove(); };
+  }, [surface]);
   useEffect(() => {
     return () => { if (helperSession.snapshot().surface === surface) helperSession.close(surface); };
   }, [surface]);
@@ -99,9 +113,10 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
     if (generation === null) return;
     try {
       const reply = await answerHelper({ question: text, context, history, catalog, signal: controller.signal,
-        onPhase: (phase) => { if (helperSession.current(generation)) helperSession.patch({ phase }); } });
+        onPhase: (phase) => { if (helperSession.current(generation)) helperSession.patch({ phase }); },
+        onText: (partial) => helperSession.stream(generation, partial) });
       if (!reply.text) return;
-      helperSession.finish(generation, { ...message, ...reply, id: id(), role: 'assistant' });
+      if (helperSession.finish(generation, { ...message, ...reply, id: id(), role: 'assistant' }) && reply.calculator) setCalculator(reply.calculator);
     } catch {
       helperSession.finish(generation, { ...message, id: id(), role: 'assistant', failed: true,
         text: 'The helper could not finish. Try again or open a calculator.' });
@@ -157,7 +172,7 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
                 <Text style={styles.title}>Crochet Handy Helper</Text>
                 <Text style={styles.caption}>AI assistant · On this device</Text>
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="New conversation" onPress={() => { helperSession.clear(); setCalculator(null); setContextMenu(false); }} style={styles.smallButton}>
+              <Pressable accessibilityRole="button" accessibilityLabel="New conversation" onPress={() => { helperSession.clear(); void helperInference.dispose().catch(() => undefined); setCalculator(null); setContextMenu(false); }} style={styles.smallButton}>
                 <Text style={styles.accentText}>New</Text>
               </Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel="Minimize chat" onPress={() => { Keyboard.dismiss(); helperSession.close(surface); }} style={styles.smallButton}>
@@ -183,7 +198,7 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
               </View>
             ) : null}
             <ScrollView ref={scroll} style={styles.chatScroll} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.messages}
-              onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })}>
+              onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: !state.busy })}>
               <View style={styles.assistantMessage}><Text selectable style={styles.body}>{HELPER_GREETING}</Text></View>
               {state.messages.length === 0 ? (
                 <View style={styles.starters}>{STARTERS.map((starter) => (
@@ -199,6 +214,7 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
                   {message.patterns?.map((p) => <HelperPatternCard key={p.id} pattern={p} onPress={() => openPreview(p)} />)}
                 </View>
               ))}
+              {state.busy && state.partial ? <View style={styles.assistantMessage} testID="crochet-helper-stream"><Text selectable style={styles.body}>{state.partial}</Text></View> : null}
               {state.busy ? <View style={styles.loading}><ActivityIndicator color={Colors.accentPrimary} /><Text accessibilityLiveRegion="polite" style={styles.caption}>{state.phase}</Text></View> : null}
               {!state.busy && lastReply?.failed && !lastReply.calculator ? <Pressable accessibilityRole="button" onPress={retry} style={styles.starter}><Text style={styles.accentText}>Retry last question</Text></Pressable> : null}
               {calculator ? <CalculatorPanel key={calculator} operation={calculator} onChoose={setCalculator} onCalculate={appendCalculation} /> : null}

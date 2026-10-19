@@ -13,7 +13,7 @@ npm run typecheck
 npm run start:dev
 ```
 
-Open the installed development client and connect to Metro. A development client that includes the repository's current `llama.rn` and `scrap-file-hash` native modules can run this JavaScript change. Expo Go and web can use the calculators and local catalog search, but not native chat.
+Open the installed development client and connect to Metro. A development client that includes the repository's current `llama.rn` and `scrap-file-hash` native modules can run this JavaScript change. Expo Go and web can use quick help, calculators and local catalog search, but not native chat.
 
 If your installed app predates those native modules, create a preview build from this branch:
 
@@ -51,11 +51,34 @@ Calculators use local TypeScript arithmetic and work before model downloads fini
 - Percentage changes.
 - Remaining time from entered minutes and completed/total rows.
 
-Inputs and formulas are shown. Gauge, yarn, and time results explain their assumptions. Natural-language math requests use validated calculator operations rather than generated JavaScript or `eval`. For example, 40 → 48 stitches produces `(4 sc, inc) × 8`, which consumes 40 stitches and produces 48.
+Inputs and formulas are shown. Gauge, yarn, and time results explain their assumptions. Explicit unit conversions run directly in the checked calculator. Other natural-language math requests open the matching calculator form so required inputs and units are entered explicitly. No model-generated arithmetic, JavaScript, or `eval` is executed. For example, 40 → 48 stitches produces `(4 sc, inc) × 8`, which consumes 40 stitches and produces 48.
 
 ## Chat, catalog, and privacy
 
 Text chat reuses the platform's installed Qwen VL language file without loading its image projector. It uses the existing `withScrapEngineLock` used by scans, drafts, and model-file operations. Busy requests receive a retry message; no competing model context is started. A timeout or Stop returns control immediately but the lock remains until the outstanding native operation and cleanup finish.
+
+## Response-speed fix
+
+The reported Android log showed roughly 8–11 seconds loading the language model on each request, then about 42 seconds decoding a repetitive hashtag-filled JSON answer. It reached the old 384-token limit before closing the JSON, causing the visible “incomplete reply” error.
+
+- “What can you do”, greetings, missing-pattern context, basic abbreviations, catalog searches, and calculator routing now use immediate local replies without loading AI. These work even while the model is downloading or a scan is running.
+- General AI answers use the model's plain text template rather than Jinja/PEG JSON action planning. Readable prose is streamed as tokens arrive; it no longer waits for a six-field JSON object to complete. Compatibility text recovery also handles an echoed/unfinished JSON answer without executing an action.
+- The answer target is 60 words, with a 160-token hard limit, repetition penalties, hashtag/phrase-loop stopping, and a 45-second total deadline. Prompts use a 2,048-token context, at most 1,600 prompt tokens, and two recent same-context messages. The exact formatted prompt is token-counted and sent directly, avoiding a second format pass.
+- A successful native context remains warm for 45 seconds of inactivity, avoiding repeated model loads between follow-ups. It releases on timeout/failure, New conversation, logout/account change, app backgrounding, memory warnings, or inactivity. Any scan, draft, verification, download, or deletion using the shared engine lock **awaits** idle-context release before proceeding. A pending release remains registered until native cleanup resolves.
+- Readiness is reused from the existing verified prefetch status. Each message no longer re-inspects the pair and thereby evicts its own warm context.
+
+There are no new dependencies or model downloads. A first uncached AI question still needs native model loading; streaming does not make that cold load instantaneous. Actual new phone response times and answer quality must be measured on the target device; tests below mock native inference.
+
+### Retest on your phone
+
+Pull the branch, restart Metro with `npm run start:dev -- --clear`, and reload the development app. For an installed preview APK/iPhone build without Metro, build/install a fresh preview from this branch using the commands above.
+
+1. Ask “What can you do” and “Explain this pattern” from general help. Both should answer immediately with no model load. Open a pattern and repeat the second question to verify its title/card.
+2. Ask “Convert 100 yards to meters”. It should show `91.44 m` immediately. Ask “How many skeins do I need?” and verify the form opens.
+3. Ask “Why does the edge of my circle curl?” Wait for the cold load and confirm words appear while generating. Then ask a short follow-up within 45 seconds; there should be no second `loadModel` in Android Studio's log.
+4. Start a yarn scan after chat. Confirm the idle chat context releases before scan initialization. Test Stop, New conversation, background/resume, and sign-out during generation. No old partial text should reappear.
+5. Record cold-load time, time to first visible word, warm follow-up time, memory and answer quality on both platforms. These are device checks, not measurements claimed by this patch.
+
 
 The app's existing model prefetch still controls downloads. The helper reports when the files are not ready rather than pretending to generate an answer. It does not add a cloud fallback.
 
@@ -68,7 +91,7 @@ The helper can explain existing app features, pattern excerpts, abbreviations, U
 ## Verification performed
 
 - TypeScript check.
-- `npm run check-helper`: calculator examples and invalid inputs, thousands of shaping-count combinations, account/context isolation, catalog-ID validation, cancellation during initialization, timeout cleanup, shared-engine exclusion, and native token-budget trimming. Native model bindings are mocked for these tests.
+- `npm run check-helper`: calculator examples and invalid inputs, thousands of shaping-count combinations, account/context isolation, fast-path questions from the failure report, native streaming before completion, stale-stream rejection, warm context reuse, idle/native-release ordering before scans/downloads, cancellation during initialization, timeout cleanup, shared-engine exclusion, idle expiration, and native token-budget trimming. Native model bindings are mocked for these tests.
 - Existing `check-crochet-machine.ts`, `check-scrap-yarn-ai.ts`, and `check-leftover-yarn.ts` checks.
 - Targeted ESLint for changed/new TypeScript files.
 - Metro exports for iOS, Android, and web; these validate bundling, not Xcode/Gradle compilation or model quality.

@@ -1,9 +1,10 @@
 /** Framework-free checks. Native model/GPU behavior still needs physical phones. */
 import assert from 'node:assert/strict';
 import { calculateCrochet } from '../utils/helper/calculators';
-import { buildHelperMessages, contextKey, parseHelperPlan, searchHelperPatterns, type HelperMessage } from '../utils/helper/context';
+import { buildHelperMessages, contextKey, searchHelperPatterns, type HelperMessage } from '../utils/helper/context';
+import { quickHelperReply, cleanHelperAnswer } from '../utils/helper/replies';
 import { HelperSession } from '../utils/helper/session';
-import { HelperInferenceError, runHelperInference, type HelperNativeContext, type HelperRuntime } from '../utils/helper/inference';
+import { HelperInferenceEngine, HelperInferenceError, type HelperNativeContext, type HelperRuntime } from '../utils/helper/inference';
 import { scrapEngineLockKind, withScrapEngineLock } from '../utils/scrapModelTransfer';
 import type { CrochetPattern } from '../store/machine';
 
@@ -66,42 +67,68 @@ async function main() {
 
   const candidates = searchHelperPatterns('find beginner coaster patterns', [p, p, pattern('real-2', 'Coaster pair')]);
   assert.equal(candidates.length, 2);
-  const response = { action: 'search', answer: 'Try these.', operation: 'none', values: [], units: [], patternIds: ['real-1'] };
-  assert.ok(parseHelperPlan(JSON.stringify(response), candidates));
-  assert.equal(parseHelperPlan(JSON.stringify({ ...response, patternIds: ['invented'] }), candidates), null);
-  assert.equal(parseHelperPlan(JSON.stringify({ ...response, action: 'deleteProject' }), candidates), null);
-  assert.equal(parseHelperPlan(JSON.stringify({ ...response, values: ['eval(1)'] }), candidates), null);
-  assert.equal(parseHelperPlan('not json', candidates), null);
-  const messages = buildHelperMessages({ question: 'What is the hook?', context, candidates, history: [message, { ...message, text: 'SECRET OTHER PATTERN', contextKey: 'other' }] });
+  const general = { pattern: null, project: null };
+  assert.match(quickHelperReply('What can you do', general, [])!.text, /calculate yarn/);
+  assert.match(quickHelperReply('Explain this pattern', general, [])!.text, /Open a pattern/);
+  assert.equal(quickHelperReply('Explain this pattern', context, [])!.patterns![0].id, p.id);
+  assert.match(quickHelperReply('Find beginner coaster patterns', general, [p])!.text, /local catalog/);
+  assert.match(quickHelperReply('Convert 100 yards to meters', general, [])!.text, /91.44 m/);
+  assert.equal(quickHelperReply('I have 100 yards and 40 grams, convert it', general, [])!.calculator, 'convert');
+  assert.equal(quickHelperReply('Will I have enough yarn?', general, [])!.calculator, 'yarn');
+  assert.equal(quickHelperReply('How many skeins do I need?', general, [])!.calculator, 'skeins');
+  assert.equal(quickHelperReply('How many stitches for this width?', general, [])!.calculator, 'gauge');
+  assert.equal(quickHelperReply('What does dc mean?', general, [])!.text.includes('UK'), true);
+  assert.equal(quickHelperReply('Why does the edge of my circle curl?', general, []), null);
+  assert.equal(cleanHelperAnswer('A useful answer. #Crochet #Crochet #Crochet', true), 'A useful answer.');
+  assert.equal(cleanHelperAnswer('```json\n{ "answer": "Use a stitch marker. #Crochet #Crochet', true), 'Use a stitch marker.');
+  assert.equal(cleanHelperAnswer('```json\n{ "answer": '), '');
+  assert.equal(cleanHelperAnswer('<|im_start|>assistant\nUse a stitch marker.'), 'Use a stitch marker.');
+  const messages = buildHelperMessages({ question: 'What is the hook?', context, history: [message, { ...message, text: 'SECRET OTHER PATTERN', contextKey: 'other' }] });
   assert.ok(!JSON.stringify(messages).includes('SECRET OTHER PATTERN'));
   assert.ok(JSON.stringify(messages).includes('not a verified complete transcript'));
+  assert.ok(!messages[0].content.includes('JSON schema'));
+  s.stream(active, 'stale text'); assert.equal(s.snapshot().partial, '');
   assert.equal(messages[messages.length - 1].content, 'What is the hook?');
 
-  let released = 0; let completions = 0; let stopCalls = 0;
+  let released = 0; let completions = 0; let stopCalls = 0; let inits = 0;
+  const paramsSeen: Record<string, unknown>[] = [];
   const ctx: HelperNativeContext = {
-    gpu: true, completion: async () => { completions++; return { text: 'reply' }; },
-    getFormattedChat: async () => ({ prompt: 'small' }), tokenize: async () => ({ tokens: [1, 2] }),
+    gpu: true, completion: async (params, onToken) => {
+      completions++; paramsSeen.push(params); onToken?.({ token: 'Use a stitch marker.' }); return { text: 'Use a stitch marker.' };
+    },
+    getFormattedChat: async (_messages, _template, params) => { assert.equal((params as { jinja: boolean }).jinja, false); return { prompt: 'small' }; },
+    tokenize: async () => ({ tokens: [1, 2] }),
     stopCompletion: () => { stopCalls++; }, release: () => { released++; },
   };
-  const runtime: HelperRuntime = { initLlama: async () => ctx };
+  const runtime: HelperRuntime = { initLlama: async (params) => { inits++; assert.equal(params.n_ctx, 2048); return ctx; } };
   const args = { runtime, modelPath: 'file:///model.gguf', platform: 'ios', messages,
     signal: new AbortController().signal, timeoutMs: 500 };
-  assert.equal(await runHelperInference(args), 'reply');
-  assert.equal(released, 1); assert.equal(completions, 1); assert.ok(stopCalls >= 1);
+  const engine = new HelperInferenceEngine();
+  const streamed: string[] = [];
+  assert.equal(await engine.run({ ...args, onText: (text) => streamed.push(text) }), 'Use a stitch marker.');
+  assert.equal(released, 0); assert.equal(completions, 1); assert.ok(stopCalls >= 1);
   assert.equal(scrapEngineLockKind(), null);
+  assert.ok(streamed.includes('Use a stitch marker.'));
+  assert.equal(paramsSeen[0].response_format, undefined);
+  assert.equal(paramsSeen[0].messages, undefined);
+  assert.equal(paramsSeen[0].prompt, 'small'); assert.equal(paramsSeen[0].n_predict, 160);
+  await engine.run(args); assert.equal(inits, 1); // Warm follow-up must not reload the model.
+  await withScrapEngineLock('scan', async () => { assert.equal(released, 1); });
+  await engine.run(args); assert.equal(inits, 2); // A scan evicted the context first.
+  await engine.dispose(); assert.equal(released, 2);
 
   const beforeNoGpu = completions;
-  await assert.rejects(runHelperInference({ ...args, runtime: { initLlama: async () => ({ ...ctx, gpu: false }) } }), (e) => e instanceof HelperInferenceError && e.code === 'failed');
+  await assert.rejects(engine.run({ ...args, runtime: { initLlama: async () => ({ ...ctx, gpu: false }) } }), (e) => e instanceof HelperInferenceError && e.code === 'failed');
   assert.equal(completions, beforeNoGpu);
 
   const locked = deferred<void>();
   const holder = withScrapEngineLock('scan', () => locked.promise);
-  await assert.rejects(runHelperInference(args), (e) => e instanceof HelperInferenceError && e.code === 'busy');
+  await assert.rejects(engine.run(args), (e) => e instanceof HelperInferenceError && e.code === 'busy');
   assert.equal(scrapEngineLockKind(), 'scan'); locked.resolve(); await holder;
 
   const init = deferred<HelperNativeContext>();
   const controller = new AbortController();
-  const late = runHelperInference({ ...args, runtime: { initLlama: () => init.promise }, signal: controller.signal });
+  const late = engine.run({ ...args, runtime: { initLlama: () => init.promise }, signal: controller.signal });
   controller.abort();
   await assert.rejects(late, (e) => e instanceof HelperInferenceError && e.code === 'cancelled');
   assert.equal(scrapEngineLockKind(), 'helper-chat');
@@ -110,7 +137,7 @@ async function main() {
   assert.equal(completions, before); assert.equal(scrapEngineLockKind(), null);
 
   const completion = deferred<{ text: string }>();
-  const timed = runHelperInference({ ...args, runtime: { initLlama: async () => ({ ...ctx, completion: () => completion.promise }) }, timeoutMs: 5 });
+  const timed = engine.run({ ...args, runtime: { initLlama: async () => ({ ...ctx, completion: () => completion.promise }) }, timeoutMs: 5 });
   await assert.rejects(timed, (e) => e instanceof HelperInferenceError && e.code === 'timeout');
   assert.equal(scrapEngineLockKind(), 'helper-chat');
   completion.resolve({ text: 'late answer' }); await tick();
@@ -118,9 +145,52 @@ async function main() {
 
   let formatCalls = 0;
   const shrink = { ...ctx, getFormattedChat: async () => ({ prompt: ++formatCalls === 1 ? 'long' : 'short' }),
-    tokenize: async (text: string) => ({ tokens: text === 'long' ? Array(3500).fill(1) : [1] }) };
-  assert.equal(await runHelperInference({ ...args, runtime: { initLlama: async () => shrink } }), 'reply');
+    tokenize: async (text: string) => ({ tokens: text === 'long' ? Array(1700).fill(1) : [1] }) };
+  assert.equal(await engine.run({ ...args, messages: [...messages.slice(0, 2), { role: 'assistant', content: 'old' }, ...messages.slice(2)], runtime: { initLlama: async () => shrink } }), 'Use a stitch marker.');
   assert.equal(formatCalls, 2);
-  console.log('Crochet Handy Helper checks passed: calculators, shaping invariants, account/context isolation, references, cancellation, timeout, engine lock, and token budget.');
+  await engine.dispose();
+
+  // Output is visible before native completion resolves; clear/account change rejects late tokens.
+  const wait = deferred<{ text: string }>(); let emit!: NonNullable<Parameters<HelperNativeContext['completion']>[1]>;
+  const streamingRuntime = { initLlama: async () => ({ ...ctx, completion: (_: object, token?: typeof emit) => { emit = token!; return wait.promise; } }) };
+  const g = s.begin(message, () => {})!;
+  const streaming = engine.run({ ...args, runtime: streamingRuntime, onText: (text) => s.stream(g, text) });
+  await tick(); emit({ token: 'Use a stitch marker.' });
+  assert.equal(s.snapshot().partial, 'Use a stitch marker.');
+  s.bindOwner('carol'); emit({ token: ' OLD ACCOUNT' });
+  assert.equal(s.snapshot().partial, '');
+  await engine.dispose(); // Clear during generation prevents retaining its KV cache.
+  wait.resolve({ text: 'Use a stitch marker.' }); await streaming;
+  const releaseBefore = released;
+  await engine.run(args); assert.equal(released, releaseBefore);
+
+  // Another native operation must await idle release, not merely initiate it.
+  await engine.dispose();
+  const releaseGate = deferred<void>(); let releaseStarted = false;
+  const gatedRuntime = { initLlama: async () => ({ ...ctx, release: () => { releaseStarted = true; return releaseGate.promise; } }) };
+  await engine.run({ ...args, runtime: gatedRuntime });
+  const pendingDispose = engine.dispose(); await tick(); assert.equal(releaseStarted, true);
+  let scanStarted = false;
+  const scan = withScrapEngineLock('download', async () => { scanStarted = true; });
+  await tick(); assert.equal(scanStarted, false);
+  releaseGate.resolve(); await Promise.all([pendingDispose, scan]); assert.equal(scanStarted, true);
+
+  const expiring = new HelperInferenceEngine(5);
+  await expiring.run(args); const wasReleased = released;
+  await new Promise((resolve) => setTimeout(resolve, 15)); assert.equal(released, wasReleased + 1);
+  await expiring.dispose();
+
+  let stoppedLoop = false;
+  const loopRuntime = { initLlama: async () => ({ ...ctx,
+    stopCompletion: () => { stoppedLoop = true; },
+    completion: async (_: object, token?: NonNullable<Parameters<HelperNativeContext['completion']>[1]>) => {
+      token?.({ token: 'Use a marker. #Crochet #Crochet #Crochet' });
+      assert.equal(stoppedLoop, true);
+      return { text: 'Use a marker. #Crochet #Crochet #Crochet' };
+    },
+  }) };
+  assert.equal(await engine.run({ ...args, runtime: loopRuntime }), 'Use a marker.');
+  await engine.dispose();
+  console.log('Crochet Handy Helper checks passed: fast replies, calculators, streaming, warm reuse/eviction, account isolation, cancellation, timeout, engine lock, and token budget.');
 }
 void main().catch((error) => { console.error(error); process.exitCode = 1; });
