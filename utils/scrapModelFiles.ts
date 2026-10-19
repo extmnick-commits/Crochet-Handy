@@ -4,11 +4,13 @@
  */
 import { Directory, File, FileMode, Paths } from 'expo-file-system';
 
-import { SCRAP_HASH_CHUNK_BYTES, SCRAP_MODEL_PIN } from '@/utils/scrapModelPin';
+import { SCRAP_HASH_CHUNK_BYTES, SCRAP_MODEL_PIN, visionModelPair, type VisionModelPair } from '@/utils/scrapModelPin';
 import {
   deletePinnedModel,
   downloadPinnedModel,
+  downloadPinnedPair,
   inspectPinnedModel,
+  inspectPinnedPair,
   scrapModelPaths,
   type ModelTransferIO,
   type ModelTransferProgress,
@@ -113,6 +115,40 @@ export async function downloadInstalledScrapModel(
     onProgress,
     cancel,
   );
+}
+
+export async function inspectInstalledVisionPair(
+  platform: string,
+  onProgress?: (update: ModelTransferProgress) => void,
+): Promise<'ready' | 'missing' | 'unsupported'> {
+  const pair = visionModelPair(platform);
+  if (!pair) return 'unsupported';
+  const directory = scrapModelDirectoryUri();
+  if (!directory) return 'missing';
+  return inspectPinnedPair(expoTransferIO(), visionTransferItems(directory, pair), onProgress);
+}
+
+export async function downloadInstalledVisionPair(
+  platform: string,
+  onProgress?: (update: ModelTransferProgress) => void,
+  cancel?: { cancelled: () => boolean; bind: (cancel: () => void) => void },
+): Promise<{ textPath: string; projectorPath: string }> {
+  const pair = visionModelPair(platform);
+  if (!pair) throw new Error('Image analysis is not available on this device.');
+  const directory = scrapModelDirectoryUri();
+  if (!directory) throw new Error('Document storage is not available on this device.');
+  const saved = await downloadPinnedPair(expoTransferIO(), visionTransferItems(directory, pair), onProgress, cancel);
+  const textPath = saved[0];
+  const projectorPath = saved[1];
+  if (!textPath || !projectorPath) throw new Error('The vision model download did not finish.');
+  return { textPath, projectorPath };
+}
+
+function visionTransferItems(directory: string, pair: VisionModelPair) {
+  return [
+    { pin: pair.text, paths: scrapModelPaths(directory, pair.text.filename) },
+    { pin: pair.projector, paths: scrapModelPaths(directory, pair.projector.filename) },
+  ];
 }
 
 export async function deleteInstalledScrapModel(): Promise<void> {

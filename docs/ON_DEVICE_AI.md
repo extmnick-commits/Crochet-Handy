@@ -1,10 +1,26 @@
 # On-device scrap AI
 
-Crochet Handy personalizes leftover-yarn ideas with `llama.rn` 0.13 on iOS and Android. The same JavaScript path runs on both. Apple Foundation Models and Android ML Kit Prompt / Gemini Nano are not wired in. They only exist on some devices, and they have not been tested here.
+Crochet Handy inspects a leftover-yarn photo with `llama.rn` 0.13 on iOS and Android. The language file cannot see the photo. Each phone also downloads the matching vision projector and passes the local image into the request. Apple Foundation Models and Android ML Kit Prompt / Gemini Nano are not wired in.
 
-The sheet still downloads one model: Bartowski `Qwen2.5-1.5B-Instruct-Q4_K_M` at revision `9eadc66189c7641e1ddd226b8267a9119b2ce2d4` (986,048,768 bytes, SHA-256 `1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370`). A smaller 0.5B file is documented in `scripts/compare-scrap-models.ts` for a device comparison. The app does not download it, and a smaller download is not treated as a faster or better model.
+The photo stays on the device. Only the model files are downloaded. Expo Go and web cannot run the native engine. Those builds say so, and they do not fill in preset findings.
 
-Project ideas work before that download. Yardage and hook size come from the app. The text model only chooses among plans and colors that already fit, and it does not see the photo.
+iOS uses Metal and the llama.cpp maintainers' Qwen2.5-VL 3B Instruct pair at revision `5037fcf163dd95d1e41d1974465f0898ed108ca2`:
+
+- `Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf` — 1,929,901,056 bytes, SHA-256 `d02fe9b69ad8cadbbd228e387667af66612c44bed29ffc8eb1e7caf9ac486c12`
+- `mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf` — 844,757,728 bytes, SHA-256 `980c9b2f78c04e6cff93d277ada09e768394f112d75db3b4e9dea8a69f9fb904`
+
+iOS does not retry that Q4_K model on the CPU. A failed Metal init, including the simulator and iPhones older than the A14, is reported as unsupported.
+
+Android uses OpenCL, which in this package implements Q4_0 and Q6_K on Adreno GPUs. The phone downloads Unsloth's pair at revision `20ce64893974f3faa729fe3dbdd70f8cabc2523c`:
+
+- `Qwen2.5-VL-3B-Instruct-Q4_0.gguf` — 1,828,484,448 bytes, SHA-256 `b7bbe51de4b0880be2b6b0c6891bc8e6666e4e535bdc65c78dcbd475d6824b4d`
+- `mmproj-F16.gguf` — 1,338,428,256 bytes, SHA-256 `4c1240f514de94c81b70709b0f9a80c7e3297598ea7c83f39dc00b18ee5be60c`
+
+The Android text model tries the GPU once, then retries on the CPU for other GPUs. The F16 projector stays on the CPU. A text file from one publisher is not paired with the other publisher's projector.
+
+The older text-only Qwen2.5 1.5B file remains pinned for the previous personalization checks. The leftover sheet does not download it and does not ask it to inspect a photo. A smaller 0.5B file is documented in `scripts/compare-scrap-models.ts` for a device comparison. The app does not download it.
+
+Hook ranges, catalog matches, and draft stitch counts come from the app. The model cannot invent a catalog tutorial, a gram weight, or an exact yardage. Generated patterns are drafts and are kept separate from tutorials.
 
 ## What a new native build is for
 
@@ -12,7 +28,7 @@ Project ideas work before that download. Yardage and hook size come from the app
 
 Those native settings are compiled into the app. `eas update` cannot turn Metal or OpenCL on or off. Install a new build after changing them.
 
-OpenCL in this `llama.rn` version is documented for Adreno GPUs and mainly Q4_0 / Q6_K weights. This app's Q4_K_M file may fail GPU init. Android then retries once on CPU. That retry is not a performance claim.
+OpenCL in this `llama.rn` version is documented for Adreno GPUs and mainly Q4_0 / Q6_K weights. Android therefore downloads the Q4_0 vision file. If that GPU init fails, the text model retries once on CPU. The vision projector stays on the CPU because this OpenCL backend has no kernels for F16 vision weights. That retry is not a performance claim.
 
 ## Install a preview build
 
@@ -35,7 +51,7 @@ npx eas-cli@latest build --platform ios --profile preview
 
 ## Checks
 
-`npx tsx scripts/check-scrap-yarn-ai.ts` mocks file IO and `llama.rn`. It covers truncated and corrupt downloads, output validation, yardage limits, cancel during init and generation, timeouts, and overlapping requests. It does not load a GGUF, talk to a GPU, or measure memory.
+`npx tsx scripts/check-scrap-yarn-ai.ts` mocks file IO and `llama.rn`. It covers truncated and corrupt downloads, the iOS and Android vision file pins, image input, output validation, yardage limits, cancel during init and generation, timeouts, and overlapping requests. It does not load a GGUF, talk to a GPU, or measure memory.
 
 `npx tsc --noEmit` and `npx expo lint` typecheck and lint the project. `npx expo export` for ios, android, and web only checks that the JavaScript bundle builds.
 

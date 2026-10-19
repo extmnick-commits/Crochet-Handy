@@ -233,50 +233,143 @@ export async function downloadPinnedModel(
   cancel?: { cancelled: () => boolean; bind: (cancel: () => void) => void },
   chunkBytes?: number,
 ): Promise<string> {
+  return withScrapEngineLock('download', () => transferPinnedFile(io, pin, paths, onProgress, cancel, chunkBytes));
+}
+
+export type PinnedTransferItem = {
+  pin: ScrapModelPin;
+  paths: ModelTransferPaths;
+};
+
+/** One lock for the language file and its matching vision projector. */
+export async function downloadPinnedPair(
+  io: ModelTransferIO,
+  items: readonly PinnedTransferItem[],
+  onProgress?: (update: ModelTransferProgress) => void,
+  cancel?: { cancelled: () => boolean; bind: (cancel: () => void) => void },
+  chunkBytes?: number,
+): Promise<string[]> {
   return withScrapEngineLock('download', async () => {
-    const existing = await verifyPinnedFile(io, pin, paths, onProgress, cancel?.cancelled, chunkBytes);
-    if (existing === 'ready') return paths.final;
-    if (existing === 'invalid') {
-      await io.deleteFile(paths.final);
-      await io.deleteFile(paths.receipt);
+    if (!(await pairStorageIsEnough(io, items))) {
+      const needed = items.reduce((sum, item) => sum + item.pin.bytes, SCRAP_MODEL_STORAGE_MARGIN_BYTES);
+      throw new ScrapStorageError(needed);
     }
-    if (!(await storageIsEnough(io, pin, paths))) {
-      throw new ScrapStorageError(pin.bytes + SCRAP_MODEL_STORAGE_MARGIN_BYTES);
-    }
-    await io.deleteFile(paths.partial);
-    try {
-      if (cancel?.cancelled()) throw new ScrapTransferCancelledError();
-      await io.download({
-        url: pin.url,
-        destination: paths.partial,
-        onProgress: (written, total) => {
-          const expected = total > 0 ? total : pin.bytes;
-          onProgress?.(progress('download', written, expected));
+    const saved: string[] = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (!item) continue;
+      const path = await transferPinnedFile(
+        io,
+        item.pin,
+        item.paths,
+        (update) => {
+          onProgress?.({
+            phase: update.phase,
+            written: update.written,
+            total: update.total,
+            ratio: items.length > 0 ? (index + update.ratio) / items.length : update.ratio,
+          });
         },
-        bindCancel: (nativeCancel) => cancel?.bind(nativeCancel),
-      });
-      if (cancel?.cancelled()) throw new ScrapTransferCancelledError();
-      const saved = await io.fileSize(paths.partial);
-      if (saved !== pin.bytes) throw new ScrapChecksumError();
-      const hash = await hashStoredFile(io, paths.partial, pin.bytes, onProgress, cancel?.cancelled, chunkBytes);
-      if (cancel?.cancelled()) throw new ScrapTransferCancelledError();
-      if (hash !== pin.sha256) throw new ScrapChecksumError();
-      await io.moveFile(paths.partial, paths.final);
-      const stamp = await io.fileStamp(paths.final);
-      const receipt: ModelReceipt = {
-        bytes: pin.bytes,
-        sha256: pin.sha256,
-        revision: pin.revision,
-        modified: stamp,
-      };
-      await io.writeText(paths.receipt, JSON.stringify(receipt));
-      onProgress?.(progress('verify', pin.bytes, pin.bytes));
-      return paths.final;
-    } catch (error) {
-      await io.deleteFile(paths.partial);
-      throw error;
+        cancel,
+        chunkBytes,
+        true,
+      );
+      saved.push(path);
     }
+    return saved;
   });
+}
+
+export async function inspectPinnedPair(
+  io: ModelTransferIO,
+  items: readonly PinnedTransferItem[],
+  onProgress?: (update: ModelTransferProgress) => void,
+  chunkBytes?: number,
+): Promise<'ready' | 'missing'> {
+  return withScrapEngineLock('verify', async () => {
+    for (const item of items) {
+      const status = await verifyPinnedFile(io, item.pin, item.paths, onProgress, undefined, chunkBytes);
+      if (status === 'invalid') {
+        await io.deleteFile(item.paths.final);
+        await io.deleteFile(item.paths.receipt);
+        await io.deleteFile(item.paths.partial);
+        return 'missing';
+      }
+      if (status === 'missing') {
+        await io.deleteFile(item.paths.partial);
+        return 'missing';
+      }
+    }
+    return 'ready';
+  });
+}
+
+async function pairStorageIsEnough(io: ModelTransferIO, items: readonly PinnedTransferItem[]): Promise<boolean> {
+  const available = await io.availableBytes();
+  let needed = SCRAP_MODEL_STORAGE_MARGIN_BYTES;
+  let reclaim = 0;
+  for (const item of items) {
+    const partial = (await io.fileSize(item.paths.partial)) ?? 0;
+    const finalSize = (await io.fileSize(item.paths.final)) ?? 0;
+    reclaim += partial;
+    if (finalSize === item.pin.bytes) continue;
+    needed += item.pin.bytes;
+    reclaim += finalSize;
+  }
+  return available + reclaim >= needed;
+}
+
+async function transferPinnedFile(
+  io: ModelTransferIO,
+  pin: ScrapModelPin,
+  paths: ModelTransferPaths,
+  onProgress?: (update: ModelTransferProgress) => void,
+  cancel?: { cancelled: () => boolean; bind: (cancel: () => void) => void },
+  chunkBytes?: number,
+  skipStorageCheck = false,
+): Promise<string> {
+  const existing = await verifyPinnedFile(io, pin, paths, onProgress, cancel?.cancelled, chunkBytes);
+  if (existing === 'ready') return paths.final;
+  if (existing === 'invalid') {
+    await io.deleteFile(paths.final);
+    await io.deleteFile(paths.receipt);
+  }
+  if (!skipStorageCheck && !(await storageIsEnough(io, pin, paths))) {
+    throw new ScrapStorageError(pin.bytes + SCRAP_MODEL_STORAGE_MARGIN_BYTES);
+  }
+  await io.deleteFile(paths.partial);
+  try {
+    if (cancel?.cancelled()) throw new ScrapTransferCancelledError();
+    await io.download({
+      url: pin.url,
+      destination: paths.partial,
+      onProgress: (written, total) => {
+        const expected = total > 0 ? total : pin.bytes;
+        onProgress?.(progress('download', written, expected));
+      },
+      bindCancel: (nativeCancel) => cancel?.bind(nativeCancel),
+    });
+    if (cancel?.cancelled()) throw new ScrapTransferCancelledError();
+    const saved = await io.fileSize(paths.partial);
+    if (saved !== pin.bytes) throw new ScrapChecksumError();
+    const hash = await hashStoredFile(io, paths.partial, pin.bytes, onProgress, cancel?.cancelled, chunkBytes);
+    if (cancel?.cancelled()) throw new ScrapTransferCancelledError();
+    if (hash !== pin.sha256) throw new ScrapChecksumError();
+    await io.moveFile(paths.partial, paths.final);
+    const stamp = await io.fileStamp(paths.final);
+    const receipt: ModelReceipt = {
+      bytes: pin.bytes,
+      sha256: pin.sha256,
+      revision: pin.revision,
+      modified: stamp,
+    };
+    await io.writeText(paths.receipt, JSON.stringify(receipt));
+    onProgress?.(progress('verify', pin.bytes, pin.bytes));
+    return paths.final;
+  } catch (error) {
+    await io.deleteFile(paths.partial);
+    throw error;
+  }
 }
 
 export async function inspectPinnedModel(

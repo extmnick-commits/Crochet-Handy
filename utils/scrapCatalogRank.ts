@@ -4,6 +4,7 @@
  * only when the catalog row actually has one.
  */
 import type { YarnWeight } from '@/store/machine';
+import { yarnWeightMeta } from '@/utils/patternDisplay';
 
 export type ScrapSizeClass = 'micro' | 'small' | 'medium';
 
@@ -60,6 +61,29 @@ export function planningSizeForPattern(pattern: ScrapRankInput): { id: ScrapSize
     if (size.hints.some((hint) => mentions(haystack, pattern.tags, hint))) return size;
   }
   return null;
+}
+
+export function visionFitReason(patternWeight: YarnWeight, confirmedWeight: YarnWeight, sizeClass: ScrapSizeClass): string {
+  const label = yarnWeightMeta(patternWeight).label;
+  const weight =
+    weightDistance(patternWeight, confirmedWeight) === 0
+      ? `${label} matches the yarn you confirmed.`
+      : `${label} is close to the yarn you confirmed.`;
+  const size =
+    sizeClass === 'micro' ? 'Very small project.' : sizeClass === 'small' ? 'Small project.' : 'Medium project.';
+  return `${weight} ${size}`;
+}
+
+export function tutorialMaterialsNote(
+  materials: readonly { name: string; weight: string; yardage: string }[] | null,
+): string {
+  if (!materials || materials.length === 0) return 'This tutorial does not list materials.';
+  const parts = materials.map((item) => {
+    const yard = item.yardage.trim();
+    const yardText = yard && yard !== '—' ? `, ${yard}` : '';
+    return `${item.name} (${item.weight}${yardText})`;
+  });
+  return `Tutorial materials: ${parts.join('; ')}.`;
 }
 
 export function yardageNoteFor(card: { planningCeiling: number; tutorialYards: number | null }): string {

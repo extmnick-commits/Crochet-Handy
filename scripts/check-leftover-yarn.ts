@@ -21,6 +21,9 @@ import {
 import {
   applySampledColors,
   editLeftoverColors,
+  applyVisionFindings,
+  confirmVisionFindings,
+  editVisionCorrections,
   getLeftoverYarnDraft,
   leftoverYarnSnapshot,
   replaceLeftoverPhoto,
@@ -257,6 +260,24 @@ function checkSessionAndPreview() {
       },
     },
   });
+  const generation = getLeftoverYarnDraft().photoGeneration;
+  assert(
+    applyVisionFindings(generation, {
+      subjects: ['loose-yarn'],
+      yarnCategory: 'dk',
+      categorySource: 'visual',
+      labelText: null,
+      hookObservedMarking: '4.0 mm',
+      stitches: 'uncertain',
+      quantityCategory: '25-75',
+    }),
+    'findings land on the current photo',
+  );
+  confirmVisionFindings({
+    status: 'results',
+    cards: [],
+    amountNote: 'Searching with the yards you entered. A match is not a guarantee that the leftovers are enough.',
+  });
   const before = leftoverYarnSnapshot();
   const sampleKey = regionSampleKey(before.photoGeneration, before.regions);
 
@@ -276,6 +297,10 @@ function checkSessionAndPreview() {
   flow = previewDismissed(flow);
   equal(JSON.stringify(leftoverYarnSnapshot()), JSON.stringify(before), 'preview leaves the yarn session unchanged');
   equal(before.sampledKey, sampleKey, 'manual colors stay tied to the same selection');
+  equal(before.scrollY, 240, 'scroll position stays with the yarn session');
+  equal(before.findings?.yarnCategory, 'dk', 'findings stay with the yarn session');
+  equal(before.corrections?.hookObservedMarking, '4.0 mm', 'corrections stay with the yarn session');
+  assert(before.catalog != null, 'tutorial results stay with the yarn session');
 
   let library = ['saved-pattern'];
   library = libraryAfterPreview(library, 'tutorial-a', 'preview');
@@ -294,16 +319,45 @@ function checkSessionAndPreview() {
   equal(blocked, null, 'a late sample does not replace a manual color');
   equal(getLeftoverYarnDraft().colors[0]?.name, 'Cream', 'manual cream remains');
 
-  const generation = getLeftoverYarnDraft().photoGeneration;
+  editVisionCorrections({ labelText: 'keeper' });
+  assert(
+    applyVisionFindings(generation, {
+      subjects: ['fabric'],
+      yarnCategory: 'worsted',
+      categorySource: 'visual',
+      labelText: 'late',
+      hookObservedMarking: null,
+      stitches: 'uncertain',
+      quantityCategory: 'uncertain',
+    }) === false,
+    'a late reply does not replace edited findings',
+  );
+  equal(getLeftoverYarnDraft().corrections?.labelText, 'keeper', 'the edited label remains');
+
+  const photoGeneration = getLeftoverYarnDraft().photoGeneration;
   replaceLeftoverPhoto('file://other.jpg');
   const replaced = getLeftoverYarnDraft();
   equal(replaced.photoUri, 'file://other.jpg', 'new photo');
   equal(replaced.regions.length, 0, 'new photo clears regions');
   equal(replaced.colors.length, 0, 'new photo clears colors');
   equal(replaced.aiResult, null, 'new photo clears suggestions');
+  equal(replaced.findings, null, 'new photo clears findings');
+  equal(replaced.catalog, null, 'new photo clears tutorial results');
   equal(replaced.weight, 'dk', 'new photo keeps the weight');
   equal(replaced.yardsText, '40', 'new photo keeps the yards');
-  assert(replaced.photoGeneration > generation, 'new photo bumps the generation');
+  assert(replaced.photoGeneration > photoGeneration, 'new photo bumps the generation');
+  assert(
+    applyVisionFindings(photoGeneration, {
+      subjects: ['loose-yarn'],
+      yarnCategory: 'dk',
+      categorySource: 'visual',
+      labelText: null,
+      hookObservedMarking: null,
+      stitches: 'uncertain',
+      quantityCategory: 'uncertain',
+    }) === false,
+    'a reply from the previous photo is dropped',
+  );
   equal(
     applySampledColors(replaced, stamp, [{ name: 'Kelly Green', hex: '#4CBB17' }]),
     null,

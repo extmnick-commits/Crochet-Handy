@@ -9,9 +9,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { compareScrapModelLogs, type ScrapBenchEntry } from '../utils/scrapBench';
-import { rankScrapCatalog, readTutorialYards } from '../utils/scrapCatalogRank';
+import { rankScrapCatalog, readTutorialYards, tutorialMaterialsNote, visionFitReason } from '../utils/scrapCatalogRank';
 import { scrapChoiceSchema, validateScrapChoices } from '../utils/scrapModelOutput';
-import { SCRAP_MODEL_PIN, type ScrapModelPin } from '../utils/scrapModelPin';
+import {
+  ANDROID_VISION_PAIR,
+  IOS_VISION_PAIR,
+  SCRAP_MODEL_PIN,
+  visionModelPair,
+  type ScrapModelPin,
+} from '../utils/scrapModelPin';
+import { hookRangeLabel } from '../utils/scrapHookRange';
+import { checkPatternDraft } from '../utils/scrapPatternDraft';
+import { parseVisionFindings, searchAmount, visionPromptMentionsColor } from '../utils/scrapVisionOutput';
+import {
+  resetVisionSessionForTests,
+  runVisionAnalysis,
+  visionCompletionParams,
+  type VisionLlamaContext,
+} from '../utils/scrapVisionSession';
 import {
   ScrapChecksumError,
   ScrapEngineBusyError,
@@ -19,6 +34,7 @@ import {
   ScrapTransferCancelledError,
   createMemoryTransferIO,
   downloadPinnedModel,
+  downloadPinnedPair,
   inspectPinnedModel,
   scrapEngineLockKind,
   scrapModelPaths,
@@ -58,6 +74,11 @@ async function main() {
   checkOutputValidation();
   await checkTransfers();
   await checkSessions();
+  checkVisionPins();
+  checkVisionFindings();
+  checkVisionCatalog();
+  await checkVisionSessions();
+  checkPatternDrafts();
   checkComparison();
   checkNativeConfig();
   console.log('scrap yarn AI checks passed');
@@ -426,6 +447,357 @@ async function checkSessions() {
   });
   equal(failed.source, 'offline-rules', 'a failed Android CPU retry stays offline');
   equal(scrapEngineLockKind(), null, 'a failed init releases the lock');
+}
+
+function checkVisionPins() {
+  assert(visionModelPair('web') == null, 'web has no vision pair');
+  equal(IOS_VISION_PAIR.text.filename.includes('Q4_K_M'), true, 'iOS text file is the Metal quant');
+  equal(IOS_VISION_PAIR.projector.filename.includes('Q8_0'), true, 'iOS projector is Q8_0');
+  equal(ANDROID_VISION_PAIR.text.filename.includes('Q4_0'), true, 'Android text file is the OpenCL quant');
+  equal(ANDROID_VISION_PAIR.projector.filename.includes('F16') || ANDROID_VISION_PAIR.projector.filename.includes('f16'), true, 'Android projector is F16');
+  assert(IOS_VISION_PAIR.text.revision !== ANDROID_VISION_PAIR.text.revision, 'the two platforms keep their own conversions');
+  for (const pair of [IOS_VISION_PAIR, ANDROID_VISION_PAIR]) {
+    assert(pair.text.url.includes(pair.text.revision), 'vision text URL is pinned');
+    assert(pair.projector.url.includes(pair.projector.revision), 'projector URL is pinned');
+    assert(!pair.text.url.includes('/resolve/main/'), 'vision text URL does not track main');
+    assert(pair.text.sha256.length === 64 && pair.projector.sha256.length === 64, 'vision hashes are sha256');
+    assert(pair.text.bytes > 0 && pair.projector.bytes > 0, 'vision sizes are pinned');
+  }
+}
+
+function checkVisionFindings() {
+  assert(!visionPromptMentionsColor(), 'the vision prompt does not ask for color');
+  const parsed = parseVisionFindings(
+    JSON.stringify({
+      subjects: ['loose-yarn', 'label', 'hook'],
+      yarnCategory: 'bulky',
+      categorySource: 'visual',
+      labelText: 'Red Heart Worsted #4',
+      hookObservedMarking: '5.0 mm',
+      stitches: [{ name: 'double crochet', confidence: 'high', alternatives: [] }],
+      quantityCategory: 'under-25',
+      grams: 40,
+      yards: 120,
+    }),
+  );
+  assert(parsed, 'a labeled photo parses');
+  equal(parsed?.yarnCategory, 'worsted', 'a readable label overrides the visual category');
+  equal(parsed?.categorySource, 'label', 'the category is marked as coming from the label');
+  equal(parsed?.hookObservedMarking, '5.0 mm', 'a readable hook marking is kept');
+  equal(parsed?.stitches, 'uncertain', 'stitches stay uncertain when the photo is not fabric');
+  equal(parsed?.quantityCategory, 'under-25', 'a rough amount can be kept');
+  assert(!JSON.stringify(parsed).includes('120'), 'exact yardage from the model is dropped');
+  assert(!JSON.stringify(parsed).includes('40'), 'grams from the model are dropped');
+  equal(hookRangeLabel('fingering').includes('5.0'), false, 'the suggested range is not the observed hook marking');
+  const fabric = parseVisionFindings(
+    JSON.stringify({
+      subjects: ['fabric'],
+      yarnCategory: 'dk',
+      categorySource: 'visual',
+      labelText: null,
+      hookObservedMarking: '5.0 mm',
+      stitches: [{ name: 'sc', confidence: 'medium', alternatives: ['hdc'] }],
+      quantityCategory: 'uncertain',
+    }),
+  );
+  assert(fabric?.stitches !== 'uncertain' && fabric?.stitches[0]?.name === 'single crochet', 'a clear fabric photo can name a stitch');
+  equal(fabric?.hookObservedMarking, null, 'a hook marking is ignored when no hook is visible');
+  equal(parseVisionFindings('not json'), null, 'invalid model text is rejected');
+}
+
+function checkVisionCatalog() {
+  equal(searchAmount({ quantityCategory: 'uncertain', yardsText: '' }), null, 'grams alone do not become a yard total');
+  equal(searchAmount({ quantityCategory: 'under-25', yardsText: '40' })?.kind, 'entered-yards', 'entered yards win over the rough category');
+  equal(searchAmount({ quantityCategory: 'skein-or-more', yardsText: '' })?.kind, 'rough-category', 'a rough category can search without a measurement');
+  assert(visionFitReason('worsted', 'worsted', 'small').includes('matches'), 'an exact weight is explained');
+  assert(visionFitReason('dk', 'worsted', 'micro').includes('close'), 'an adjacent weight is explained');
+  equal(tutorialMaterialsNote(null), 'This tutorial does not list materials.', 'missing materials stay unlabeled');
+  assert(
+    tutorialMaterialsNote([{ name: 'Yarn', weight: 'Worsted', yardage: '40 yd' }]).includes('40 yd'),
+    'recorded materials are shown',
+  );
+  assert(!visionFitReason('worsted', 'worsted', 'small').toLowerCase().includes('guaranteed'), 'a reason does not guarantee the leftovers');
+}
+
+async function checkVisionSessions() {
+  resetVisionSessionForTests();
+  const imageParams = visionCompletionParams('file://yarn.jpg');
+  const messages = imageParams.messages as { content: unknown }[];
+  assert(JSON.stringify(messages).includes('file://yarn.jpg'), 'the completion payload contains the local image');
+  assert(!JSON.stringify(imageParams).toLowerCase().includes('color'), 'the image request does not ask for color');
+
+  const iosCalls: { layers: number; shift: boolean }[] = [];
+  const ios = await runVisionAnalysis({
+    runtime: {
+      initLlama: async (params) => {
+        iosCalls.push({ layers: params.n_gpu_layers, shift: params.ctx_shift });
+        throw new Error('metal failed');
+      },
+    },
+    supported: true,
+    platform: 'ios',
+    modelPath: 'file://ios.gguf',
+    projectorPath: 'file://ios-mmproj.gguf',
+    imageUri: 'file://yarn.jpg',
+    photoGeneration: 1,
+    isCurrent: () => true,
+  });
+  equal(ios.status, 'unsupported', 'a failed Metal init is unsupported');
+  equal(iosCalls.length, 1, 'iOS does not retry the vision model on the CPU');
+  equal(iosCalls[0]?.layers, 99, 'iOS asks for the Metal layer count');
+  equal(iosCalls[0]?.shift, false, 'vision context shifting stays off');
+
+  resetVisionSessionForTests();
+  const androidCalls: number[] = [];
+  let projectorGpu: boolean | null = null;
+  let projectorPath = '';
+  let released = 0;
+  const android = await runVisionAnalysis({
+    runtime: {
+      initLlama: async (params) => {
+        androidCalls.push(params.n_gpu_layers);
+        if (params.n_gpu_layers > 0) throw new Error('opencl failed');
+        return visionContext('{"subjects":["uncertain"],"yarnCategory":"uncertain","categorySource":"uncertain","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}', {
+          onRelease: () => {
+            released += 1;
+          },
+          onProjector: (useGpu, path) => {
+            projectorGpu = useGpu;
+            projectorPath = path;
+          },
+        });
+      },
+    },
+    supported: true,
+    platform: 'android',
+    modelPath: 'file://android.gguf',
+    projectorPath: 'file://mmproj-F16.gguf',
+    imageUri: 'file://yarn.jpg',
+    photoGeneration: 2,
+    isCurrent: () => true,
+  });
+  equal(androidCalls.join(','), '99,0', 'Android retries the text model once on CPU');
+  equal(android.status, 'findings', 'a CPU retry can still return findings');
+  equal(projectorGpu, false, 'the Android projector stays on the CPU');
+  assert(projectorPath.includes('mmproj-F16'), 'Android loads the F16 projector');
+  equal(released, 1, 'the vision context is released');
+
+  resetVisionSessionForTests();
+  let sawImage = false;
+  const staleFlag = { current: true };
+  const stale = await runVisionAnalysis({
+    runtime: {
+      initLlama: async () =>
+        visionContext('{"subjects":["loose-yarn"],"yarnCategory":"worsted","categorySource":"visual","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}', {
+          onComplete: (params) => {
+            sawImage = JSON.stringify(params).includes('file://yarn.jpg');
+            staleFlag.current = false;
+          },
+        }),
+    },
+    supported: true,
+    platform: 'ios',
+    modelPath: 'file://ios.gguf',
+    projectorPath: 'file://mmproj.gguf',
+    imageUri: 'file://yarn.jpg',
+    photoGeneration: 3,
+    isCurrent: () => staleFlag.current,
+  });
+  assert(sawImage, 'the image is passed before a replaced photo is noticed');
+  equal(stale.status, 'discarded', 'a reply after a new photo is discarded');
+
+  resetVisionSessionForTests();
+  const blind = await runVisionAnalysis({
+    runtime: {
+      initLlama: async () =>
+        visionContext('{}', {
+          vision: false,
+        }),
+    },
+    supported: true,
+    platform: 'ios',
+    modelPath: 'file://ios.gguf',
+    projectorPath: 'file://mmproj.gguf',
+    imageUri: 'file://yarn.jpg',
+    photoGeneration: 4,
+    isCurrent: () => true,
+  });
+  equal(blind.status, 'failed', 'analysis stops when the projector does not report vision');
+
+  resetVisionSessionForTests();
+  const memory = createMemoryTransferIO();
+  const textPin: ScrapModelPin = {
+    id: 'text',
+    filename: 'text.gguf',
+    revision: 'abc',
+    url: 'https://example.test/text.gguf',
+    bytes: 4,
+    sha256: '',
+  };
+  const projectorPin: ScrapModelPin = {
+    id: 'proj',
+    filename: 'proj.gguf',
+    revision: 'abc',
+    url: 'https://example.test/proj.gguf',
+    bytes: 4,
+    sha256: '',
+  };
+  const textBytes = new Uint8Array([1, 2, 3, 4]);
+  const projectorBytes = new Uint8Array([5, 6, 7, 8]);
+  textPin.sha256 = sha256Bytes(textBytes);
+  projectorPin.sha256 = sha256Bytes(projectorBytes);
+  memory.setDownload(async ({ destination, cancelled }) => {
+    if (cancelled()) throw new ScrapTransferCancelledError();
+    return destination.includes('proj') ? projectorBytes : textBytes;
+  });
+  const saved = await downloadPinnedPair(memory.io, [
+    { pin: textPin, paths: scrapModelPaths('mem/', textPin.filename) },
+    { pin: projectorPin, paths: scrapModelPaths('mem/', projectorPin.filename) },
+  ]);
+  equal(saved.length, 2, 'a vision pair downloads both files');
+  memory.put(scrapModelPaths('mem/', projectorPin.filename).partial, new Uint8Array([1]));
+  const corruptPin = { ...projectorPin, sha256: 'f'.repeat(64), bytes: 1 };
+  await expectReject(
+    downloadPinnedPair(memory.io, [
+      { pin: textPin, paths: scrapModelPaths('mem/', textPin.filename) },
+      { pin: corruptPin, paths: scrapModelPaths('mem/', 'broken.gguf') },
+    ]),
+    ScrapChecksumError,
+    'a corrupt projector',
+  );
+}
+
+function checkPatternDrafts() {
+  const request = {
+    make: 'coaster',
+    size: '4 inches',
+    skill: 'beginner' as const,
+    yarnCategory: 'worsted' as const,
+    yards: 20,
+  };
+  const rectangle = checkPatternDraft(
+    JSON.stringify({
+      shape: 'sc-rectangle',
+      title: 'Draft coaster',
+      stitchesAcross: 10,
+      rows: 4,
+      hookMm: 5,
+      gaugeNote: 'Assumed gauge: 14 sc and 16 rows = 4 inches.',
+      abbreviations: [
+        { abbr: 'ch', meaning: 'chain' },
+        { abbr: 'sc', meaning: 'single crochet' },
+      ],
+      materials: 'Worsted yarn and a 5.0 mm hook. Rough draft estimate is under the yards you entered.',
+      instructions: [1, 2, 3, 4].map((n) => ({
+        n,
+        text: n === 1 ? 'Chain 11. Single crochet in the second chain and across.' : n === 4 ? 'Chain 1, turn, single crochet across. Fasten off.' : 'Chain 1, turn, single crochet across.',
+        stitchCount: 10,
+      })),
+    }),
+    request,
+  );
+  equal(rectangle.kind, 'draft', 'a correct rectangle passes');
+  if (rectangle.kind === 'draft') assert(rectangle.banner.includes('Not tested'), 'a passing draft says it is not tested');
+
+  const broken = checkPatternDraft(
+    JSON.stringify({
+      shape: 'sc-circle',
+      title: 'Circle',
+      rounds: 3,
+      hookMm: 5,
+      gaugeNote: 'Assumed gauge.',
+      abbreviations: [
+        { abbr: 'ch', meaning: 'chain' },
+        { abbr: 'sc', meaning: 'single crochet' },
+      ],
+      materials: 'Worsted yarn.',
+      instructions: [
+        { n: 1, text: 'Magic ring, 6 sc.', stitchCount: 6 },
+        { n: 2, text: 'Increase around.', stitchCount: 12 },
+        { n: 3, text: 'Continue. Fasten off.', stitchCount: 16 },
+      ],
+    }),
+    request,
+  );
+  equal(broken.kind, 'rejected', 'a broken increase is rejected');
+
+  const open = checkPatternDraft(
+    JSON.stringify({
+      shape: 'sc-rectangle',
+      title: 'Open row',
+      stitchesAcross: 8,
+      rows: 2,
+      hookMm: 5,
+      gaugeNote: 'Assumed gauge.',
+      abbreviations: [
+        { abbr: 'ch', meaning: 'chain' },
+        { abbr: 'sc', meaning: 'single crochet' },
+      ],
+      materials: 'Worsted yarn.',
+      instructions: [
+        { n: 1, text: 'Chain 9. Single crochet across.', stitchCount: 8 },
+        { n: 2, text: 'Chain 1, turn, single crochet across.', stitchCount: 8 },
+      ],
+    }),
+    request,
+  );
+  equal(open.kind, 'rejected', 'a missing fasten-off is rejected');
+
+  const overClaim = checkPatternDraft(
+    JSON.stringify({
+      shape: 'sc-rectangle',
+      title: 'Too big',
+      stitchesAcross: 40,
+      rows: 30,
+      hookMm: 5,
+      gaugeNote: 'Assumed gauge.',
+      abbreviations: [
+        { abbr: 'ch', meaning: 'chain' },
+        { abbr: 'sc', meaning: 'single crochet' },
+      ],
+      materials: 'Worsted yarn. These leftovers are enough.',
+      instructions: Array.from({ length: 30 }, (_, index) => ({
+        n: index + 1,
+        text: index === 0 ? 'Chain 41. Single crochet across. Fasten off.' : 'Chain 1, turn, single crochet across. Fasten off.',
+        stitchCount: 40,
+      })),
+    }),
+    { ...request, yards: 10 },
+  );
+  equal(overClaim.kind, 'rejected', 'an over-claim of yardage is rejected');
+
+  const sweater = checkPatternDraft(JSON.stringify({ shape: 'unsupported', title: '', hookMm: 5, gaugeNote: '', abbreviations: [], materials: '', instructions: [] }), request);
+  equal(sweater.kind, 'unsupported', 'a sweater request stays unsupported');
+  assert(sweater.kind === 'unsupported' && !('instructions' in sweater), 'an unsupported shape has no instructions');
+}
+
+function visionContext(
+  text: string,
+  hooks?: {
+    onRelease?: () => void;
+    onComplete?: (params: Record<string, unknown>) => void;
+    onProjector?: (useGpu: boolean, path: string) => void;
+    vision?: boolean;
+  },
+): VisionLlamaContext {
+  return {
+    gpu: true,
+    devices: [],
+    reasonNoGPU: '',
+    initMultimodal: async (params) => {
+      hooks?.onProjector?.(params.use_gpu === true, params.path);
+      return hooks?.vision !== false;
+    },
+    isMultimodalEnabled: async () => hooks?.vision !== false,
+    getMultimodalSupport: async () => ({ vision: hooks?.vision !== false, audio: false }),
+    releaseMultimodal: async () => undefined,
+    completion: async (params) => {
+      hooks?.onComplete?.(params);
+      return { text };
+    },
+    stopCompletion: async () => undefined,
+    release: async () => hooks?.onRelease?.(),
+  };
 }
 
 function checkComparison() {

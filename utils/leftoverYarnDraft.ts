@@ -5,9 +5,17 @@
  * pattern preview can unmount the sheet without discarding them. Nothing in
  * this module is written to disk.
  */
-import type { YarnWeight } from '@/store/machine';
+import type { PatternDifficulty, YarnWeight } from '@/store/machine';
 import type { ScrapSuggestionResult, ScrapYarnColor } from '@/utils/scrapYarnAi';
+import type { PatternDraftCheck, PatternDraftRequest } from '@/utils/scrapPatternDraft';
+import type { ConfirmedCatalogResult, VisionCatalogCard } from '@/utils/scrapVisionCatalog';
+import { emptyVisionFindings, type YarnVisionFindings } from '@/utils/scrapVisionOutput';
 import { regionSampleKey, type YarnSampleRegion } from '@/utils/yarnRegion';
+
+export type VisionCorrections = YarnVisionFindings & {
+  gramsText: string;
+  yardsText: string;
+};
 
 export type LeftoverYarnDraft = {
   photoUri: string | null;
@@ -22,8 +30,22 @@ export type LeftoverYarnDraft = {
   colorEditKey: string | null;
   weight: YarnWeight;
   yardsText: string;
+  gramsText: string;
   aiResult: { key: string; result: ScrapSuggestionResult } | null;
   scrollY: number;
+  findings: YarnVisionFindings | null;
+  corrections: VisionCorrections | null;
+  findingsGeneration: number | null;
+  findingsEdited: boolean;
+  /** Vision results are separate from details the maker typed after a failed analysis. */
+  analysisSource: 'vision' | 'user' | null;
+  confirmed: boolean;
+  catalog: VisionCatalogCard[] | null;
+  catalogNote: string | null;
+  patternMake: string;
+  patternSize: string;
+  patternSkill: PatternDifficulty;
+  patternDraft: PatternDraftCheck | { kind: 'failed'; message: string } | null;
 };
 
 export type ExtractionStamp = {
@@ -47,9 +69,22 @@ function emptyDraft(): LeftoverYarnDraft {
     sampledKey: null,
     colorEditKey: null,
     weight: 'worsted',
-    yardsText: '75',
+    yardsText: '',
+    gramsText: '',
     aiResult: null,
     scrollY: 0,
+    findings: null,
+    corrections: null,
+    findingsGeneration: null,
+    findingsEdited: false,
+    analysisSource: null,
+    confirmed: false,
+    catalog: null,
+    catalogNote: null,
+    patternMake: '',
+    patternSize: '',
+    patternSkill: 'beginner',
+    patternDraft: null,
   };
 }
 
@@ -93,6 +128,15 @@ export function replaceLeftoverPhoto(uri: string): void {
     colorEditKey: null,
     aiResult: null,
     scrollY: 0,
+    findings: null,
+    corrections: null,
+    findingsGeneration: null,
+    findingsEdited: false,
+    analysisSource: null,
+    confirmed: false,
+    catalog: null,
+    catalogNote: null,
+    patternDraft: null,
   };
   emit();
 }
@@ -165,6 +209,120 @@ export function commitSampledColors(stamp: ExtractionStamp, colors: readonly Scr
   return true;
 }
 
+/** A late reply is ignored once the photo changes or the maker edits the findings. */
+export function applyVisionFindings(generation: number, findings: YarnVisionFindings): boolean {
+  if (draft.photoGeneration !== generation) return false;
+  if (draft.findingsEdited && draft.findingsGeneration === generation) return false;
+  const corrections = correctionsFrom(findings, draft.gramsText, draft.yardsText);
+  draft = {
+    ...draft,
+    findings,
+    corrections,
+    findingsGeneration: generation,
+    findingsEdited: false,
+    analysisSource: 'vision',
+    confirmed: false,
+    catalog: null,
+    catalogNote: null,
+    patternDraft: null,
+    weight: corrections.yarnCategory === 'uncertain' ? draft.weight : corrections.yarnCategory,
+  };
+  emit();
+  return true;
+}
+
+/** Details the maker typed because the photo was not analyzed. */
+export function beginManualYarnFindings(force = false): void {
+  if (!force && draft.analysisSource === 'vision' && draft.corrections) return;
+  draft = {
+    ...draft,
+    findings: null,
+    corrections: correctionsFrom(emptyVisionFindings(), draft.gramsText, draft.yardsText),
+    findingsGeneration: draft.photoGeneration,
+    findingsEdited: true,
+    analysisSource: 'user',
+    confirmed: false,
+    catalog: null,
+    catalogNote: null,
+    patternDraft: null,
+  };
+  emit();
+}
+
+export function editVisionCorrections(patch: Partial<VisionCorrections>): void {
+  if (!draft.corrections) return;
+  const corrections = { ...draft.corrections, ...patch };
+  draft = {
+    ...draft,
+    corrections,
+    findingsEdited: true,
+    confirmed: false,
+    catalog: null,
+    catalogNote: null,
+    patternDraft: null,
+    yardsText: corrections.yardsText,
+    gramsText: corrections.gramsText,
+    weight: corrections.yarnCategory === 'uncertain' ? draft.weight : corrections.yarnCategory,
+  };
+  emit();
+}
+
+export function confirmVisionFindings(result: ConfirmedCatalogResult): ConfirmedCatalogResult | null {
+  if (!draft.corrections) return null;
+  draft = {
+    ...draft,
+    confirmed: true,
+    yardsText: draft.corrections.yardsText,
+    gramsText: draft.corrections.gramsText,
+    weight: draft.corrections.yarnCategory === 'uncertain' ? draft.weight : draft.corrections.yarnCategory,
+    catalog: result.status === 'results' ? result.cards : [],
+    catalogNote:
+      result.status === 'results'
+        ? result.amountNote
+        : result.status === 'need-category'
+          ? 'Choose a yarn category before searching tutorials.'
+          : 'Choose a rough amount, or enter yards, before searching tutorials. Grams are not turned into yards.',
+  };
+  emit();
+  return result;
+}
+
+export function updatePatternRequest(patch: Partial<Pick<LeftoverYarnDraft, 'patternMake' | 'patternSize' | 'patternSkill'>>): void {
+  draft = { ...draft, ...patch, patternDraft: null };
+  emit();
+}
+
+export function storePatternDraft(patternDraft: LeftoverYarnDraft['patternDraft']): void {
+  draft = { ...draft, patternDraft };
+  emit();
+}
+
+export function patternRequestFromDraft(source: LeftoverYarnDraft = draft): PatternDraftRequest | null {
+  if (!source.corrections || source.corrections.yarnCategory === 'uncertain') return null;
+  const yards = source.corrections.yardsText.trim().match(/^\d+$/) ? Number(source.corrections.yardsText) : null;
+  return {
+    make: source.patternMake.trim(),
+    size: source.patternSize.trim(),
+    skill: source.patternSkill,
+    yarnCategory: source.corrections.yarnCategory,
+    yards: yards != null && yards > 0 ? yards : null,
+  };
+}
+
+function correctionsFrom(findings: YarnVisionFindings, gramsText: string, yardsText: string): VisionCorrections {
+  return {
+    subjects: [...findings.subjects],
+    yarnCategory: findings.yarnCategory,
+    categorySource: findings.categorySource,
+    labelText: findings.labelText,
+    hookObservedMarking: findings.hookObservedMarking,
+    stitches: findings.stitches === 'uncertain' ? 'uncertain' : findings.stitches.map((stitch) => ({ ...stitch, alternatives: [...stitch.alternatives] })),
+    quantityCategory: findings.quantityCategory,
+    gramsText,
+    yardsText,
+  };
+}
+
 export function leftoverYarnSnapshot(source: LeftoverYarnDraft = draft): LeftoverYarnDraft {
   return {
     ...source,
@@ -181,5 +339,22 @@ export function leftoverYarnSnapshot(source: LeftoverYarnDraft = draft): Leftove
           },
         }
       : null,
+    findings: source.findings ? { ...source.findings, subjects: [...source.findings.subjects] } : null,
+    corrections: source.corrections
+      ? {
+          ...source.corrections,
+          subjects: [...source.corrections.subjects],
+          stitches:
+            source.corrections.stitches === 'uncertain'
+              ? 'uncertain'
+              : source.corrections.stitches.map((stitch) => ({ ...stitch, alternatives: [...stitch.alternatives] })),
+        }
+      : null,
+    catalog: source.catalog ? source.catalog.map((card) => ({ ...card, pattern: { ...card.pattern } })) : null,
+    patternDraft: source.patternDraft ? cloneDraft(source.patternDraft) : null,
   };
+}
+
+function cloneDraft(value: NonNullable<LeftoverYarnDraft['patternDraft']>): NonNullable<LeftoverYarnDraft['patternDraft']> {
+  return JSON.parse(JSON.stringify(value)) as NonNullable<LeftoverYarnDraft['patternDraft']>;
 }

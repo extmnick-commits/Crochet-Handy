@@ -9,6 +9,7 @@ Crochet Handy ("the app") helps you track crochet patterns, projects, and stash.
 - **Account** (optional): If you sign up with email and password, we store your email, display name, username, and profile fields in **Firebase Authentication** and **Cloud Firestore** under your user ID.
 - **App content**: Projects, counters, yarn stash, collections, likes, progress photos, and notes are stored on your device and, when signed in, synced to your Firestore document.
 - **Photos**: Progress photos you capture stay in your project data on device and in your cloud document when sync is enabled. We do not use them for advertising.
+- **Leftover-yarn photos**: A photo you take for yarn identification stays on the device. On-device analysis does not upload it. The app downloads vision-model weights for that analysis. If analysis is unavailable, the photo is not sent anywhere else to replace it.
 
 ## Data we do not sell
 
@@ -19,6 +20,7 @@ We do not sell your personal information.
 - **Google Firebase** (authentication and database) — [Google Privacy Policy](https://policies.google.com/privacy)
 - **YouTube** (embedded players and pattern metadata via the YouTube Data API when configured)
 - **Pattern catalog CDN** (read-only JSON hosted on jsDelivr from the public Crochet Handy repository)
+- **Hugging Face** (vision-model weights downloaded to the device for leftover-yarn analysis)
 
 ## Local-only use
 

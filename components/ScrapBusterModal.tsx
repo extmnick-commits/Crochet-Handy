@@ -1,36 +1,39 @@
 /**
- * Leftover yarn. A photo opens the project list for the yarn weight and yards.
- * The list updates as those change. The photo is not scanned for color.
+ * Leftover yarn. A photo is analyzed on device, then the maker confirms
+ * the findings and opens matching tutorials. Color is not part of this sheet.
  */
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import type { PatternDifficulty } from '@/store/machine';
 import { YARN_WEIGHTS, type CrochetPattern } from '@/store/useCrochetStore';
+import { displayThumbnail, recommendationThumbnail } from '@/utils/catalogPreview';
 import {
-  displayThumbnail,
-  recommendationThumbnail,
-} from '@/utils/catalogPreview';
-import {
+  applyVisionFindings,
+  beginManualYarnFindings,
+  confirmVisionFindings,
+  editVisionCorrections,
   getLeftoverYarnDraft,
+  patternRequestFromDraft,
   replaceLeftoverPhoto,
   resetLeftoverYarnDraft,
+  storePatternDraft,
   subscribeLeftoverYarnDraft,
   updateLeftoverYarnDraft,
+  updatePatternRequest,
+  type VisionCorrections,
 } from '@/utils/leftoverYarnDraft';
 import { difficultyLabel, yarnWeightMeta } from '@/utils/patternDisplay';
 import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@/utils/progressPhoto';
-import {
-  YARDAGE_TIERS,
-  hookForYarnWeight,
-  offlineScrapSuggestion,
-  parseAvailableYards,
-  tierForYards,
-  type ScannedLeftoverDraft,
-  type ScrapCatalogSuggestion,
-} from '@/utils/scrapYarnAi';
+import { hookRangeLabel } from '@/utils/scrapHookRange';
+import { hookForYarnWeight, parseAvailableYards, tierForYards, type ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
+import { recommendConfirmedCatalog, type VisionCatalogCard } from '@/utils/scrapVisionCatalog';
+import { prepareVisionPhoto } from '@/utils/scrapVisionImage';
+import { QUANTITY_CATEGORIES, VISION_SUBJECTS, weightFromLabel, type QuantityCategory, type VisionSubject } from '@/utils/scrapVisionOutput';
+import { analyzeLeftoverPhoto, cancelVisionDownload, createLeftoverPatternDraft } from '@/utils/scrapVisionRun';
 
 type ScrapBusterModalProps = {
   visible: boolean;
@@ -39,6 +42,8 @@ type ScrapBusterModalProps = {
   onPreviewPattern: (pattern: CrochetPattern) => void;
   onSaveToStash: (draft: ScannedLeftoverDraft) => void;
 };
+
+const SKILLS: readonly PatternDifficulty[] = ['beginner', 'easy', 'intermediate', 'advanced'];
 
 function useLeftoverYarnDraft() {
   return useSyncExternalStore(subscribeLeftoverYarnDraft, getLeftoverYarnDraft, getLeftoverYarnDraft);
@@ -59,7 +64,7 @@ export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern
             <Text role="heading" aria-level={2} style={styles.title}>
               Leftover yarn
             </Text>
-            <Text style={styles.subtitle}>A photo, then projects that fit this yarn</Text>
+            <Text style={styles.subtitle}>Take a photo, confirm the findings, then open matching tutorials</Text>
           </View>
           {draft.photoUri ? (
             <Pressable
@@ -67,7 +72,10 @@ export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern
               accessibilityLabel="Start a new yarn scan"
               testID="leftover-start-over"
               hitSlop={Layout.hitSlop}
-              onPress={() => resetLeftoverYarnDraft()}
+              onPress={() => {
+                cancelVisionDownload();
+                resetLeftoverYarnDraft();
+              }}
               style={({ pressed }) => [styles.textAction, pressed && styles.pressed, webCursor]}
             >
               <Text style={styles.textActionLabel}>Start over</Text>
@@ -85,9 +93,7 @@ export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern
         </View>
       }
     >
-      {visible ? (
-        <ScrapBusterForm onPreviewPattern={onPreviewPattern} onSaveToStash={onSaveToStash} />
-      ) : null}
+      {visible ? <ScrapBusterForm onPreviewPattern={onPreviewPattern} onSaveToStash={onSaveToStash} /> : null}
     </BottomSheet>
   );
 }
@@ -100,35 +106,103 @@ function ScrapBusterForm({
   onSaveToStash: (draft: ScannedLeftoverDraft) => void;
 }) {
   const draft = useLeftoverYarnDraft();
-  const [status, setStatus] = useState<string | null>(null);
-  const yards = parseAvailableYards(draft.yardsText);
-  const shown = useMemo(
-    () => offlineScrapSuggestion({ colors: [], weight: draft.weight, availableYards: yards }),
-    [draft.weight, yards],
-  );
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [ratio, setRatio] = useState(0);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const onCapture = async (source: CaptureSource) => {
-    setStatus(null);
+    cancelVisionDownload();
+    setMessage(null);
+    setBusy(null);
     const captured = await captureProgressPhoto(source);
-    if (captured.status === 'canceled') return;
+    if (!mounted.current || captured.status === 'canceled') return;
     if (captured.status === 'error') {
-      setStatus(captureErrorMessage(captured.reason, source));
+      setMessage(captureErrorMessage(captured.reason, source));
       return;
     }
     replaceLeftoverPhoto(captured.uri);
   };
 
+  const onAnalyze = async () => {
+    const photoUri = getLeftoverYarnDraft().photoUri;
+    if (!photoUri || busy) return;
+    const generation = getLeftoverYarnDraft().photoGeneration;
+    const epoch = getLeftoverYarnDraft().sessionEpoch;
+    const isCurrent = () => {
+      const current = getLeftoverYarnDraft();
+      return current.photoGeneration === generation && current.sessionEpoch === epoch;
+    };
+    setMessage(null);
+    setRatio(0);
+    setBusy('Preparing the photo');
+    try {
+      const imageUri = await prepareVisionPhoto(photoUri);
+      if (!isCurrent()) return;
+      const result = await analyzeLeftoverPhoto({
+        imageUri,
+        photoGeneration: generation,
+        isCurrent,
+        onProgress: (update) => {
+          if (!mounted.current || !isCurrent()) return;
+          setRatio(update.ratio);
+          setBusy(update.phase === 'download' ? 'Preparing on-device analysis' : 'Checking the on-device model');
+        },
+      });
+      if (!mounted.current || !isCurrent()) return;
+      if (result.status === 'findings') {
+        applyVisionFindings(generation, result.findings);
+        setMessage(null);
+      } else if (result.status === 'failed' || result.status === 'unsupported') {
+        if (!result.message.includes('busy')) beginManualYarnFindings(true);
+        setMessage(result.message);
+      }
+    } catch {
+      if (mounted.current && isCurrent()) {
+        beginManualYarnFindings(true);
+        setMessage('The photo could not be prepared. You can still enter the yarn details yourself.');
+      }
+    } finally {
+      if (mounted.current && isCurrent()) setBusy(null);
+    }
+  };
+
+  const onCreatePattern = async () => {
+    const request = patternRequestFromDraft();
+    if (!request || busy) return;
+    const generation = getLeftoverYarnDraft().photoGeneration;
+    const epoch = getLeftoverYarnDraft().sessionEpoch;
+    const isCurrent = () => {
+      const current = getLeftoverYarnDraft();
+      return current.photoGeneration === generation && current.sessionEpoch === epoch;
+    };
+    setBusy('Writing a draft pattern');
+    setMessage(null);
+    const result = await createLeftoverPatternDraft({ request, isCurrent });
+    if (!mounted.current || !isCurrent()) return;
+    if (result.kind === 'cancelled' || result.kind === 'discarded') {
+      setBusy(null);
+      return;
+    }
+    storePatternDraft(result);
+    setBusy(null);
+  };
+
+  const corrections = draft.corrections;
+  const yards = parseAvailableYards(corrections?.yardsText ?? draft.yardsText);
+
   return (
     <View style={styles.form}>
       {draft.photoUri ? (
         <View style={styles.block}>
-          <Image
-            accessible
-            accessibilityLabel="Yarn photo"
-            source={{ uri: draft.photoUri }}
-            resizeMode="cover"
-            style={styles.photo}
-          />
+          <Image accessible accessibilityLabel="Yarn photo" source={{ uri: draft.photoUri }} resizeMode="cover" style={styles.photo} />
           <View style={styles.captureRow}>
             <Pressable
               accessibilityRole="button"
@@ -153,6 +227,33 @@ function ScrapBusterForm({
               <Text style={styles.secondaryLabel}>Change photo</Text>
             </Pressable>
           </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Analyze photo"
+            testID="leftover-analyze"
+            disabled={busy != null}
+            onPress={() => {
+              void onAnalyze();
+            }}
+            style={({ pressed }) => [styles.primaryButton, busy && styles.disabled, pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.primaryLabel}>{busy ?? 'Analyze'}</Text>
+          </Pressable>
+          {busy ? (
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${Math.round(Math.max(ratio, 0.08) * 100)}%` }]} />
+            </View>
+          ) : null}
+          {busy ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel analysis"
+              onPress={() => cancelVisionDownload()}
+              style={({ pressed }) => [styles.textAction, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.removeLabel}>Cancel</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : (
         <View style={styles.block}>
@@ -182,115 +283,321 @@ function ScrapBusterForm({
         </View>
       )}
 
-      {draft.photoUri ? (
-        <View style={styles.block}>
-          <Text style={styles.label}>Weight</Text>
-          <View style={styles.chips}>
-            {YARN_WEIGHTS.map((option) => {
-              const meta = yarnWeightMeta(option);
-              const active = draft.weight === option;
-              return (
-                <Pressable
-                  key={option}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${meta.label} ${meta.number}`}
-                  accessibilityState={{ selected: active }}
-                  onPress={() => updateLeftoverYarnDraft({ weight: option })}
-                  style={({ pressed }) => [styles.chip, active && styles.chipSelected, pressed && styles.pressed, webCursor]}
-                >
-                  <Text style={[styles.chipText, active && styles.chipTextSelected]}>
-                    {meta.label} {meta.number}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Text style={styles.label}>Yards</Text>
-          <TextInput
-            accessibilityLabel="Yards"
-            keyboardType="number-pad"
-            inputMode="numeric"
-            value={draft.yardsText}
-            onChangeText={(yardsText) => updateLeftoverYarnDraft({ yardsText })}
-            style={styles.yardsInput}
-          />
-          <View style={styles.chips}>
-            {YARDAGE_TIERS.map((option) => {
-              const active = draft.yardsText === String(option.yards);
-              return (
-                <Pressable
-                  key={option.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={option.label}
-                  accessibilityState={{ selected: active }}
-                  onPress={() => updateLeftoverYarnDraft({ yardsText: String(option.yards) })}
-                  style={({ pressed }) => [styles.chip, active && styles.chipSelected, pressed && styles.pressed, webCursor]}
-                >
-                  <Text style={[styles.chipText, active && styles.chipTextSelected]}>{yardChipLabel(option.id)}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      ) : null}
-
-      {status ? (
+      {message ? (
         <Text accessibilityLiveRegion="polite" style={styles.error}>
-          {status}
+          {message}
         </Text>
       ) : null}
 
-      {draft.photoUri && yards > 0 ? (
+      {corrections ? (
+        <FindingsEditor
+          corrections={corrections}
+          source={draft.analysisSource}
+          confirmed={draft.confirmed}
+          catalog={draft.catalog}
+          catalogNote={draft.catalogNote}
+          onPreviewPattern={onPreviewPattern}
+          onConfirm={() => {
+            const current = getLeftoverYarnDraft().corrections;
+            if (!current) return;
+            confirmVisionFindings(
+              recommendConfirmedCatalog({
+                yarnCategory: current.yarnCategory,
+                quantityCategory: current.quantityCategory,
+                yardsText: current.yardsText,
+                gramsText: current.gramsText,
+              }),
+            );
+          }}
+        />
+      ) : null}
+
+      {draft.confirmed && corrections && corrections.yarnCategory !== 'uncertain' ? (
+        <PatternDraftSection
+          make={draft.patternMake}
+          size={draft.patternSize}
+          skill={draft.patternSkill}
+          draftResult={draft.patternDraft}
+          busy={busy != null}
+          onCreate={() => {
+            void onCreatePattern();
+          }}
+        />
+      ) : null}
+
+      {draft.confirmed && corrections && corrections.yarnCategory !== 'uncertain' && (yards > 0 || corrections.quantityCategory !== 'uncertain') ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Save leftover to stash"
+          onPress={() => {
+            const available = yards > 0 ? yards : categoryYards(corrections.quantityCategory);
+            onSaveToStash({
+              colors: [],
+              yarnWeight: corrections.yarnCategory === 'uncertain' ? draft.weight : corrections.yarnCategory,
+              yardageTier: tierForYards(available),
+              availableYards: available,
+              hookSize: hookForYarnWeight(corrections.yarnCategory === 'uncertain' ? draft.weight : corrections.yarnCategory),
+            });
+          }}
+          style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.accentLabel}>Save leftover to stash</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function FindingsEditor({
+  corrections,
+  source,
+  confirmed,
+  catalog,
+  catalogNote,
+  onPreviewPattern,
+  onConfirm,
+}: {
+  corrections: VisionCorrections;
+  source: 'vision' | 'user' | null;
+  confirmed: boolean;
+  catalog: VisionCatalogCard[] | null;
+  catalogNote: string | null;
+  onPreviewPattern: (pattern: CrochetPattern) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <View style={styles.block}>
+      <Text style={styles.resultsTitle}>Findings</Text>
+      <Text style={styles.note}>
+        {source === 'vision'
+          ? 'From the photo. Correct anything that looks wrong.'
+          : 'These are your entries. The photo was not analyzed.'}
+      </Text>
+      <Text style={styles.label}>What is in the photo</Text>
+      <View style={styles.chips}>
+        {VISION_SUBJECTS.map((subject) => (
+          <Chip
+            key={subject}
+            label={subjectLabel(subject)}
+            selected={corrections.subjects.includes(subject)}
+            onPress={() => editVisionCorrections({ subjects: toggleSubject(corrections.subjects, subject) })}
+          />
+        ))}
+      </View>
+      <Text style={styles.label}>Yarn category</Text>
+      <Text style={styles.note}>{categorySourceCopy(corrections)}</Text>
+      <View style={styles.chips}>
+        <Chip
+          label="Uncertain"
+          selected={corrections.yarnCategory === 'uncertain'}
+          onPress={() => editVisionCorrections({ yarnCategory: 'uncertain', categorySource: 'uncertain' })}
+        />
+        {YARN_WEIGHTS.map((weight) => {
+          const meta = yarnWeightMeta(weight);
+          return (
+            <Chip
+              key={weight}
+              label={`${meta.label} ${meta.number}`}
+              selected={corrections.yarnCategory === weight}
+              onPress={() =>
+                editVisionCorrections({
+                  yarnCategory: weight,
+                  categorySource: weightFromLabel(corrections.labelText) === weight ? 'label' : 'visual',
+                })
+              }
+            />
+          );
+        })}
+      </View>
+      <Text style={styles.label}>Label text</Text>
+      <TextInput
+        accessibilityLabel="Label text"
+        value={corrections.labelText ?? ''}
+        onChangeText={(value) => {
+          const labeled = weightFromLabel(value);
+          editVisionCorrections({
+            labelText: value.trim() ? value : null,
+            ...(labeled ? { yarnCategory: labeled, categorySource: 'label' as const } : {}),
+          });
+        }}
+        style={styles.yardsInput}
+      />
+      <Text style={styles.label}>Marking on the hook</Text>
+      <TextInput
+        accessibilityLabel="Marking on the hook"
+        value={corrections.hookObservedMarking ?? ''}
+        onChangeText={(value) => editVisionCorrections({ hookObservedMarking: value.trim() ? value.trim() : null })}
+        style={styles.yardsInput}
+      />
+      {corrections.hookObservedMarking ? <Text style={styles.note}>Observed marking: {corrections.hookObservedMarking}</Text> : null}
+      {corrections.yarnCategory !== 'uncertain' ? (
+        <Text style={styles.note}>Suggested hook for this yarn: {hookRangeLabel(corrections.yarnCategory)}</Text>
+      ) : null}
+      <Text style={styles.label}>Stitches</Text>
+      {corrections.stitches === 'uncertain' ? (
+        <Text style={styles.note}>Stitches are uncertain.</Text>
+      ) : (
+        corrections.stitches.map((stitch) => (
+          <Text key={stitch.name} style={styles.note}>
+            {stitch.name} ({stitch.confidence}
+            {stitch.alternatives.length > 0 ? `; also ${stitch.alternatives.join(', ')}` : ''})
+          </Text>
+        ))
+      )}
+      {corrections.stitches !== 'uncertain' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Mark stitches uncertain"
+          onPress={() => editVisionCorrections({ stitches: 'uncertain' })}
+          style={({ pressed }) => [styles.textAction, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.accentLabel}>Mark stitches uncertain</Text>
+        </Pressable>
+      ) : null}
+      <Text style={styles.label}>Leftover amount</Text>
+      <Text style={styles.note}>A photo cannot measure grams or yards. Pick a rough amount, or type what you know.</Text>
+      <View style={styles.chips}>
+        {QUANTITY_CATEGORIES.map((category) => (
+          <Chip
+            key={category}
+            label={quantityLabel(category)}
+            selected={corrections.quantityCategory === category}
+            onPress={() => editVisionCorrections({ quantityCategory: category })}
+          />
+        ))}
+      </View>
+      <Text style={styles.label}>Grams, if you know them</Text>
+      <TextInput
+        accessibilityLabel="Grams"
+        keyboardType="number-pad"
+        inputMode="numeric"
+        value={corrections.gramsText}
+        onChangeText={(gramsText) => editVisionCorrections({ gramsText })}
+        style={styles.yardsInput}
+      />
+      <Text style={styles.label}>Yards, if you know them</Text>
+      <TextInput
+        accessibilityLabel="Yards"
+        keyboardType="number-pad"
+        inputMode="numeric"
+        value={corrections.yardsText}
+        onChangeText={(yardsText) => editVisionCorrections({ yardsText })}
+        style={styles.yardsInput}
+      />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="View matching projects"
+        testID="leftover-confirm"
+        onPress={onConfirm}
+        style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
+      >
+        <Text style={styles.primaryLabel}>View matching projects</Text>
+      </Pressable>
+      {confirmed ? (
         <View style={styles.results}>
-          <Text style={styles.resultsTitle}>Projects you can make</Text>
-          {shown.ideas.length === 0 ? (
-            <Text style={styles.note}>No planning estimate fits in {yards} yd.</Text>
-          ) : (
-            shown.ideas.map((idea) => (
-              <View key={idea.planId} style={styles.ideaCard}>
-                <View style={styles.ideaCopy}>
-                  <Text style={styles.ideaTitle}>{idea.title}</Text>
-                  <Text style={styles.ideaMeta}>
-                    {difficultyLabel(idea.difficulty)} · {idea.hookSize}
-                  </Text>
-                  <Text style={styles.note}>Planning estimate: {idea.estimatedYardage}</Text>
-                </View>
-              </View>
-            ))
-          )}
-
           <Text style={styles.resultsTitle}>Tutorials</Text>
-          {shown.catalog.length === 0 ? (
-            <Text style={styles.note}>No tutorial fits this weight and yard total.</Text>
-          ) : (
-            shown.catalog.map((item) => (
-              <CatalogCard key={item.pattern.id} item={item} onPreview={() => onPreviewPattern(item.pattern)} />
-            ))
-          )}
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Save leftover to stash"
-            onPress={() => {
-              onSaveToStash({
-                colors: [],
-                yarnWeight: draft.weight,
-                yardageTier: tierForYards(yards),
-                availableYards: yards,
-                hookSize: shown.ideas[0]?.hookSize ?? hookForYarnWeight(draft.weight),
-              });
-            }}
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.accentLabel}>Save leftover to stash</Text>
-          </Pressable>
+          {catalogNote ? <Text style={styles.note}>{catalogNote}</Text> : null}
+          {catalog && catalog.length > 0 ? (
+            catalog.map((item) => <CatalogCard key={item.pattern.id} item={item} onPreview={() => onPreviewPattern(item.pattern)} />)
+          ) : catalogNote?.startsWith('Searching') ? (
+            <Text style={styles.note}>No tutorial in the catalog fits this yarn and amount.</Text>
+          ) : null}
         </View>
       ) : null}
     </View>
   );
 }
 
-function CatalogCard({ item, onPreview }: { item: ScrapCatalogSuggestion; onPreview: () => void }) {
+function PatternDraftSection({
+  make,
+  size,
+  skill,
+  draftResult,
+  busy,
+  onCreate,
+}: {
+  make: string;
+  size: string;
+  skill: PatternDifficulty;
+  draftResult: ReturnType<typeof getLeftoverYarnDraft>['patternDraft'];
+  busy: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <View style={styles.block}>
+      <Text style={styles.resultsTitle}>Create a pattern</Text>
+      <Text style={styles.note}>This writes a separate draft. It is not one of the tutorials above.</Text>
+      <Text style={styles.label}>What do you want to make?</Text>
+      <TextInput
+        accessibilityLabel="What do you want to make"
+        value={make}
+        onChangeText={(patternMake) => updatePatternRequest({ patternMake })}
+        style={styles.yardsInput}
+      />
+      <Text style={styles.label}>Approximate size</Text>
+      <TextInput
+        accessibilityLabel="Approximate size"
+        value={size}
+        onChangeText={(patternSize) => updatePatternRequest({ patternSize })}
+        style={styles.yardsInput}
+      />
+      <Text style={styles.label}>Skill</Text>
+      <View style={styles.chips}>
+        {SKILLS.map((option) => (
+          <Chip key={option} label={difficultyLabel(option)} selected={skill === option} onPress={() => updatePatternRequest({ patternSkill: option })} />
+        ))}
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Create a pattern"
+        testID="leftover-create-pattern"
+        disabled={busy}
+        onPress={onCreate}
+        style={({ pressed }) => [styles.secondaryButton, busy && styles.disabled, pressed && styles.pressed, webCursor]}
+      >
+        <Text style={styles.accentLabel}>Create a pattern</Text>
+      </Pressable>
+      {draftResult && draftResult.kind === 'draft' ? (
+        <View style={styles.draftCard}>
+          <Text style={styles.ideaTitle}>Draft pattern</Text>
+          <Text style={styles.note}>{draftResult.banner}</Text>
+          <Text style={styles.ideaTitle}>{draftResult.title}</Text>
+          <Text style={styles.note}>{draftResult.shapeLabel}</Text>
+          <Text style={styles.note}>{draftResult.materials}</Text>
+          <Text style={styles.note}>Suggested hook: {draftResult.hook}</Text>
+          <Text style={styles.note}>{draftResult.gaugeNote}</Text>
+          <Text style={styles.label}>Abbreviations</Text>
+          {draftResult.abbreviations.map((item) => (
+            <Text key={item.abbr} style={styles.note}>
+              {item.abbr}: {item.meaning}
+            </Text>
+          ))}
+          <Text style={styles.label}>Instructions</Text>
+          {draftResult.instructions.map((step) => (
+            <Text key={step.n} style={styles.note}>
+              {step.n}. {step.text} ({step.stitchCount} stitches)
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {draftResult && draftResult.kind === 'rejected' ? (
+        <View style={styles.block}>
+          <Text style={styles.note}>This draft did not pass the stitch-count check.</Text>
+          {draftResult.reasons.map((reason) => (
+            <Text key={reason} style={styles.note}>
+              {reason}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {draftResult && (draftResult.kind === 'unsupported' || draftResult.kind === 'failed') ? (
+        <Text style={styles.note}>{draftResult.message}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function CatalogCard({ item, onPreview }: { item: VisionCatalogCard; onPreview: () => void }) {
   const pattern = item.pattern;
   const weight = yarnWeightMeta(pattern.yarnWeight);
   return (
@@ -306,7 +613,9 @@ function CatalogCard({ item, onPreview }: { item: ScrapCatalogSuggestion; onPrev
         <Text numberOfLines={1} style={styles.ideaMeta}>
           {weight.label} {weight.number} · {pattern.hookSize}
         </Text>
+        <Text style={styles.note}>{item.reason}</Text>
         <Text style={styles.note}>{item.yardageNote}</Text>
+        <Text style={styles.note}>{item.materialsNote}</Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Preview ${pattern.title}`}
@@ -332,20 +641,58 @@ function CatalogThumb({ pattern }: { pattern: CrochetPattern }) {
       </View>
     );
   }
+  return <Image accessible={false} source={{ uri }} style={styles.thumb} onError={() => setFailed(true)} />;
+}
+
+function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
-    <Image
-      accessible={false}
-      source={{ uri }}
-      style={styles.thumb}
-      onError={() => setFailed(true)}
-    />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.chip, selected && styles.chipSelected, pressed && styles.pressed, webCursor]}
+    >
+      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
+    </Pressable>
   );
 }
 
-function yardChipLabel(id: string): string {
-  if (id === 'scrap_under_25yd') return '< 25 yd';
-  if (id === 'small_25_75yd') return '25–75 yd';
-  return '75–150 yd';
+function toggleSubject(subjects: readonly VisionSubject[], subject: VisionSubject): VisionSubject[] {
+  const has = subjects.includes(subject);
+  const next = has ? subjects.filter((item) => item !== subject) : [...subjects.filter((item) => item !== 'none' && item !== 'uncertain'), subject];
+  return next.length > 0 ? next : ['uncertain'];
+}
+
+function subjectLabel(subject: VisionSubject): string {
+  if (subject === 'loose-yarn') return 'Loose yarn';
+  if (subject === 'fabric') return 'Crocheted fabric';
+  if (subject === 'hook') return 'Hook';
+  if (subject === 'label') return 'Yarn label';
+  if (subject === 'none') return 'No yarn';
+  return 'Uncertain';
+}
+
+function quantityLabel(category: QuantityCategory): string {
+  if (category === 'under-25') return 'Under 25 yd';
+  if (category === '25-75') return '25–75 yd';
+  if (category === '75-150') return '75–150 yd';
+  if (category === 'skein-or-more') return 'About a skein or more';
+  return 'Uncertain';
+}
+
+function categorySourceCopy(corrections: VisionCorrections): string {
+  if (corrections.categorySource === 'label') return 'Yarn category came from the readable label.';
+  if (corrections.categorySource === 'visual') return 'Yarn category is a visual estimate.';
+  return 'Yarn category is uncertain.';
+}
+
+function categoryYards(category: QuantityCategory): number {
+  if (category === 'under-25') return 25;
+  if (category === '25-75') return 75;
+  if (category === '75-150') return 150;
+  if (category === 'skein-or-more') return 400;
+  return 0;
 }
 
 function YarnBallIcon({ color }: { color: string }) {
@@ -493,28 +840,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     backgroundColor: Colors.elevatedControl,
   },
-  settingsHeader: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  settingsTitle: {
-    ...Typography.label,
-    color: Colors.textPrimary,
-  },
-  engineCard: {
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.elevatedControl,
-  },
   note: {
     ...Typography.caption,
     color: Colors.textSecondary,
-  },
-  progressBlock: {
-    gap: Spacing.sm,
   },
   progressTrack: {
     height: 8,
@@ -543,28 +871,6 @@ const styles = StyleSheet.create({
     ...Typography.subhead,
     color: Colors.textPrimary,
   },
-  ideaCard: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.elevatedControl,
-  },
-  ideaSwatches: {
-    width: 72,
-    gap: Spacing.xs,
-    justifyContent: 'center',
-  },
-  swatch: {
-    height: 18,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  ideaCopy: {
-    flex: 1,
-    gap: Spacing.xs,
-  },
   ideaTitle: {
     ...Typography.label,
     color: Colors.textPrimary,
@@ -573,9 +879,11 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textSecondary,
   },
-  ideaBody: {
-    ...Typography.callout,
-    color: Colors.textPrimary,
+  draftCard: {
+    gap: Spacing.xs,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.elevatedControl,
   },
   patternCard: {
     flexDirection: 'row',
