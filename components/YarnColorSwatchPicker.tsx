@@ -1,235 +1,208 @@
 /**
- * Detected yarn colors for a photo. Tapping a pill keeps or drops it.
- * The plus chip adds a named color from the craft dictionary.
+ * Confirmed yarn colors for the selected regions.
+ * Sampling waits for a region and ignores a result if the photo or the edit changes.
  */
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-import { Colors, FontFamily, FontWeight, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import { Colors, Radius, Spacing, Typography } from '@/constants/BambuTheme';
+import {
+  type ExtractionStamp,
+} from '@/utils/leftoverYarnDraft';
 import {
   YARN_COLOR_DICTIONARY,
   YARN_COLOR_FAMILIES,
-  extractYarnColorsFromUri,
-  isYarnNativePaletteAvailable,
-  prepareYarnColorProbeUri,
-  yarnColorSampleHtml,
+  cropYarnRegions,
+  extractYarnColorsFromRegions,
+  yarnCropSampleHtml,
   yarnSwatchesFromProbeMessage,
-  type YarnNamedColor,
 } from '@/utils/yarnColorExtractor';
+import { pixelCrop, regionSampleKey, type YarnSampleRegion } from '@/utils/yarnRegion';
 
-const DEFAULT_MAX_COLORS = 5;
+const DEFAULT_MAX_COLORS = 4;
+
+type Probe = {
+  uris: string[];
+  stamp: ExtractionStamp;
+};
 
 type YarnColorSwatchPickerProps = {
-  imageUri: string | null;
-  onChange: (colors: YarnNamedColor[]) => void;
+  imageUri: string;
+  imageWidth: number;
+  imageHeight: number;
+  regions: readonly YarnSampleRegion[];
+  photoGeneration: number;
+  colors: readonly { name: string; hex: string }[];
+  sampledKey: string | null;
+  onSampled: (stamp: ExtractionStamp, colors: { name: string; hex: string }[]) => void;
+  onEditColors: (colors: { name: string; hex: string }[]) => void;
   maxColors?: number;
 };
 
-export function YarnColorSwatchPicker({ imageUri, onChange, maxColors = DEFAULT_MAX_COLORS }: YarnColorSwatchPickerProps) {
-  if (!imageUri) return null;
-  return <PickerForPhoto key={imageUri} imageUri={imageUri} maxColors={maxColors} onChange={onChange} />;
-}
-
-function PickerForPhoto({
+export function YarnColorSwatchPicker({
   imageUri,
-  onChange,
-  maxColors,
-}: {
-  imageUri: string;
-  onChange: (colors: YarnNamedColor[]) => void;
-  maxColors: number;
-}) {
-  const [swatches, setSwatches] = useState<YarnNamedColor[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [status, setStatus] = useState<'reading' | 'ready' | 'empty'>('reading');
-  const [adding, setAdding] = useState(false);
-  const [probeUri, setProbeUri] = useState<string | null>(null);
-  const onChangeRef = useRef(onChange);
+  imageWidth,
+  imageHeight,
+  regions,
+  photoGeneration,
+  colors,
+  sampledKey,
+  onSampled,
+  onEditColors,
+  maxColors = DEFAULT_MAX_COLORS,
+}: YarnColorSwatchPickerProps) {
+  const sampleKey = regionSampleKey(photoGeneration, regions);
+  const [probe, setProbe] = useState<Probe | null>(null);
+  const [editing, setEditing] = useState(false);
+  const onSampledRef = useRef(onSampled);
+  useEffect(() => {
+    onSampledRef.current = onSampled;
+  });
+  const pending = regions.length > 0 && sampledKey !== sampleKey;
+  const selected = colors.map((color) => color.hex);
 
   useEffect(() => {
-    onChangeRef.current = onChange;
-  }, [onChange]);
-
-  useEffect(() => {
+    if (!imageUri || regions.length === 0 || imageWidth < 1 || imageHeight < 1) return undefined;
+    if (sampledKey === sampleKey) return undefined;
+    const stamp: ExtractionStamp = { generation: photoGeneration, sampleKey };
+    const crops = regions.map((region) => pixelCrop(region, imageWidth, imageHeight));
     let cancelled = false;
 
-    const publish = (colors: YarnNamedColor[]) => {
-      const next = colors.slice(0, maxColors);
-      setSwatches(next);
-      setSelected(next.map((color) => color.hex));
-      setStatus(next.length > 0 ? 'ready' : 'empty');
-      onChangeRef.current(next);
-    };
-
-    void extractYarnColorsFromUri(imageUri).then(async (colors) => {
-      if (cancelled) return;
-      if (colors.length > 0) {
-        publish(colors);
+    void (async () => {
+      if (typeof document !== 'undefined') {
+        const next = await extractYarnColorsFromRegions(imageUri, regions, imageWidth, imageHeight);
+        if (cancelled) return;
+        onSampledRef.current(stamp, next.slice(0, maxColors));
         return;
       }
-      if (Platform.OS === 'web') {
-        publish([]);
+      const cropped = await cropYarnRegions(imageUri, crops);
+      if (cancelled) return;
+      if (cropped.length !== crops.length) {
+        onSampledRef.current(stamp, []);
         return;
       }
-      const sampleUri = await prepareYarnColorProbeUri(imageUri);
-      if (cancelled) return;
-      setProbeUri(sampleUri);
-    });
+      setProbe({ uris: cropped, stamp });
+    })();
 
     return () => {
       cancelled = true;
+      setProbe(null);
     };
-  }, [imageUri, maxColors]);
+  }, [imageHeight, imageUri, imageWidth, maxColors, photoGeneration, regions, sampleKey, sampledKey]);
 
-  useEffect(() => {
-    if (!probeUri) return undefined;
-    const timer = setTimeout(() => {
-      setProbeUri(null);
-      setSwatches([]);
-      setSelected([]);
-      setStatus('empty');
-      onChangeRef.current([]);
-    }, 15000);
-    return () => clearTimeout(timer);
-  }, [probeUri]);
-
-  const emit = (nextSwatches: YarnNamedColor[], nextSelected: readonly string[]) => {
-    onChangeRef.current(nextSwatches.filter((swatch) => nextSelected.includes(swatch.hex)));
+  const emit = (next: { name: string; hex: string }[]) => {
+    onEditColors(next.slice(0, maxColors));
   };
 
-  const toggle = (color: YarnNamedColor) => {
+  const toggle = (color: { name: string; hex: string }) => {
     const next = selected.includes(color.hex)
-      ? selected.filter((hex) => hex !== color.hex)
-      : selected.length >= maxColors
-        ? selected
-        : [...selected, color.hex];
-    if (next === selected) return;
-    setSelected(next);
-    emit(swatches, next);
+      ? colors.filter((item) => item.hex !== color.hex)
+      : colors.length >= maxColors
+        ? [...colors]
+        : [...colors, color];
+    if (next.length === colors.length && next.every((item, index) => item.hex === colors[index]?.hex)) return;
+    emit(next);
   };
 
-  const addColor = (color: YarnNamedColor) => {
-    const nextSwatches = [color, ...swatches.filter((item) => item.hex !== color.hex && item.name !== color.name)].slice(0, maxColors);
-    const nextSelected = [color.hex, ...selected.filter((hex) => hex !== color.hex)].slice(0, maxColors);
-    setSwatches(nextSwatches);
-    setSelected(nextSelected);
-    setStatus('ready');
-    setAdding(false);
-    emit(nextSwatches, nextSelected);
+  const addColor = (color: { name: string; hex: string }) => {
+    const next = [color, ...colors.filter((item) => item.hex !== color.hex && item.name !== color.name)].slice(0, maxColors);
+    emit(next);
+    setEditing(false);
   };
 
   const onProbeMessage = (message: string) => {
-    setProbeUri(null);
-    const colors = yarnSwatchesFromProbeMessage(message).slice(0, maxColors);
-    setSwatches(colors);
-    setSelected(colors.map((color) => color.hex));
-    setStatus(colors.length > 0 ? 'ready' : 'empty');
-    onChangeRef.current(colors);
+    const current = probe;
+    setProbe(null);
+    if (!current) return;
+    const next = yarnSwatchesFromProbeMessage(message).slice(0, maxColors);
+    onSampledRef.current(current.stamp, next);
   };
 
-  const readAccess =
-    probeUri && probeUri.startsWith('file://') ? probeUri.slice(0, probeUri.lastIndexOf('/') + 1) : undefined;
-  const limit = Math.max(1, maxColors);
+  const readAccess = probe?.uris[0]?.startsWith('file://')
+    ? probe.uris[0].slice(0, probe.uris[0].lastIndexOf('/') + 1)
+    : undefined;
 
   return (
     <View style={styles.wrap} testID="yarn-color-swatch-picker">
-      {status === 'reading' ? (
+      {pending ? (
         <View style={styles.reading}>
           <ActivityIndicator color={Colors.accentPrimary} />
-          <Text style={styles.hint}>Reading yarn colors…</Text>
+          <Text style={styles.hint}>Reading the yarn…</Text>
         </View>
       ) : (
-        <Text style={styles.hint}>
-          {status === 'empty'
-            ? isYarnNativePaletteAvailable()
-              ? 'No yarn color stood out in this photo. Tap + to add one.'
-              : 'No colors detected from this photo. Tap + to add one.'
-            : 'Tap a swatch to keep or drop a color. These swatches come from the photo sampler. The text model does not see the photo.'}
-        </Text>
-      )}
-
-      {status !== 'reading' ? (
-        <ScrollView
-          horizontal
-          nestedScrollEnabled
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.row}
-        >
-          {swatches.map((color) => {
-            const on = selected.includes(color.hex);
-            return (
-              <Pressable
-                key={`${color.hex}-${color.name}`}
-                accessibilityRole="button"
-                accessibilityLabel={`${color.name} ${color.hex}`}
-                accessibilityState={{ selected: on }}
-                onPress={() => toggle(color)}
-                style={({ pressed }) => [styles.pill, on && styles.pillOn, !on && styles.pillOff, pressed && styles.pressed, webCursor]}
-              >
-                <View style={[styles.dot, { backgroundColor: color.hex }, on && styles.dotOn]} />
-                <View style={styles.pillCopy}>
-                  <Text numberOfLines={1} style={[styles.name, on && styles.nameOn]}>
-                    {color.name}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.hex}>
-                    {color.hex}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
+        <View style={styles.headerRow}>
+          <Text style={styles.hint}>
+            {colors.length === 0 ? 'No color in this selection.' : 'Colors from the yarn you selected.'}
+          </Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Add a yarn color"
-            accessibilityState={{ expanded: adding }}
-            onPress={() => setAdding((open) => !open)}
-            style={({ pressed }) => [styles.addChip, adding && styles.pillOn, pressed && styles.pressed, webCursor]}
+            accessibilityState={{ expanded: editing }}
+            accessibilityLabel="Edit colors"
+            testID="leftover-edit-colors"
+            onPress={() => setEditing((open) => !open)}
+            style={({ pressed }) => [styles.edit, pressed && styles.pressed, webCursor]}
           >
-            <Text style={styles.addGlyph}>+</Text>
+            <Text style={styles.editText}>{editing ? 'Done' : 'Edit colors'}</Text>
           </Pressable>
+        </View>
+      )}
+
+      {!pending ? (
+        <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+          {colors.map((color) => (
+            <Pressable
+              key={`${color.hex}-${color.name}`}
+              accessibilityRole="button"
+              accessibilityLabel={editing ? `${color.name} ${color.hex}` : color.name}
+              testID="leftover-color-chip"
+              onPress={() => toggle(color)}
+              style={({ pressed }) => [styles.chip, pressed && styles.pressed, webCursor]}
+            >
+              <View style={[styles.dot, { backgroundColor: color.hex }]} />
+              <Text numberOfLines={1} style={styles.name}>
+                {color.name}
+              </Text>
+              {editing ? <Text style={styles.hex}>{color.hex}</Text> : null}
+            </Pressable>
+          ))}
         </ScrollView>
       ) : null}
 
-      {adding ? (
+      {editing && !pending ? (
         <ScrollView nestedScrollEnabled style={styles.dictionary} contentContainerStyle={styles.dictionaryContent}>
           {YARN_COLOR_FAMILIES.map((family) => {
-            const colors = YARN_COLOR_DICTIONARY.filter((color) => color.family === family);
-            if (colors.length === 0) return null;
+            const familyColors = YARN_COLOR_DICTIONARY.filter((color) => color.family === family);
+            if (familyColors.length === 0) return null;
             return (
               <View key={family} style={styles.family}>
                 <Text style={styles.familyLabel}>{family}</Text>
                 <View style={styles.familyRow}>
-                  {colors.map((color) => {
-                    const on = selected.includes(color.hex);
-                    return (
-                      <Pressable
-                        key={`${family}-${color.hex}`}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Add ${color.name}`}
-                        accessibilityState={{ selected: on }}
-                        onPress={() => addColor(color)}
-                        style={({ pressed }) => [styles.dictionaryItem, pressed && styles.pressed, webCursor]}
-                      >
-                        <View style={[styles.dot, { backgroundColor: color.hex }, on && styles.dotOn]} />
-                        <Text numberOfLines={2} style={styles.dictionaryName}>
-                          {color.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                  {familyColors.map((color) => (
+                    <Pressable
+                      key={`${family}-${color.hex}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add ${color.name}`}
+                      onPress={() => addColor(color)}
+                      style={({ pressed }) => [styles.dictionaryItem, pressed && styles.pressed, webCursor]}
+                    >
+                      <View style={[styles.dot, { backgroundColor: color.hex }]} />
+                      <Text numberOfLines={2} style={styles.dictionaryName}>
+                        {color.name}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </View>
               </View>
             );
           })}
-          <Text style={styles.hint}>Up to {limit} colors stay selected.</Text>
         </ScrollView>
       ) : null}
 
-      {probeUri && Platform.OS !== 'web' ? (
+      {probe && Platform.OS !== 'web' ? (
         <WebView
           originWhitelist={['*']}
-          source={{ html: yarnColorSampleHtml(probeUri) }}
+          source={{ html: yarnCropSampleHtml(probe.uris) }}
           allowingReadAccessToURL={readAccess}
           onMessage={(event) => onProbeMessage(event.nativeEvent.data)}
           style={styles.probe}
@@ -249,78 +222,57 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    minHeight: 44,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   hint: {
     ...Typography.caption,
+    flex: 1,
     color: Colors.textSecondary,
+  },
+  edit: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.sm,
+  },
+  editText: {
+    ...Typography.caption,
+    color: Colors.accentPrimary,
   },
   row: {
     gap: Spacing.sm,
     paddingVertical: Spacing.xxs,
   },
-  pill: {
-    width: 148,
-    minHeight: 56,
+  chip: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.pill,
     backgroundColor: Colors.elevatedControl,
-    borderWidth: 1,
-    borderColor: Colors.transparent,
-  },
-  pillOn: {
-    backgroundColor: Colors.accentMuted,
-    borderColor: Colors.accentPrimary,
-  },
-  pillOff: {
-    opacity: 0.48,
-  },
-  pillCopy: {
-    flex: 1,
-    gap: 1,
   },
   dot: {
-    width: 28,
-    height: 28,
+    width: 22,
+    height: 22,
     borderRadius: Radius.pill,
     borderWidth: 2,
     borderColor: Colors.border,
   },
-  dotOn: {
-    borderColor: Colors.accentPrimary,
-  },
   name: {
     ...Typography.caption,
     color: Colors.textPrimary,
-    fontWeight: FontWeight.semibold,
-  },
-  nameOn: {
-    color: Colors.accentPrimary,
   },
   hex: {
     ...Typography.caption,
-    fontFamily: FontFamily.mono,
     color: Colors.textSecondary,
   },
-  addChip: {
-    width: 56,
-    minHeight: 56,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.elevatedControl,
-    borderWidth: 1,
-    borderColor: Colors.transparent,
-  },
-  addGlyph: {
-    ...Typography.headline,
-    color: Colors.textPrimary,
-  },
   dictionary: {
-    maxHeight: 280,
+    maxHeight: 240,
     borderRadius: Radius.md,
     backgroundColor: Colors.elevatedControl,
   },
@@ -342,6 +294,7 @@ const styles = StyleSheet.create({
   },
   dictionaryItem: {
     width: 76,
+    minHeight: 44,
     alignItems: 'center',
     gap: Spacing.xs,
   },

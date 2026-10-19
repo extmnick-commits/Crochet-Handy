@@ -48,6 +48,16 @@ import {
 } from '@/utils/patternDisplay';
 import type { ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
 import { patternPosterUri } from '@/utils/youtube';
+import {
+  closeCatalogPreview,
+  closeLeftoverScrap,
+  idleCatalogPreview,
+  openLeftoverScrap,
+  previewDismissed,
+  requestCatalogPreview,
+  scrapDismissed,
+  type CatalogPreviewFlow,
+} from '@/utils/catalogPreview';
 
 type LibraryPill = 'collections' | 'likes';
 type CollectionSubTab = 'folders' | 'stories';
@@ -84,11 +94,23 @@ export default function MeScreen() {
   const [addPatternsOpen, setAddPatternsOpen] = useState(false);
   const [patternId, setPatternId] = useState<string | null>(null);
   const [storyProjectId, setStoryProjectId] = useState<string | null>(null);
-  const [scrapOpen, setScrapOpen] = useState(false);
+  const [previewFlow, setPreviewFlow] = useState<CatalogPreviewFlow<CrochetPattern>>(idleCatalogPreview<CrochetPattern>);
   const [addYarnOpen, setAddYarnOpen] = useState(false);
   const [scannedLeftover, setScannedLeftover] = useState<ScannedLeftoverDraft | null>(null);
   const running = projects.some((project) => project.timerStartedAt != null);
   const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (previewFlow.phase !== 'closing-scrap' && previewFlow.phase !== 'closing-preview') return undefined;
+    const timer = setTimeout(() => {
+      setPreviewFlow((current) => {
+        if (current.phase === 'closing-scrap') return scrapDismissed(current);
+        if (current.phase === 'closing-preview') return previewDismissed(current);
+        return current;
+      });
+    }, 360);
+    return () => clearTimeout(timer);
+  }, [previewFlow.phase]);
 
   useEffect(() => {
     if (!running) return undefined;
@@ -222,7 +244,7 @@ export default function MeScreen() {
           testID="scan-leftover-yarn"
           onPress={() => {
             tick();
-            setScrapOpen(true);
+            setPreviewFlow((flow) => openLeftoverScrap(flow));
           }}
           style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
         >
@@ -608,15 +630,16 @@ export default function MeScreen() {
 
       <AuthAccountModal visible={authOpen} initialMode={authMode} onClose={() => setAuthOpen(false)} />
       <ScrapBusterModal
-        visible={scrapOpen}
-        onClose={() => setScrapOpen(false)}
-        onOpenPattern={(id) => {
-          setScrapOpen(false);
-          setPatternId(id);
+        visible={previewFlow.phase === 'scrap'}
+        onClose={() => setPreviewFlow((flow) => closeLeftoverScrap(flow))}
+        onDismiss={() => setPreviewFlow((flow) => scrapDismissed(flow))}
+        onPreviewPattern={(pattern) => {
+          setPatternId(null);
+          setPreviewFlow((flow) => requestCatalogPreview(flow, pattern));
         }}
         onSaveToStash={(draft) => {
           setScannedLeftover(draft);
-          setScrapOpen(false);
+          setPreviewFlow((flow) => closeLeftoverScrap(flow));
           setAddYarnOpen(true);
         }}
       />
@@ -629,8 +652,21 @@ export default function MeScreen() {
         }}
       />
       <PatternDetailSheet
-        patternId={patternId}
-        onClose={() => setPatternId(null)}
+        patternId={
+          previewFlow.phase === 'preview' || previewFlow.phase === 'closing-preview' || previewFlow.phase === 'closing-scrap'
+            ? null
+            : patternId
+        }
+        previewPattern={previewFlow.phase === 'preview' ? previewFlow.pattern : null}
+        onClose={() => {
+          if (previewFlow.phase === 'preview') {
+            setPreviewFlow((flow) => closeCatalogPreview(flow));
+            return;
+          }
+          setPatternId(null);
+        }}
+        onDismiss={() => setPreviewFlow((flow) => previewDismissed(flow))}
+        onPreviewStarted={() => setPreviewFlow(idleCatalogPreview<CrochetPattern>())}
         onPatternChange={setPatternId}
         onTagPress={(tag) => {
           const normalized = normalizePatternTag(tag);

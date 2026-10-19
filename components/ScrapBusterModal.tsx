@@ -1,23 +1,39 @@
 /**
- * Leftover yarn scanner. Photos reuse the progress-photo picker. Suggestions
- * come from the on-device model when it is downloaded, otherwise from the
- * offline scrap rules in `utils/scrapYarnAi.ts`.
+ * Leftover yarn scanner. The photo and confirmed colors live in the in-memory
+ * draft so a pattern preview can close this sheet and come back.
+ * Suggestions come from the on-device model when it is downloaded, otherwise
+ * from the offline scrap rules.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { YarnColorSwatchPicker } from '@/components/YarnColorSwatchPicker';
+import { YarnRegionSelector } from '@/components/YarnRegionSelector';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
-import { YARN_WEIGHTS, useCrochetStore, type CrochetPattern, type YarnWeight } from '@/store/useCrochetStore';
-import { yarnWeightMeta } from '@/utils/patternDisplay';
+import { YARN_WEIGHTS, type CrochetPattern } from '@/store/useCrochetStore';
+import {
+  displayThumbnail,
+  recommendationThumbnail,
+} from '@/utils/catalogPreview';
+import {
+  commitSampledColors,
+  editLeftoverColors,
+  getLeftoverYarnDraft,
+  replaceLeftoverPhoto,
+  resetLeftoverYarnDraft,
+  setLeftoverImageSize,
+  setLeftoverRegions,
+  subscribeLeftoverYarnDraft,
+  updateLeftoverYarnDraft,
+} from '@/utils/leftoverYarnDraft';
+import { difficultyLabel, yarnWeightMeta } from '@/utils/patternDisplay';
 import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@/utils/progressPhoto';
 import {
   LOCAL_AI_ENGINE_LABEL,
   YARDAGE_TIERS,
   analyzeLeftoverYarnAndSuggest,
-  cancelActiveScrapSuggestion,
   cancelScrapModelDownload,
   deleteScrapModel,
   downloadScrapModel,
@@ -29,96 +45,118 @@ import {
   tierForYards,
   type ModelDownloadProgress,
   type ScannedLeftoverDraft,
-  type ScrapSuggestionResult,
-  type ScrapYarnColor,
+  type ScrapCatalogSuggestion,
 } from '@/utils/scrapYarnAi';
-import { formatYarnColorLabel, type YarnNamedColor } from '@/utils/yarnColorExtractor';
+import { formatYarnColorLabel } from '@/utils/yarnColorExtractor';
 
 type ScrapBusterModalProps = {
   visible: boolean;
   onClose: () => void;
-  onOpenPattern: (patternId: string) => void;
+  onDismiss?: () => void;
+  onPreviewPattern: (pattern: CrochetPattern) => void;
   onSaveToStash: (draft: ScannedLeftoverDraft) => void;
 };
 
 type EngineState = 'checking' | 'unsupported' | 'missing' | 'downloading' | 'verifying' | 'ready';
 
-export function ScrapBusterModal({ visible, onClose, onOpenPattern, onSaveToStash }: ScrapBusterModalProps) {
+type EngineCache = {
+  engine: EngineState;
+  progress: ModelDownloadProgress | null;
+  canCancel: boolean;
+};
+
+let regionSerial = 0;
+let engineCache: EngineCache = {
+  engine: isLocalScrapAiSupported() ? 'checking' : 'unsupported',
+  progress: null,
+  canCancel: false,
+};
+
+function useLeftoverYarnDraft() {
+  return useSyncExternalStore(subscribeLeftoverYarnDraft, getLeftoverYarnDraft, getLeftoverYarnDraft);
+}
+
+export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern, onSaveToStash }: ScrapBusterModalProps) {
+  const draft = useLeftoverYarnDraft();
   return (
     <BottomSheet
       visible={visible}
       onClose={onClose}
+      onDismiss={onDismiss}
+      initialScrollOffset={draft.scrollY}
+      onScrollOffsetChange={(offset) => updateLeftoverYarnDraft({ scrollY: offset })}
       header={
-        visible ? (
-          <View style={styles.header}>
-            <View style={styles.headerCopy}>
-              <Text role="heading" aria-level={2} style={styles.title}>
-                Leftover yarn
-              </Text>
-              <Text style={styles.subtitle}>
-                Confirm the sampled colors, then pick projects that fit the yards you have
-              </Text>
-            </View>
+        <View style={styles.header}>
+          <View style={styles.headerCopy}>
+            <Text role="heading" aria-level={2} style={styles.title}>
+              Leftover yarn
+            </Text>
+            <Text style={styles.subtitle}>Photo, yarn colors, then a project that fits</Text>
+          </View>
+          {draft.photoUri ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Close"
+              accessibilityLabel="Start a new yarn scan"
+              testID="leftover-start-over"
               hitSlop={Layout.hitSlop}
-              onPress={onClose}
-              style={({ pressed }) => [styles.closeButton, pressed && styles.pressed, webCursor]}
+              onPress={() => resetLeftoverYarnDraft()}
+              style={({ pressed }) => [styles.textAction, pressed && styles.pressed, webCursor]}
             >
-              <Text style={styles.closeGlyph}>×</Text>
+              <Text style={styles.textActionLabel}>Start over</Text>
             </Pressable>
-          </View>
-        ) : null
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            hitSlop={Layout.hitSlop}
+            onPress={onClose}
+            style={({ pressed }) => [styles.closeButton, pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.closeGlyph}>×</Text>
+          </Pressable>
+        </View>
       }
     >
-      {visible ? <ScrapBusterForm onOpenPattern={onOpenPattern} onSaveToStash={onSaveToStash} /> : null}
+      {visible ? (
+        <ScrapBusterForm onPreviewPattern={onPreviewPattern} onSaveToStash={onSaveToStash} />
+      ) : null}
     </BottomSheet>
   );
 }
 
 function ScrapBusterForm({
-  onOpenPattern,
+  onPreviewPattern,
   onSaveToStash,
 }: {
-  onOpenPattern: (patternId: string) => void;
+  onPreviewPattern: (pattern: CrochetPattern) => void;
   onSaveToStash: (draft: ScannedLeftoverDraft) => void;
 }) {
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [selected, setSelected] = useState<ScrapYarnColor[]>([]);
-  const [weight, setWeight] = useState<YarnWeight>('worsted');
-  const [yardsText, setYardsText] = useState('75');
-  const [engine, setEngine] = useState<EngineState>(() => (isLocalScrapAiSupported() ? 'checking' : 'unsupported'));
-  const [progress, setProgress] = useState<ModelDownloadProgress | null>(null);
-  const [aiResult, setAiResult] = useState<{ key: string; result: ScrapSuggestionResult } | null>(null);
+  const draft = useLeftoverYarnDraft();
+  const [engine, setEngine] = useState<EngineState>(engineCache.engine);
+  const [progress, setProgress] = useState<ModelDownloadProgress | null>(engineCache.progress);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [canCancelDownload, setCanCancelDownload] = useState(false);
-  const requestRef = useRef(0);
-  const yards = parseAvailableYards(yardsText);
-  const colorKey = selected.map((color) => `${color.name}:${color.hex}`).join('|');
-  const inputKey = `${colorKey}|${weight}|${yards}`;
+  const [canCancelDownload, setCanCancelDownload] = useState(engineCache.canCancel);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const yards = parseAvailableYards(draft.yardsText);
+  const colorKey = draft.colors.map((color) => `${color.name}:${color.hex}`).join('|');
+  const inputKey = `${colorKey}|${draft.weight}|${yards}`;
   const offline = useMemo(
-    () => offlineScrapSuggestion({ colors: selected, weight, availableYards: yards }),
-    [selected, weight, yards],
+    () => offlineScrapSuggestion({ colors: draft.colors, weight: draft.weight, availableYards: yards }),
+    [draft.colors, draft.weight, yards],
   );
   const shown =
-    aiResult && aiResult.key === inputKey && !aiResult.result.discarded ? aiResult.result : offline;
+    draft.aiResult && draft.aiResult.key === inputKey && !draft.aiResult.result.discarded
+      ? draft.aiResult.result
+      : offline;
 
   useEffect(() => {
-    return () => {
-      cancelActiveScrapSuggestion();
-      cancelScrapModelDownload();
-    };
-  }, []);
-
-  useEffect(() => {
-    requestRef.current += 1;
-    cancelActiveScrapSuggestion();
-  }, [inputKey]);
+    engineCache = { engine, progress, canCancel: canCancelDownload };
+  }, [canCancelDownload, engine, progress]);
 
   useEffect(() => {
     if (!isLocalScrapAiSupported()) return undefined;
+    if (engineCache.engine === 'downloading' || engineCache.engine === 'verifying') return undefined;
     let alive = true;
     void isScrapModelDownloaded((update) => {
       if (!alive) return;
@@ -140,12 +178,7 @@ function ScrapBusterForm({
       setStatus(captureErrorMessage(captured.reason, source));
       return;
     }
-    setPhotoUri(captured.uri);
-    setSelected([]);
-  };
-
-  const onDetectedColors = (colors: YarnNamedColor[]) => {
-    setSelected(colors.map((color) => ({ hex: color.hex, name: color.name })));
+    replaceLeftoverPhoto(captured.uri);
   };
 
   const onDownload = async () => {
@@ -184,29 +217,30 @@ function ScrapBusterForm({
   };
 
   const onPersonalize = async () => {
-    if (!photoUri || selected.length === 0 || yards <= 0 || busy) {
-      if (!photoUri) setStatus('Take a photo of the leftover yarn first.');
-      else if (selected.length === 0) setStatus('Keep at least one sampled color.');
+    if (!draft.photoUri || draft.colors.length === 0 || yards <= 0 || busy) {
+      if (!draft.photoUri) setStatus('Add a photo of the leftover yarn first.');
+      else if (draft.colors.length === 0) setStatus('Select the yarn, then keep at least one color.');
       else if (yards <= 0) setStatus('Enter how many yards you have.');
       return;
     }
-    const requestId = requestRef.current;
+    const epoch = draft.sessionEpoch;
     const key = inputKey;
     setBusy(true);
     setStatus(null);
     try {
       const next = await analyzeLeftoverYarnAndSuggest({
-        imageUri: photoUri,
-        colors: selected.map((color) => formatYarnColorLabel(color)),
-        weight,
+        imageUri: draft.photoUri,
+        colors: draft.colors.map((color) => formatYarnColorLabel(color)),
+        weight: draft.weight,
         yardageTier: tierForYards(yards),
         availableYards: yards,
-        requestId,
       });
-      if (requestId !== requestRef.current || next.discarded) return;
-      setAiResult({ key, result: next });
+      const current = getLeftoverYarnDraft();
+      const currentKey = `${current.colors.map((color) => `${color.name}:${color.hex}`).join('|')}|${current.weight}|${parseAvailableYards(current.yardsText)}`;
+      if (current.sessionEpoch !== epoch || currentKey !== key || next.discarded) return;
+      updateLeftoverYarnDraft({ aiResult: { key, result: next } });
     } catch {
-      if (requestId === requestRef.current) setStatus('Could not build suggestions. Try again.');
+      if (getLeftoverYarnDraft().sessionEpoch === epoch) setStatus('Could not build suggestions. Try again.');
     } finally {
       setBusy(false);
     }
@@ -214,111 +248,143 @@ function ScrapBusterForm({
 
   return (
     <View style={styles.form}>
-      <View style={styles.captureRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Take a photo of leftover yarn"
-          onPress={() => {
-            void onCapture('camera');
-          }}
-          style={({ pressed }) => [styles.captureButton, pressed && styles.pressed, webCursor]}
-        >
-          <YarnBallIcon color={Colors.textPrimary} />
-          <Text style={styles.captureLabel}>Take photo</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Choose a leftover yarn photo"
-          onPress={() => {
-            void onCapture('library');
-          }}
-          style={({ pressed }) => [styles.captureButton, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.captureLabel}>Photo library</Text>
-        </Pressable>
-      </View>
-
-      {photoUri ? <Image accessible={false} source={{ uri: photoUri }} style={styles.preview} /> : null}
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Leftover colors</Text>
-        {photoUri ? (
-          <YarnColorSwatchPicker imageUri={photoUri} maxColors={4} onChange={onDetectedColors} />
-        ) : (
-          <Text style={styles.note}>Take a photo, then keep the yarn colors and drop the background.</Text>
-        )}
-        <Text style={styles.note}>
-          Confirm the colors the photo sampler found. Suggestions use only those colors. The on-device text model does not see the photo.
-        </Text>
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Total yards available</Text>
-        <TextInput
-          accessibilityLabel="Total yards available"
-          keyboardType="number-pad"
-          inputMode="numeric"
-          value={yardsText}
-          onChangeText={setYardsText}
-          style={styles.yardsInput}
-        />
-        <View style={styles.chips}>
-          {YARDAGE_TIERS.map((option) => {
-            const active = yardsText === String(option.yards);
-            return (
-              <Pressable
-                key={option.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => setYardsText(String(option.yards))}
-                style={({ pressed }) => [styles.chip, active && styles.chipSelected, pressed && styles.pressed, webCursor]}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextSelected]}>{option.label}</Text>
-              </Pressable>
-            );
-          })}
+      {draft.photoUri ? (
+        <View style={styles.block}>
+          <YarnRegionSelector
+            imageUri={draft.photoUri}
+            imageWidth={draft.imageWidth}
+            imageHeight={draft.imageHeight}
+            regions={draft.regions}
+            onImageSize={setLeftoverImageSize}
+            onRegionsCommit={setLeftoverRegions}
+            onCreateId={() => {
+              regionSerial += 1;
+              return `yarn-${getLeftoverYarnDraft().photoGeneration}-${regionSerial}`;
+            }}
+          />
+          <View style={styles.captureRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retake photo"
+              testID="leftover-retake"
+              onPress={() => {
+                void onCapture('camera');
+              }}
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.secondaryLabel}>Retake</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Change photo"
+              testID="leftover-change-photo"
+              onPress={() => {
+                void onCapture('library');
+              }}
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.secondaryLabel}>Change photo</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Yarn weight</Text>
-        <View style={styles.chips}>
-          {YARN_WEIGHTS.map((option) => {
-            const meta = yarnWeightMeta(option);
-            const active = weight === option;
-            return (
-              <Pressable
-                key={option}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => {
-                  setWeight(option);
-                }}
-                style={({ pressed }) => [styles.chip, active && styles.chipSelected, pressed && styles.pressed, webCursor]}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextSelected]}>
-                  {meta.label} {meta.number}
-                </Text>
-              </Pressable>
-            );
-          })}
+      ) : (
+        <View style={styles.block}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Take photo"
+            testID="leftover-take-photo"
+            onPress={() => {
+              void onCapture('camera');
+            }}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
+          >
+            <YarnBallIcon color={Colors.onAccent} />
+            <Text style={styles.primaryLabel}>Take photo</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Choose photo"
+            testID="leftover-choose-photo"
+            onPress={() => {
+              void onCapture('library');
+            }}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.secondaryLabel}>Choose photo</Text>
+          </Pressable>
         </View>
-      </View>
+      )}
 
-      <EngineCard
-        engine={engine}
-        progress={progress}
-        onDownload={() => {
-          void onDownload();
-        }}
-        canCancel={canCancelDownload}
-        onCancel={() => {
-          cancelScrapModelDownload();
-        }}
-        onDelete={() => {
-          void onDeleteEngine();
-        }}
-      />
+      {draft.photoUri && draft.regions.length > 0 ? (
+        <View style={styles.block}>
+          <Text style={styles.label}>Yarn colors</Text>
+          <YarnColorSwatchPicker
+            imageUri={draft.photoUri}
+            imageWidth={draft.imageWidth}
+            imageHeight={draft.imageHeight}
+            regions={draft.regions}
+            photoGeneration={draft.photoGeneration}
+            colors={draft.colors}
+            sampledKey={draft.sampledKey}
+            onEditColors={editLeftoverColors}
+            onSampled={(stamp, next) => {
+              commitSampledColors(stamp, next);
+            }}
+          />
+        </View>
+      ) : null}
+
+      {draft.photoUri && draft.regions.length > 0 ? (
+        <View style={styles.block}>
+          <Text style={styles.label}>Weight</Text>
+          <View style={styles.chips}>
+            {YARN_WEIGHTS.map((option) => {
+              const meta = yarnWeightMeta(option);
+              const active = draft.weight === option;
+              return (
+                <Pressable
+                  key={option}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${meta.label} ${meta.number}`}
+                  accessibilityState={{ selected: active }}
+                  onPress={() => updateLeftoverYarnDraft({ weight: option })}
+                  style={({ pressed }) => [styles.chip, active && styles.chipSelected, pressed && styles.pressed, webCursor]}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextSelected]}>
+                    {meta.label} {meta.number}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.label}>Yards</Text>
+          <TextInput
+            accessibilityLabel="Yards"
+            keyboardType="number-pad"
+            inputMode="numeric"
+            value={draft.yardsText}
+            onChangeText={(yardsText) => updateLeftoverYarnDraft({ yardsText })}
+            style={styles.yardsInput}
+          />
+          <View style={styles.chips}>
+            {YARDAGE_TIERS.map((option) => {
+              const active = draft.yardsText === String(option.yards);
+              return (
+                <Pressable
+                  key={option.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={option.label}
+                  accessibilityState={{ selected: active }}
+                  onPress={() => updateLeftoverYarnDraft({ yardsText: String(option.yards) })}
+                  style={({ pressed }) => [styles.chip, active && styles.chipSelected, pressed && styles.pressed, webCursor]}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextSelected]}>{yardChipLabel(option.id)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
 
       {status ? (
         <Text accessibilityLiveRegion="polite" style={styles.error}>
@@ -326,113 +392,157 @@ function ScrapBusterForm({
         </Text>
       ) : null}
 
-      {engine === 'ready' ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={busy ? 'Personalizing projects' : 'Personalize with local AI'}
-          disabled={busy || selected.length === 0 || yards <= 0}
-          onPress={() => {
-            void onPersonalize();
-          }}
-          style={({ pressed }) => [styles.suggest, (busy || selected.length === 0 || yards <= 0) && styles.disabled, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.suggestText}>{busy ? 'Personalizing…' : 'Personalize with local AI'}</Text>
-        </Pressable>
-      ) : null}
-
-      {selected.length > 0 && yards > 0 ? (
+      {draft.colors.length > 0 && yards > 0 ? (
         <View style={styles.results}>
-          <Text style={styles.resultsTitle}>{shown.source === 'local-ai' ? 'Local AI ideas' : 'Offline ideas'}</Text>
-          {shown.note ? <Text style={styles.note}>{shown.note}</Text> : null}
+          {engine === 'ready' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={busy ? 'Personalizing projects' : 'Personalize colors'}
+              disabled={busy}
+              onPress={() => {
+                void onPersonalize();
+              }}
+              style={({ pressed }) => [styles.primaryButton, busy && styles.disabled, pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.primaryLabel}>{busy ? 'Personalizing…' : 'Personalize colors'}</Text>
+            </Pressable>
+          ) : null}
+
+          <Text style={styles.resultsTitle}>{shown.source === 'local-ai' ? 'Personalized ideas' : 'Ideas'}</Text>
           {shown.ideas.length === 0 ? (
             <Text style={styles.note}>No planning estimate fits in {yards} yd.</Text>
           ) : (
             shown.ideas.map((idea) => (
               <View key={idea.planId} style={styles.ideaCard}>
-                <Text style={styles.ideaTitle}>{idea.title}</Text>
-                <Text style={styles.ideaMeta}>
-                  {idea.estimatedYardage} · {idea.hookSize} · {difficultyLabel(idea.difficulty)}
-                </Text>
-                <Text style={styles.ideaBody}>{idea.colorPlacement}</Text>
+                <View style={styles.ideaSwatches}>
+                  {draft.colors.map((color) => (
+                    <View key={color.hex} style={[styles.swatch, { backgroundColor: color.hex }]} />
+                  ))}
+                </View>
+                <View style={styles.ideaCopy}>
+                  <Text style={styles.ideaTitle}>{idea.title}</Text>
+                  <Text style={styles.ideaMeta}>
+                    {difficultyLabel(idea.difficulty)} · {idea.hookSize}
+                  </Text>
+                  <Text style={styles.note}>Planning estimate: {idea.estimatedYardage}</Text>
+                  <Text style={styles.ideaBody}>{idea.colorPlacement}</Text>
+                </View>
               </View>
             ))
           )}
 
-          <Text style={styles.resultsTitle}>Catalog tutorials</Text>
+          <Text style={styles.resultsTitle}>Tutorials</Text>
           {shown.catalog.length === 0 ? (
-            <Text style={styles.note}>No catalog tutorial fits this yarn weight and yard total.</Text>
+            <Text style={styles.note}>No tutorial fits this weight and yard total.</Text>
           ) : (
             shown.catalog.map((item) => (
-              <Pressable
-                key={item.pattern.id}
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${item.pattern.title}`}
-                onPress={() => openCatalogPattern(item.pattern, onOpenPattern)}
-                style={({ pressed }) => [styles.patternCard, pressed && styles.pressed, webCursor]}
-              >
-                <Text numberOfLines={2} style={styles.patternTitle}>
-                  {item.pattern.title}
-                </Text>
-                <Text style={styles.ideaMeta}>
-                  {item.pattern.creator} · {item.pattern.hookSize} · {difficultyLabel(item.pattern.difficulty)}
-                </Text>
-                <Text style={styles.note}>{item.yardageNote}</Text>
-              </Pressable>
+              <CatalogCard key={item.pattern.id} item={item} onPreview={() => onPreviewPattern(item.pattern)} />
             ))
           )}
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Save scanned leftover yarn"
-            disabled={selected.length === 0}
+            accessibilityLabel="Save leftover to stash"
             onPress={() => {
               onSaveToStash({
-                colors: selected,
-                yarnWeight: weight,
+                colors: draft.colors,
+                yarnWeight: draft.weight,
                 yardageTier: tierForYards(yards),
                 availableYards: yards,
-                hookSize: shown.ideas[0]?.hookSize ?? hookForYarnWeight(weight),
+                hookSize: shown.ideas[0]?.hookSize ?? hookForYarnWeight(draft.weight),
               });
             }}
-            style={({ pressed }) => [styles.saveStash, pressed && styles.pressed, webCursor]}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
           >
-            <Text style={styles.saveStashText}>Save leftover to stash</Text>
+            <Text style={styles.accentLabel}>Save leftover to stash</Text>
           </Pressable>
         </View>
+      ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: settingsOpen }}
+        accessibilityLabel="On-device suggestions"
+        onPress={() => setSettingsOpen((open) => !open)}
+        style={({ pressed }) => [styles.settingsHeader, pressed && styles.pressed, webCursor]}
+      >
+        <Text style={styles.settingsTitle}>On-device suggestions</Text>
+        <Text style={styles.note}>{settingsOpen ? 'Hide' : 'Show'}</Text>
+      </Pressable>
+      {settingsOpen ? (
+        <EngineCard
+          engine={engine}
+          progress={progress}
+          canCancel={canCancelDownload}
+          onDownload={() => {
+            void onDownload();
+          }}
+          onCancel={() => cancelScrapModelDownload()}
+          onDelete={() => {
+            void onDeleteEngine();
+          }}
+        />
       ) : null}
     </View>
   );
 }
 
-function openCatalogPattern(pattern: CrochetPattern, onOpenPattern: (patternId: string) => void) {
-  const store = useCrochetStore.getState();
-  const existing =
-    store.patterns.find((item) => pattern.videoId.length > 0 && item.videoId === pattern.videoId) ??
-    store.patterns.find((item) => item.id === pattern.id);
-  if (existing) {
-    onOpenPattern(existing.id);
-    return;
-  }
-  const id = store.addPatternFromYouTube(
-    {
-      title: pattern.title,
-      creator: pattern.creator,
-      youtubeUrl: pattern.youtubeUrl,
-      difficulty: pattern.difficulty,
-      yarnWeight: pattern.yarnWeight,
-      hookSize: pattern.hookSize,
-      totalRows: pattern.totalRows,
-      stitchesPerRow: pattern.stitchesPerRow,
-      tags: pattern.tags,
-      summary: pattern.summary,
-      bookmarks: pattern.bookmarks,
-      videoUrl: pattern.videoUrl,
-      source: pattern.source,
-      steps: pattern.steps,
-    },
-    pattern.id.length <= 80 ? pattern.id : undefined,
+function CatalogCard({ item, onPreview }: { item: ScrapCatalogSuggestion; onPreview: () => void }) {
+  const pattern = item.pattern;
+  const weight = yarnWeightMeta(pattern.yarnWeight);
+  return (
+    <View style={styles.patternCard}>
+      <CatalogThumb pattern={pattern} />
+      <View style={styles.patternCopy}>
+        <Text numberOfLines={2} style={styles.patternTitle}>
+          {pattern.title}
+        </Text>
+        <Text numberOfLines={1} style={styles.ideaMeta}>
+          {pattern.creator} · {difficultyLabel(pattern.difficulty)}
+        </Text>
+        <Text numberOfLines={1} style={styles.ideaMeta}>
+          {weight.label} {weight.number} · {pattern.hookSize}
+        </Text>
+        <Text style={styles.note}>{item.yardageNote}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Preview ${pattern.title}`}
+          testID={`leftover-preview-${pattern.id}`}
+          onPress={onPreview}
+          style={({ pressed }) => [styles.previewButton, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.accentLabel}>Preview</Text>
+        </Pressable>
+      </View>
+    </View>
   );
-  if (id) onOpenPattern(id);
+}
+
+function CatalogThumb({ pattern }: { pattern: CrochetPattern }) {
+  const thumb = recommendationThumbnail(pattern);
+  const [failed, setFailed] = useState(false);
+  const uri = displayThumbnail(thumb.uri, failed);
+  if (!uri) {
+    return (
+      <View style={styles.thumbFallback}>
+        <YarnBallIcon color={Colors.accentPrimary} />
+      </View>
+    );
+  }
+  return (
+    <Image
+      accessible={false}
+      source={{ uri }}
+      style={styles.thumb}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function yardChipLabel(id: string): string {
+  if (id === 'scrap_under_25yd') return '< 25 yd';
+  if (id === 'small_25_75yd') return '25–75 yd';
+  return '75–150 yd';
 }
 
 function EngineCard({
@@ -453,27 +563,21 @@ function EngineCard({
   if (engine === 'unsupported') {
     return (
       <View style={styles.engineCard}>
-        <Text style={styles.engineTitle}>Offline scrap rules</Text>
-        <Text style={styles.note}>
-          Expo Go and web use the built-in project rules. A development build can run the local engine.
-        </Text>
+        <Text style={styles.note}>This device uses the built-in project list. A development build can run on-device personalization.</Text>
       </View>
     );
   }
   if (engine === 'ready') {
     return (
       <View style={styles.engineCard}>
-        <Text style={styles.engineTitle}>Local AI engine ready</Text>
-        <Text style={styles.note}>
-          Personalization runs on this device and does not see the photo. Remove the engine if you need the space back.
-        </Text>
+        <Text style={styles.note}>Personalization is on this device and does not see the photo.</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Remove local AI engine"
+          accessibilityLabel="Remove on-device suggestions"
           onPress={onDelete}
-          style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+          style={({ pressed }) => [styles.textAction, pressed && styles.pressed, webCursor]}
         >
-          <Text style={styles.removeLabel}>Remove local AI engine</Text>
+          <Text style={styles.removeLabel}>Remove download</Text>
         </Pressable>
       </View>
     );
@@ -481,26 +585,25 @@ function EngineCard({
   const ratio = progress?.ratio ?? 0;
   const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100);
   const transferring = engine === 'downloading' || engine === 'verifying';
-  const phaseLabel = progress?.phase === 'verify' || engine === 'verifying' ? 'Verifying' : 'Downloading';
+  const phaseLabel = progress?.phase === 'verify' || engine === 'verifying' ? 'Checking download' : 'Downloading';
   return (
     <View style={styles.engineCard}>
-      <Text style={styles.engineTitle}>{LOCAL_AI_ENGINE_LABEL}</Text>
       <Text style={styles.note}>
         {transferring
           ? `${phaseLabel}… ${percent}%`
           : engine === 'checking'
-            ? 'Checking the saved engine…'
-            : 'Download once if you want on-device personalization. Project ideas above do not need it.'}
+            ? 'Checking for a saved download…'
+            : 'Download once for on-device color placement. Ideas above do not need it.'}
       </Text>
       {transferring ? (
-        <View>
+        <View style={styles.progressBlock}>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${percent}%` }]} />
           </View>
           {canCancel ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Cancel local AI engine download"
+              accessibilityLabel="Cancel download"
               onPress={onCancel}
               style={({ pressed }) => [pressed && styles.pressed, webCursor]}
             >
@@ -513,20 +616,13 @@ function EngineCard({
           accessibilityRole="button"
           accessibilityLabel={LOCAL_AI_ENGINE_LABEL}
           onPress={onDownload}
-          style={({ pressed }) => [styles.downloadButton, pressed && styles.pressed, webCursor]}
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
         >
-          <Text style={styles.downloadText}>{LOCAL_AI_ENGINE_LABEL}</Text>
+          <Text style={styles.primaryLabel}>{LOCAL_AI_ENGINE_LABEL}</Text>
         </Pressable>
       )}
     </View>
   );
-}
-
-function difficultyLabel(value: string): string {
-  if (value === 'beginner') return 'Beginner';
-  if (value === 'intermediate') return 'Intermediate';
-  if (value === 'advanced') return 'Advanced';
-  return 'Easy';
 }
 
 function YarnBallIcon({ color }: { color: string }) {
@@ -544,8 +640,8 @@ const webCursor = Platform.OS === 'web' ? ({ cursor: 'pointer' } as const) : nul
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.md,
+    alignItems: 'center',
+    gap: Spacing.sm,
     paddingHorizontal: Layout.screenGutter,
     paddingBottom: Spacing.sm,
   },
@@ -558,12 +654,21 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   subtitle: {
-    ...Typography.callout,
+    ...Typography.caption,
     color: Colors.textSecondary,
   },
+  textAction: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.sm,
+  },
+  textActionLabel: {
+    ...Typography.caption,
+    color: Colors.accentPrimary,
+  },
   closeButton: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -579,33 +684,44 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.lg,
     gap: Spacing.lg,
   },
+  block: {
+    gap: Spacing.sm,
+  },
   captureRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
   },
-  captureButton: {
-    flex: 1,
+  primaryButton: {
     minHeight: 48,
     borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: Spacing.sm,
+    backgroundColor: Colors.accentPrimary,
+    paddingHorizontal: Spacing.md,
+  },
+  primaryLabel: {
+    ...Typography.label,
+    color: Colors.onAccent,
+    textAlign: 'center',
+  },
+  secondaryButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.elevatedControl,
     paddingHorizontal: Spacing.md,
   },
-  captureLabel: {
+  secondaryLabel: {
     ...Typography.label,
     color: Colors.textPrimary,
   },
-  preview: {
-    width: '100%',
-    height: 180,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.elevatedControl,
-  },
-  field: {
-    gap: Spacing.sm,
+  accentLabel: {
+    ...Typography.label,
+    color: Colors.accentPrimary,
   },
   label: {
     ...Typography.caption,
@@ -617,8 +733,10 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   chip: {
+    minHeight: 44,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: Radius.pill,
     backgroundColor: Colors.elevatedControl,
     borderWidth: 1,
@@ -646,19 +764,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     minHeight: 44,
   },
+  settingsHeader: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  settingsTitle: {
+    ...Typography.label,
+    color: Colors.textPrimary,
+  },
   engineCard: {
     gap: Spacing.sm,
     padding: Spacing.md,
     borderRadius: Radius.lg,
     backgroundColor: Colors.elevatedControl,
   },
-  engineTitle: {
-    ...Typography.subhead,
-    color: Colors.textPrimary,
-  },
   note: {
-    ...Typography.callout,
+    ...Typography.caption,
     color: Colors.textSecondary,
+  },
+  progressBlock: {
+    gap: Spacing.sm,
   },
   progressTrack: {
     height: 8,
@@ -671,19 +798,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     backgroundColor: Colors.accentPrimary,
   },
-  downloadButton: {
-    minHeight: 44,
-    borderRadius: Radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.accentPrimary,
-    paddingHorizontal: Spacing.md,
-  },
-  downloadText: {
-    ...Typography.label,
-    color: Colors.onAccent,
-    textAlign: 'center',
-  },
   removeLabel: {
     ...Typography.caption,
     color: Colors.danger,
@@ -693,17 +807,6 @@ const styles = StyleSheet.create({
     ...Typography.callout,
     color: Colors.danger,
   },
-  suggest: {
-    minHeight: 48,
-    borderRadius: Radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.accentPrimary,
-  },
-  suggestText: {
-    ...Typography.label,
-    color: Colors.onAccent,
-  },
   results: {
     gap: Spacing.md,
   },
@@ -712,10 +815,26 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   ideaCard: {
-    gap: Spacing.xs,
+    flexDirection: 'row',
+    gap: Spacing.md,
     padding: Spacing.md,
     borderRadius: Radius.md,
     backgroundColor: Colors.elevatedControl,
+  },
+  ideaSwatches: {
+    width: 72,
+    gap: Spacing.xs,
+    justifyContent: 'center',
+  },
+  swatch: {
+    height: 18,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  ideaCopy: {
+    flex: 1,
+    gap: Spacing.xs,
   },
   ideaTitle: {
     ...Typography.label,
@@ -730,29 +849,41 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   patternCard: {
-    gap: Spacing.xs,
-    padding: Spacing.md,
+    flexDirection: 'row',
+    gap: Spacing.md,
+    padding: Spacing.sm,
     borderRadius: Radius.md,
     backgroundColor: Colors.cardSurface,
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  thumb: {
+    width: 96,
+    height: 72,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.elevatedControl,
+  },
+  thumbFallback: {
+    width: 96,
+    height: 72,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.elevatedControl,
+  },
+  patternCopy: {
+    flex: 1,
+    gap: Spacing.xs,
+  },
   patternTitle: {
     ...Typography.label,
     color: Colors.textPrimary,
   },
-  saveStash: {
-    minHeight: 48,
-    borderRadius: Radius.md,
-    alignItems: 'center',
+  previewButton: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
     justifyContent: 'center',
-    backgroundColor: Colors.elevatedControl,
-    borderWidth: 1,
-    borderColor: Colors.accentPrimary,
-  },
-  saveStashText: {
-    ...Typography.label,
-    color: Colors.accentPrimary,
+    paddingRight: Spacing.md,
   },
   disabled: {
     opacity: 0.45,

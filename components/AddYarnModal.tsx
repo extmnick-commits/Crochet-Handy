@@ -2,12 +2,13 @@
  * Add a skein to the stash. The store normalizes the hex and rejects a blank
  * name, so this sheet checks both before calling `addStashItem`.
  */
-import { useState, type ReactNode } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useRef, useState, type ReactNode } from 'react';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { UploadLimitPaywall } from '@/components/UploadLimitPaywall';
 import { YarnColorSwatchPicker } from '@/components/YarnColorSwatchPicker';
+import { YarnRegionSelector } from '@/components/YarnRegionSelector';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { MAX_SKEINS, YARN_WEIGHTS, useCrochetStore, type YarnWeight } from '@/store/useCrochetStore';
@@ -16,7 +17,8 @@ import { isFirebaseConfigured } from '@/utils/firebase';
 import { yarnWeightMeta } from '@/utils/patternDisplay';
 import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@/utils/progressPhoto';
 import { YARDAGE_TIERS, hookForYarnWeight, type ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
-import { hexToYarnColorName, type YarnNamedColor } from '@/utils/yarnColorExtractor';
+import { hexToYarnColorName } from '@/utils/yarnColorExtractor';
+import { regionSampleKey, type YarnSampleRegion } from '@/utils/yarnRegion';
 import { reserveDailyUpload } from '@/utils/uploadQuota';
 import { uploadsRemainingToday } from '@/utils/uploadQuotaTesting';
 
@@ -101,6 +103,13 @@ function AddYarnForm({
   const [error, setError] = useState<string | null>(null);
   const [paywall, setPaywall] = useState(false);
   const [yarnPhotoUri, setYarnPhotoUri] = useState<string | null>(null);
+  const [yarnPhotoWidth, setYarnPhotoWidth] = useState(0);
+  const [yarnPhotoHeight, setYarnPhotoHeight] = useState(0);
+  const [yarnRegions, setYarnRegions] = useState<YarnSampleRegion[]>([]);
+  const [yarnGeneration, setYarnGeneration] = useState(0);
+  const [yarnSampledKey, setYarnSampledKey] = useState<string | null>(null);
+  const [yarnColors, setYarnColors] = useState<{ name: string; hex: string }[]>([]);
+  const yarnRegionSerial = useRef(0);
   const normalized = normalizeHex(hex);
   const uploadsLeft = uploadsRemainingToday(account);
 
@@ -224,9 +233,15 @@ function AddYarnForm({
       return;
     }
     setYarnPhotoUri(captured.uri);
+    setYarnPhotoWidth(0);
+    setYarnPhotoHeight(0);
+    setYarnRegions([]);
+    setYarnSampledKey(null);
+    setYarnColors([]);
+    setYarnGeneration((value) => value + 1);
   };
 
-  const onDetectedColors = (colors: YarnNamedColor[]) => {
+  const applyYarnColor = (colors: { name: string; hex: string }[]) => {
     const primary = colors[0];
     if (!primary) return;
     setHex(primary.hex);
@@ -306,8 +321,49 @@ function AddYarnForm({
 
       {yarnPhotoUri ? (
         <View style={styles.photoBlock}>
-          <Image accessible accessibilityLabel="Yarn photo" source={{ uri: yarnPhotoUri }} style={styles.photo} />
-          <YarnColorSwatchPicker imageUri={yarnPhotoUri} onChange={onDetectedColors} />
+          <YarnRegionSelector
+            imageUri={yarnPhotoUri}
+            imageWidth={yarnPhotoWidth}
+            imageHeight={yarnPhotoHeight}
+            regions={yarnRegions}
+            onImageSize={(width, height) => {
+              setYarnPhotoWidth(width);
+              setYarnPhotoHeight(height);
+            }}
+            onRegionsCommit={(regions) => {
+              setYarnRegions(regions);
+              setYarnColors([]);
+              setYarnSampledKey(null);
+            }}
+            onCreateId={() => {
+              yarnRegionSerial.current += 1;
+              return `stash-${yarnGeneration}-${yarnRegionSerial.current}`;
+            }}
+          />
+          {yarnRegions.length > 0 ? (
+            <YarnColorSwatchPicker
+              imageUri={yarnPhotoUri}
+              imageWidth={yarnPhotoWidth}
+              imageHeight={yarnPhotoHeight}
+              regions={yarnRegions}
+              photoGeneration={yarnGeneration}
+              colors={yarnColors}
+              sampledKey={yarnSampledKey}
+              maxColors={1}
+              onEditColors={(colors) => {
+                setYarnColors(colors);
+                setYarnSampledKey(regionSampleKey(yarnGeneration, yarnRegions));
+                applyYarnColor(colors);
+              }}
+              onSampled={(stamp, colors) => {
+                const key = regionSampleKey(yarnGeneration, yarnRegions);
+                if (stamp.generation !== yarnGeneration || stamp.sampleKey !== key || yarnSampledKey === key) return;
+                setYarnSampledKey(stamp.sampleKey);
+                setYarnColors(colors);
+                applyYarnColor(colors);
+              }}
+            />
+          ) : null}
         </View>
       ) : null}
 

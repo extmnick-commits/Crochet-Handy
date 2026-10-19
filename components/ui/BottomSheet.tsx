@@ -4,7 +4,7 @@
  * without a native bottom-sheet dependency.
  */
 import type { ReactNode } from 'react';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -30,15 +30,45 @@ type BottomSheetProps = {
   children: ReactNode;
   /** Stays put under the body, above the home indicator. */
   footer?: ReactNode;
+  onDismiss?: () => void;
+  /** Restored once when the sheet opens. */
+  initialScrollOffset?: number;
+  onScrollOffsetChange?: (offset: number) => void;
   sheetStyle?: ViewStyle;
   handleStyle?: ViewStyle;
 };
 
-export function BottomSheet({ visible, onClose, header, children, footer, sheetStyle, handleStyle }: BottomSheetProps) {
+export function BottomSheet({
+  visible,
+  onClose,
+  header,
+  children,
+  footer,
+  onDismiss,
+  initialScrollOffset = 0,
+  onScrollOffsetChange,
+  sheetStyle,
+  handleStyle,
+}: BottomSheetProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const keyboardInset = useKeyboardInset();
   const scrollRef = useRef<ScrollView>(null);
+  const offsetRef = useRef(0);
+  const scrolledRef = useRef(false);
+  const wasVisible = useRef(false);
+  const restorePending = useRef(false);
+
+  useEffect(() => {
+    if (visible && !wasVisible.current) {
+      scrolledRef.current = false;
+      restorePending.current = initialScrollOffset > 0;
+    }
+    if (!visible && wasVisible.current && scrolledRef.current) {
+      onScrollOffsetChange?.(offsetRef.current);
+    }
+    wasVisible.current = visible;
+  }, [initialScrollOffset, onScrollOffsetChange, visible]);
 
   const maxHeight = Math.round(height * 0.92);
   const bottomPad = Math.max(insets.bottom, 12);
@@ -48,7 +78,7 @@ export function BottomSheet({ visible, onClose, header, children, footer, sheetS
   const keyboardOffset = Platform.OS === 'ios' ? Spacing.sm : 0;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} onDismiss={onDismiss} statusBarTranslucent>
       <KeyboardAvoidingView
         style={[styles.root, { minHeight: height }]}
         behavior={Platform.OS === 'web' ? undefined : 'padding'}
@@ -64,6 +94,18 @@ export function BottomSheet({ visible, onClose, header, children, footer, sheetS
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
               automaticallyAdjustKeyboardInsets
+              onScroll={(event) => {
+                offsetRef.current = event.nativeEvent.contentOffset.y;
+              }}
+              onScrollBeginDrag={() => {
+                scrolledRef.current = true;
+              }}
+              onContentSizeChange={() => {
+                if (!restorePending.current) return;
+                restorePending.current = false;
+                scrollRef.current?.scrollTo({ y: initialScrollOffset, animated: false });
+              }}
+              scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               style={{ maxHeight: scrollMaxHeight }}
               contentContainerStyle={[

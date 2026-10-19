@@ -38,7 +38,7 @@ import {
   type ScrapLlamaRuntime,
   type ScrapSessionPlatform,
 } from '@/utils/scrapYarnSession';
-import { extractYarnColorsFromUri, yarnColorLabelName } from '@/utils/yarnColorExtractor';
+import { yarnColorLabelName } from '@/utils/yarnColorExtractor';
 
 export { LOCAL_AI_ENGINE_LABEL, SCRAP_MODEL_FILENAME };
 export { YARDAGE_TIERS, hookForYarnWeight, parseAvailableYards, tierForYards };
@@ -499,8 +499,7 @@ async function resolveSuggestionColors(params: AnalyzeLeftoverYarnParams): Promi
     .filter((color): color is ScrapYarnColor => color != null)
     .slice(0, 4);
   if (provided.length > 0) return provided;
-  const detected = await extractYarnColorsFromUri(params.imageUri);
-  return detected.slice(0, 4).map((color) => ({ name: color.name, hex: color.hex }));
+  return [];
 }
 
 function parseSuggestionColor(value: string): ScrapYarnColor | null {

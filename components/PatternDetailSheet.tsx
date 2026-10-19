@@ -58,10 +58,16 @@ import {
 } from '@/utils/patternDisplay';
 import { patternDescriptionAddsDetail } from '@/utils/patternSummary';
 import { patternPosterUri } from '@/utils/youtube';
+import { catalogPreviewDecision, patternToNewInput } from '@/utils/catalogPreview';
 
 type PatternDetailSheetProps = {
   patternId: string | null;
+  /** Catalog pattern shown before it is saved into the library. */
+  previewPattern?: CrochetPattern | null;
   onClose: () => void;
+  onDismiss?: () => void;
+  /** Called after an explicit save-and-start so the yarn sheet stays closed. */
+  onPreviewStarted?: () => void;
   onPatternChange?: (patternId: string) => void;
   /** Opens the feed filtered to patterns sharing this tag. */
   onTagPress?: (tag: string) => void;
@@ -80,16 +86,26 @@ type Swatch = { hex: string; name: string };
 
 const EMPTY_PATTERN_COMMENTS: PatternComment[] = [];
 
-export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagPress }: PatternDetailSheetProps) {
+export function PatternDetailSheet({
+  patternId,
+  previewPattern = null,
+  onClose,
+  onDismiss,
+  onPreviewStarted,
+  onPatternChange,
+  onTagPress,
+}: PatternDetailSheetProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const sectionOffsets = useRef<Partial<Record<DetailTab, number>>>({});
 
-  const pattern = useCrochetStore((state) =>
-    patternId ? (state.patterns.find((item) => item.id === patternId) ?? null) : null,
+  const storedPattern = useCrochetStore((state) =>
+    !previewPattern && patternId ? (state.patterns.find((item) => item.id === patternId) ?? null) : null,
   );
+  const pattern = previewPattern ?? storedPattern;
+  const previewing = previewPattern != null;
   const allPatterns = useCrochetStore((state) => state.patterns);
   const projects = useCrochetStore((state) => state.projects);
   const yarnStash = useCrochetStore((state) => state.yarnStash);
@@ -100,6 +116,7 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
     return allPatternComments.filter((comment) => comment.patternId === patternId);
   }, [allPatternComments, patternId]);
   const createProject = useCrochetStore((state) => state.createProject);
+  const addPatternFromYouTube = useCrochetStore((state) => state.addPatternFromYouTube);
   const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
   const toggleFollowCreator = useCrochetStore((state) => state.toggleFollowCreator);
   const addPatternComment = useCrochetStore((state) => state.addPatternComment);
@@ -110,6 +127,12 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
     creatorName ? selectIsCreatorFollowed(state, creatorName) : false,
   );
 
+  const previewId = previewPattern?.id ?? null;
+  const [savedPreview, setSavedPreview] = useState<{ id: string; patternId: string } | null>(null);
+  if (savedPreview && savedPreview.patternId !== previewId) {
+    setSavedPreview(null);
+  }
+  const savedPreviewId = savedPreview && savedPreview.patternId === previewId ? savedPreview.id : null;
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [heroIndex, setHeroIndex] = useState(0);
   const [reviewsExpanded, setReviewsExpanded] = useState(false);
@@ -154,16 +177,24 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
   }, [pattern]);
   const showTutorial = Boolean(pattern?.videoId || pattern?.videoUrl);
 
-  useEffect(() => {
-    if (!patternId) return;
+  const tagPress = previewing ? undefined : onTagPress;
+  const detailKey = previewPattern?.id ?? patternId ?? '';
+  const [seenDetailKey, setSeenDetailKey] = useState(detailKey);
+  if (seenDetailKey !== detailKey) {
+    setSeenDetailKey(detailKey);
     setActiveTab('details');
     setHeroIndex(0);
     setReviewsExpanded(false);
     setDraftComment('');
     setDraftRating(5);
+  }
+
+  useEffect(() => {
     sectionOffsets.current = {};
-    requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
-  }, [patternId]);
+    if (!detailKey) return undefined;
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
+    return () => cancelAnimationFrame(frame);
+  }, [detailKey]);
 
   const scrollToSection = (tab: DetailTab) => {
     const y = sectionOffsets.current[tab];
@@ -184,12 +215,39 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
     if (next !== activeTab) setActiveTab(next);
   };
 
+  const importPreview = (action: 'save' | 'start'): string | null => {
+    if (!pattern) return null;
+    const decision = catalogPreviewDecision(action);
+    if (!decision.importPattern) return null;
+    const existing =
+      allPatterns.find((item) => pattern.videoId.length > 0 && item.videoId === pattern.videoId) ??
+      allPatterns.find((item) => item.id === pattern.id);
+    if (existing) return existing.id;
+    return addPatternFromYouTube(patternToNewInput(pattern), pattern.id.length <= 80 ? pattern.id : undefined);
+  };
+
   const onStart = () => {
     if (!pattern) return;
+    if (previewing) {
+      if (!catalogPreviewDecision('start').startProject) return;
+      const id = importPreview('start');
+      if (!id) return;
+      const projectId = createProject({ name: pattern.title, patternId: id });
+      if (!projectId) return;
+      onPreviewStarted?.();
+      router.navigate('/active');
+      return;
+    }
     const id = createProject({ name: pattern.title, patternId: pattern.id });
     if (!id) return;
     onClose();
     router.navigate('/active');
+  };
+
+  const onSavePreview = () => {
+    const id = importPreview('save');
+    if (!pattern || !id) return;
+    setSavedPreview({ id, patternId: pattern.id });
   };
 
   const onLoadActive = () => {
@@ -210,7 +268,7 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
   };
 
   const onPostComment = () => {
-    if (!pattern || !draftComment.trim()) return;
+    if (!pattern || !draftComment.trim() || (previewing && !savedPreviewId)) return;
     const authorName = account?.displayName ?? 'Maker';
     const authorUsername = account?.username;
     const avatarColor = account?.avatarColor;
@@ -235,6 +293,7 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
       visible={pattern !== null}
       animationType="slide"
       onRequestClose={onClose}
+      onDismiss={onDismiss}
       statusBarTranslucent
       presentationStyle="fullScreen"
     >
@@ -362,6 +421,9 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
               ) : null}
 
               <Text role="heading" aria-level={2} style={styles.title}>{pattern.title}</Text>
+              {previewing ? (
+                <Text style={styles.previewNote}>Preview. Save or start when you want this pattern kept.</Text>
+              ) : null}
               <View style={styles.statsRow}>
                 <Text style={styles.stat}>{formatViewCount(pattern.id)} views</Text>
                 <Text style={styles.statDot}>·</Text>
@@ -411,20 +473,20 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
                             key={tag}
                             accessibilityRole="button"
                             accessibilityLabel={`Browse patterns tagged ${tag}`}
-                            disabled={!onTagPress}
+                            disabled={!tagPress}
                             onPress={() => {
-                              if (!onTagPress) return;
+                              if (!tagPress) return;
                               tick();
-                              onTagPress(tag);
+                              tagPress(tag);
                             }}
                             style={({ pressed }) => [
                               styles.tagPill,
-                              onTagPress && styles.tagPillInteractive,
-                              pressed && onTagPress && styles.tagPillPressed,
+                              tagPress && styles.tagPillInteractive,
+                              pressed && tagPress && styles.tagPillPressed,
                               webCursor,
                             ]}
                           >
-                            <Text style={[styles.tagText, onTagPress && styles.tagTextInteractive]}>
+                            <Text style={[styles.tagText, tagPress && styles.tagTextInteractive]}>
                               #{tag}
                             </Text>
                           </Pressable>
@@ -587,6 +649,7 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
                         pattern={relatedPattern}
                         imageHeight={imageHeight}
                         onPress={() => {
+                          if (previewing) return;
                           onPatternChange?.(relatedPattern.id);
                           scrollRef.current?.scrollTo({ y: 0, animated: false });
                         }}
@@ -599,41 +662,56 @@ export function PatternDetailSheet({ patternId, onClose, onPatternChange, onTagP
           </ScrollView>
 
           <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
-            <IconCountButton
-              label="Like"
-              count={formatLikeCount(pattern.id, liked)}
-              onPress={() => {
-                tick();
-                toggleLikePattern(pattern.id);
-              }}
-              icon={<HeartIcon color={liked ? Colors.accentPrimary : Colors.textSecondary} filled={liked} size={20} />}
-              active={liked}
-            />
-            <IconCountButton
-              label="Collect"
-              count={formatCollectCount(pattern.id)}
-              onPress={() => {
-                tick();
-                if (!pattern) return;
-                handlePatternCollectPress(pattern.id, () => setFolderPickerOpen(true));
-              }}
-              icon={<FolderIcon color={collectedPatternIds.includes(pattern.id) ? Colors.accentPrimary : Colors.textSecondary} />}
-              active={collectedPatternIds.includes(pattern.id)}
-            />
-            <IconCountButton
-              label="Comment"
-              count={formatCommentCount(pattern.id, userCommentCount)}
-              onPress={() => scrollToSection('reviews')}
-              icon={<CommentIcon color={Colors.textSecondary} />}
-            />
+            {previewing ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={savedPreviewId ? 'Pattern saved' : 'Save pattern'}
+                testID="pattern-preview-save"
+                disabled={savedPreviewId != null}
+                onPress={onSavePreview}
+                style={({ pressed }) => [styles.previewSave, pressed && styles.pressed, webCursor]}
+              >
+                <Text style={styles.previewSaveText}>{savedPreviewId ? 'Saved' : 'Save pattern'}</Text>
+              </Pressable>
+            ) : (
+              <>
+                <IconCountButton
+                  label="Like"
+                  count={formatLikeCount(pattern.id, liked)}
+                  onPress={() => {
+                    tick();
+                    toggleLikePattern(pattern.id);
+                  }}
+                  icon={<HeartIcon color={liked ? Colors.accentPrimary : Colors.textSecondary} filled={liked} size={20} />}
+                  active={liked}
+                />
+                <IconCountButton
+                  label="Collect"
+                  count={formatCollectCount(pattern.id)}
+                  onPress={() => {
+                    tick();
+                    if (!pattern) return;
+                    handlePatternCollectPress(pattern.id, () => setFolderPickerOpen(true));
+                  }}
+                  icon={<FolderIcon color={collectedPatternIds.includes(pattern.id) ? Colors.accentPrimary : Colors.textSecondary} />}
+                  active={collectedPatternIds.includes(pattern.id)}
+                />
+                <IconCountButton
+                  label="Comment"
+                  count={formatCommentCount(pattern.id, userCommentCount)}
+                  onPress={() => scrollToSection('reviews')}
+                  icon={<CommentIcon color={Colors.textSecondary} />}
+                />
+              </>
+            )}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Prepare to Crochet"
+              accessibilityLabel={previewing ? 'Save and start' : 'Prepare to Crochet'}
               testID="pattern-detail-start"
               onPress={onStart}
               style={({ pressed }) => [styles.primaryCta, pressed && styles.pressed, webCursor]}
             >
-              <Text style={styles.primaryCtaText}>Prepare to Crochet</Text>
+              <Text style={styles.primaryCtaText}>{previewing ? 'Save and start' : 'Prepare to Crochet'}</Text>
             </Pressable>
           </View>
 
@@ -921,6 +999,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Layout.screenGutter,
     marginTop: Spacing.md,
   },
+  previewNote: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    paddingHorizontal: Layout.screenGutter,
+    marginTop: Spacing.xs,
+  },
   statsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1170,6 +1254,18 @@ const styles = StyleSheet.create({
   bottomIconButton: { alignItems: 'center', justifyContent: 'center', minWidth: 44, gap: 2 },
   bottomIconCount: { ...Typography.caption, color: Colors.textSecondary, fontSize: 11 },
   bottomIconCountOn: { color: Colors.accentPrimary },
+  previewSave: {
+    minHeight: 48,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.elevatedControl,
+  },
+  previewSaveText: {
+    ...Typography.label,
+    color: Colors.accentPrimary,
+  },
   primaryCta: {
     flex: 1,
     minHeight: 48,
