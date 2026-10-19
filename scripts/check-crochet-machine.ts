@@ -16,6 +16,16 @@ import {
   extractPatternSteps,
   parsePatternAiReview,
 } from '../utils/patternAiParser';
+import type { CrochetPattern } from '../store/machine';
+import {
+  applyPrimaryScrapeTopicTag,
+  primaryTagForScrapeTopic,
+  resolveScrapeTopic,
+  scrapeCategoryKeywords,
+  searchQueryForScrapeTopic,
+  WORKFLOW_SCRAPE_TOPIC_OPTIONS,
+} from '../utils/holidayTopics';
+import { matchesPatternCategory, patternFeedCategories } from '../utils/patternDisplay';
 import { acceptsCrochetExtraction, mapExtractedPattern } from '../utils/patternExtraction';
 import {
   isEnglishFeedPattern,
@@ -1206,6 +1216,67 @@ assert(parseCommunityDocument('projects/demo/databases/(default)/documents/commu
   source: { stringValue: 'web' },
   videoUrl: { stringValue: 'https://example.com/a.mp4' },
 }) == null, 'firestore parser rejects a title-less submission');
+
+const genericTrendingQuery = searchQueryForScrapeTopic('trending');
+for (const topic of WORKFLOW_SCRAPE_TOPIC_OPTIONS) {
+  if (topic === 'trending' || topic === 'seasonal') continue;
+  const resolved = resolveScrapeTopic(topic, new Date('2026-07-01T12:00:00'));
+  const query = searchQueryForScrapeTopic(resolved);
+  assert(query !== genericTrendingQuery, `workflow scrape topic "${topic}" maps to a dedicated YouTube query`);
+  const tag = primaryTagForScrapeTopic(resolved);
+  assert(tag != null && tag.length > 0, `workflow scrape topic "${topic}" has a primary catalog tag`);
+}
+assert(resolveScrapeTopic('halloween', new Date('2026-07-01T12:00:00')) === 'halloween', 'explicit halloween works off-season');
+assert(resolveScrapeTopic('wearables', new Date('2026-10-18T12:00:00')) === 'wearables', 'explicit wearables is not replaced by seasonal trending');
+assert(resolveScrapeTopic('trending', new Date('2026-10-18T12:00:00')) === 'halloween', 'trending follows active holiday in October');
+process.env.SCRAPE_SEASONAL = '0';
+assert(resolveScrapeTopic('trending', new Date('2026-10-18T12:00:00')) === 'trending', 'trending stays generic when SCRAPE_SEASONAL=0');
+delete process.env.SCRAPE_SEASONAL;
+assert(
+  applyPrimaryScrapeTopicTag(['beginner'], 'blankets').includes('blankets'),
+  'scrape topic tag is applied for blankets',
+);
+const categoryKeywords = scrapeCategoryKeywords();
+assert(categoryKeywords.blankets?.includes('blanket'), 'blankets category keyword list includes blanket');
+assert(!('blanket' in categoryKeywords), 'legacy blanket category key is not used');
+
+function categoryFeedPattern(title: string, tags: string[]): CrochetPattern {
+  return {
+    id: 'feed-test',
+    title,
+    creator: 'Test',
+    difficulty: 'easy',
+    yarnWeight: 'worsted',
+    hookSize: '5.0 mm',
+    tags,
+    steps: [],
+    videoId: 'vid',
+    youtubeUrl: 'https://www.youtube.com/watch?v=vid',
+    thumbnailUrl: 'https://i.ytimg.com/vi/vid/hqdefault.jpg',
+    totalRows: 10,
+    stitchesPerRow: 20,
+    bookmarks: [],
+  };
+}
+
+assert(
+  matchesPatternCategory(categoryFeedPattern('Cute ghost', ['stpatricks']), 'stpatricks'),
+  'scrape topic tag stpatricks matches the holiday chip',
+);
+assert(
+  matchesPatternCategory(categoryFeedPattern('Granny throw', ['blankets']), 'blankets'),
+  'scrape topic tag blankets matches the blankets chip',
+);
+assert(
+  patternFeedCategories(new Date('2026-07-01T12:00:00'), []).some((item) => item.id === 'blankets'),
+  'patterns feed always includes blankets chip',
+);
+assert(
+  patternFeedCategories(new Date('2026-07-01T12:00:00'), [
+    categoryFeedPattern('Turkey applique', ['thanksgiving']),
+  ]).some((item) => item.id === 'thanksgiving'),
+  'off-season holiday chip appears when the catalog has matching patterns',
+);
 
 const beanie = mapExtractedPattern(
   {

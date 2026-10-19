@@ -223,20 +223,74 @@ export function scrapeCategoryKeywords(): Record<string, readonly string[]> {
       'hoodie',
       'dress',
     ],
-    blanket: ['blanket', 'afghan', 'throw'],
+    blankets: ['blanket', 'blankets', 'afghan', 'throw'],
     bag: ['bag', 'tote', 'purse', 'pouch'],
   };
+}
+
+/** GitHub Actions `pattern-scraper.yml` topic dropdown — keep in sync. */
+export const WORKFLOW_SCRAPE_TOPIC_OPTIONS = [
+  'trending',
+  'seasonal',
+  'halloween',
+  'christmas',
+  'thanksgiving',
+  'valentines',
+  'easter',
+  'stpatricks',
+  'amigurumi',
+  'wearables',
+  'blankets',
+] as const;
+
+export type WorkflowScrapeTopicOption = (typeof WORKFLOW_SCRAPE_TOPIC_OPTIONS)[number];
+
+const WORKFLOW_SCRAPE_TOPIC_SET = new Set<string>(WORKFLOW_SCRAPE_TOPIC_OPTIONS);
+
+export function isWorkflowScrapeTopic(value: string): value is WorkflowScrapeTopicOption {
+  return WORKFLOW_SCRAPE_TOPIC_SET.has(value.trim().toLowerCase());
+}
+
+/** Manual workflow picks (not trending/seasonal) always scrape that bucket, even off-season. */
+export function isExplicitManualScrapeTopic(topic: string): boolean {
+  const normalized = topic.trim().toLowerCase();
+  if (normalized === 'trending' || normalized === 'seasonal') return false;
+  if (getHolidayTopic(normalized)) return true;
+  return normalized === 'amigurumi' || normalized === 'wearables' || normalized === 'blankets';
+}
+
+/** Tag stamped on scraped patterns so holiday/category filters match the workflow topic. */
+export function primaryTagForScrapeTopic(resolvedTopic: string): string | undefined {
+  const topic = resolvedTopic.trim().toLowerCase();
+  if (!topic || topic === 'trending') return undefined;
+  const holiday = getHolidayTopic(topic);
+  if (holiday) return holiday.tag;
+  if (topic === 'amigurumi' || topic === 'wearables' || topic === 'blankets') return topic;
+  return undefined;
+}
+
+export function applyPrimaryScrapeTopicTag(tags: readonly string[], resolvedTopic: string): string[] {
+  const primary = primaryTagForScrapeTopic(resolvedTopic);
+  if (!primary) return [...tags];
+  const normalized = primary.toLowerCase();
+  const next = tags.map((tag) => tag.trim().toLowerCase()).filter((tag) => tag.length > 0);
+  if (!next.includes(normalized)) next.unshift(normalized);
+  return next.slice(0, 8);
 }
 
 /**
  * Maps CLI/env topic to the YouTube search bucket.
  * - `seasonal` → active holiday or generic trending
  * - `trending` → active holiday when SCRAPE_SEASONAL is enabled (default on)
+ * - explicit holiday / amigurumi / wearables / blankets → always that bucket
  */
 export function resolveScrapeTopic(requested: string, date = new Date()): string {
   const topic = requested.trim().toLowerCase();
   if (topic === 'seasonal') {
     return getActiveHolidayTopic(date)?.id ?? 'trending';
+  }
+  if (isExplicitManualScrapeTopic(topic)) {
+    return topic;
   }
   if (topic === 'trending' && seasonalScrapeEnabled()) {
     const holiday = getActiveHolidayTopic(date);
@@ -263,7 +317,7 @@ export function searchQueryForScrapeTopic(topic: string): string {
   if (topic === 'wearables') {
     return '("crochet sweater" | "crochet cardigan" | "crochet top") ("tutorial" | "pattern") -shorts';
   }
-  if (topic === 'blankets') {
+  if (topic === 'blankets' || topic === 'blanket') {
     return '("crochet blanket" | "crochet granny square") ("tutorial" | "pattern") -shorts';
   }
   return GENERIC_TRENDING_QUERY;

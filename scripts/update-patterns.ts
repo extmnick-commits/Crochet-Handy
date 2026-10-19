@@ -23,6 +23,7 @@ import OpenAI from 'openai';
 
 import { type VideoBookmark } from '../utils/chapters';
 import {
+  applyPrimaryScrapeTopicTag,
   getActiveHolidayTopic,
   resolveScrapeTopic,
   searchQueryForScrapeTopic,
@@ -465,6 +466,7 @@ export function mapBatchPatternsToSeed(
   videos: YouTubeVideoItem[],
   batch: AiBatchPatternPayload[],
   watchBookmarksByVideoId: ReadonlyMap<string, VideoBookmark[]> = new Map(),
+  resolvedScrapeTopic?: string,
 ): SeedPattern[] {
   const byIndex = new Map<number, AiPatternPayload>();
   for (const item of batch) {
@@ -473,9 +475,18 @@ export function mapBatchPatternsToSeed(
     }
   }
 
-  return videos.map((video, index) =>
-    mergePattern(video, byIndex.get(index) ?? {}, watchBookmarksByVideoId.get(video.id ?? '') ?? []),
-  );
+  return videos.map((video, index) => {
+    const pattern = mergePattern(
+      video,
+      byIndex.get(index) ?? {},
+      watchBookmarksByVideoId.get(video.id ?? '') ?? [],
+    );
+    if (!resolvedScrapeTopic) return pattern;
+    return {
+      ...pattern,
+      tags: applyPrimaryScrapeTopicTag(pattern.tags, resolvedScrapeTopic),
+    };
+  });
 }
 
 export function mergePattern(
@@ -769,7 +780,7 @@ export async function main(): Promise<void> {
 
     const seen = new Set(existingIds);
     const patterns = withUniquePatternIds(
-      mapBatchPatternsToSeed(videos, batch, watchBookmarksByVideoId).filter((pattern) => {
+      mapBatchPatternsToSeed(videos, batch, watchBookmarksByVideoId, SEARCH_TOPIC).filter((pattern) => {
         if (!pattern.videoId || seen.has(pattern.videoId)) return false;
         seen.add(pattern.videoId);
         return true;

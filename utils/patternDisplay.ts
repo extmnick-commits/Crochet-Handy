@@ -15,13 +15,21 @@ import { SEED_PATTERNS, seedCommunityReviewsForPattern, type SeedPatternMaterial
 import {
   getActiveHolidayTopics,
   getHolidayTopic,
+  HOLIDAY_TOPICS,
   holidayChipLabel,
   isHolidayTopicId,
+  scrapeCategoryKeywords,
   type HolidayTopicId,
 } from '@/utils/holidayTopics';
 import { derivePatternSummary } from '@/utils/patternSummary';
 
-export type CorePatternCategoryId = 'following' | 'for-you' | 'trending' | 'amigurumi' | 'wearables';
+export type CorePatternCategoryId =
+  | 'following'
+  | 'for-you'
+  | 'trending'
+  | 'amigurumi'
+  | 'wearables'
+  | 'blankets';
 export type PatternCategoryId = CorePatternCategoryId | HolidayTopicId;
 
 export type PatternFeedCategory = { id: PatternCategoryId; label: string };
@@ -75,41 +83,34 @@ export function packMasonryColumns(
   return columns;
 }
 
-const WEARABLE_WORDS = [
-  'wearable',
-  'cardigan',
-  'sweater',
-  'jumper',
-  'pullover',
-  'hat',
-  'beanie',
-  'scarf',
-  'shawl',
-  'duster',
-  'sock',
-  'glove',
-  'mitten',
-  'cowl',
-  'vest',
-  'hoodie',
-  'dress',
-] as const;
-
-const AMIGURUMI_WORDS = ['amigurumi', 'plush', 'plushie', 'doll', 'stuffie', 'toy'] as const;
-
-/** Patterns tab chips: core categories plus seasonal holidays for the current date. */
-export function patternFeedCategories(date = new Date()): readonly PatternFeedCategory[] {
+/** Patterns tab chips: core categories, seasonal holidays, and catalog-backed holiday chips. */
+export function patternFeedCategories(
+  date = new Date(),
+  patterns: readonly CrochetPattern[] = [],
+): readonly PatternFeedCategory[] {
   const seasonal = getActiveHolidayTopics(date).map((holiday) => ({
     id: holiday.id,
     label: holidayChipLabel(holiday.id),
   }));
+  const seasonalIds = new Set(seasonal.map((item) => item.id));
+
+  const catalogHolidays = HOLIDAY_TOPICS
+    .filter((holiday) => !seasonalIds.has(holiday.id))
+    .filter((holiday) => patterns.some((pattern) => matchesPatternCategory(pattern, holiday.id)))
+    .map((holiday) => ({
+      id: holiday.id,
+      label: holidayChipLabel(holiday.id),
+    }));
+
   return [
     { id: 'following', label: 'Following' },
     { id: 'for-you', label: 'For You' },
     { id: 'trending', label: 'Trending' },
     ...seasonal,
+    ...catalogHolidays,
     { id: 'amigurumi', label: 'Amigurumi' },
     { id: 'wearables', label: 'Wearables' },
+    { id: 'blankets', label: 'Blankets' },
   ];
 }
 
@@ -366,14 +367,25 @@ export function matchesPatternTagFilter(pattern: CrochetPattern, tagFilter: stri
   return patternHasTag(pattern, tagFilter);
 }
 
+function matchesScrapeCategory(pattern: CrochetPattern, categoryId: string): boolean {
+  if (patternHasTag(pattern, categoryId)) return true;
+  const holiday = getHolidayTopic(categoryId);
+  if (holiday && patternHasTag(pattern, holiday.tag)) return true;
+  const keywords = scrapeCategoryKeywords()[categoryId];
+  if (!keywords?.length) return false;
+  return mentions(pattern, keywords);
+}
+
 export function matchesPatternCategory(pattern: CrochetPattern, category: PatternCategoryId): boolean {
-  if (isHolidayTopicId(category)) {
-    const keywords = getHolidayTopic(category)?.keywords;
-    if (keywords?.length) return mentions(pattern, keywords);
-    return false;
+  if (category === 'following' || category === 'for-you' || category === 'trending') {
+    return true;
   }
-  if (category === 'amigurumi') return mentions(pattern, AMIGURUMI_WORDS);
-  if (category === 'wearables') return mentions(pattern, WEARABLE_WORDS);
+  if (isHolidayTopicId(category)) {
+    return matchesScrapeCategory(pattern, category);
+  }
+  if (category === 'amigurumi' || category === 'wearables' || category === 'blankets') {
+    return matchesScrapeCategory(pattern, category);
+  }
   return true;
 }
 

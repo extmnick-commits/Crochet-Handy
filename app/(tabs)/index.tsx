@@ -74,7 +74,7 @@ export default function PatternsScreen() {
     router.setParams({ tag: undefined });
   }, [routeParams.tag, router]);
 
-  const categories = useMemo(() => patternFeedCategories(), []);
+  const categories = useMemo(() => patternFeedCategories(new Date(), patterns), [patterns]);
 
   useEffect(() => {
     if (!categories.some((item) => item.id === category)) {
@@ -536,6 +536,9 @@ function emptyCopy(
   }
   if (category === 'wearables') {
     return { title: 'No wearables yet', body: 'Cardigans, hats, and other wearables show up here.' };
+  }
+  if (category === 'blankets') {
+    return { title: 'No blankets yet', body: 'Afghans, throws, and granny-square blankets show up here.' };
   }
   return { title: 'No patterns yet', body: 'Save a YouTube tutorial with the + button.' };
 }
