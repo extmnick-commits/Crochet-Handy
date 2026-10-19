@@ -125,4 +125,4 @@ export function visionModelPair(platform: string): VisionModelPair | null {
 /** Extra free space required beyond the file itself. */
 export const SCRAP_MODEL_STORAGE_MARGIN_BYTES = 64 * 1024 * 1024;
 
-export const SCRAP_HASH_CHUNK_BYTES = 1024 * 1024;
+export const SCRAP_HASH_CHUNK_BYTES = 4 * 1024 * 1024;

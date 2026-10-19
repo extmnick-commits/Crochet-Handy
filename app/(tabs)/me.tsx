@@ -768,7 +768,7 @@ function VisionModelStatus() {
       : status.phase === 'failed'
         ? 'On-device model download stopped'
         : status.phase === 'checking'
-          ? `Checking on-device model ${percent}%`
+          ? `Verifying on-device model ${percent}%`
           : `Downloading on-device model ${percent}%`;
   return (
     <Pressable

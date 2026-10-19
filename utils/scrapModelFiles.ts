@@ -1,6 +1,6 @@
 /**
  * expo-file-system adapter for the pinned scrap model.
- * Hashing uses FileHandle.readBytes in 1 MB chunks.
+ * Hashing uses FileHandle.readBytes in 4 MB chunks.
  */
 import { Directory, File, FileMode, Paths } from 'expo-file-system';
 

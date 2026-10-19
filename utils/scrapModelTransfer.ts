@@ -129,6 +129,8 @@ function progress(phase: ModelTransferProgress['phase'], written: number, total:
   };
 }
 
+const SCRAP_HASH_YIELD_BYTES = 8 * 1024 * 1024;
+
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
@@ -148,8 +150,12 @@ export async function hashFileChunks(
   const hasher = createSha256();
   let offset = 0;
   let reported = -1;
+  let sinceYield = SCRAP_HASH_YIELD_BYTES;
   while (offset < size) {
-    await yieldToUi();
+    if (sinceYield >= SCRAP_HASH_YIELD_BYTES) {
+      await yieldToUi();
+      sinceYield = 0;
+    }
     if (options?.cancelled?.()) throw new ScrapTransferCancelledError();
     const length = Math.min(chunkBytes, size - offset);
     const chunk = await read(offset, length);
@@ -158,6 +164,7 @@ export async function hashFileChunks(
     }
     hasher.update(chunk);
     offset += length;
+    sinceYield += length;
     const update = progress('verify', offset, size);
     if (update.ratio === 1 || update.ratio - reported >= 0.02) {
       reported = update.ratio;
@@ -204,10 +211,9 @@ export async function verifyPinnedFile(
     receipt != null &&
     receipt.bytes === pin.bytes &&
     receipt.sha256 === pin.sha256 &&
-    receipt.revision === pin.revision &&
-    stamp != null &&
-    receipt.modified === stamp;
-  if (receiptMatches) {
+    receipt.revision === pin.revision;
+  const stampMatches = stamp == null || receipt?.modified == null || receipt.modified === stamp;
+  if (receiptMatches && stampMatches) {
     onProgress?.(progress('verify', pin.bytes, pin.bytes));
     return 'ready';
   }

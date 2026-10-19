@@ -158,7 +158,7 @@ function ScrapBusterForm({
         onProgress: (update) => {
           if (!mounted.current || !isCurrent()) return;
           setRatio(update.ratio);
-          setBusy(update.phase === 'download' ? 'Preparing on-device analysis' : 'Checking the on-device model');
+          setBusy(update.phase === 'download' ? 'Preparing on-device analysis' : 'Verifying the on-device model');
         },
         onPhase: (phase) => {
           if (!mounted.current || !isCurrent()) return;
