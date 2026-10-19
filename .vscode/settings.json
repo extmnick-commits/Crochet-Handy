@@ -1,4 +1,5 @@
 {
     "workbench.colorTheme": "Cursor Dark",
-    "workbench.preferredDarkColorTheme": "Tomorrow Night Blue"
+    "workbench.preferredDarkColorTheme": "Tomorrow Night Blue",
+    "java.compile.nullAnalysis.mode": "automatic"
 }

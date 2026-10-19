@@ -50,6 +50,7 @@ yarn-error.*
 
 # local Expo module build outputs
 modules/**/android/build/
+.gradle/
 
 # local iOS sideload packaging (unsigned / ad-hoc builds)
 *.ipa

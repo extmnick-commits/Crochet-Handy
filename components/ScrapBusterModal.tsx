@@ -1,15 +1,15 @@
 /**
- * Leftover yarn. A photo is analyzed on device, then the maker confirms
- * the findings and opens matching tutorials. Color is not part of this sheet.
+ * Leftover yarn: scan once on device, fill details, and show catalog projects.
+ * Corrections are optional. Color is not part of this sheet.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { YarnScanLoading } from '@/components/YarnScanLoading';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { useBottomSheetScrollRef } from '@/components/ui/BottomSheetScrollContext';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
-import type { PatternDifficulty } from '@/store/machine';
 import { YARN_WEIGHTS, type CrochetPattern } from '@/store/useCrochetStore';
 import { displayThumbnail, recommendationThumbnail } from '@/utils/catalogPreview';
 import {
@@ -18,13 +18,10 @@ import {
   confirmVisionFindings,
   editVisionCorrections,
   getLeftoverYarnDraft,
-  patternRequestFromDraft,
   replaceLeftoverPhoto,
   resetLeftoverYarnDraft,
-  storePatternDraft,
   subscribeLeftoverYarnDraft,
   updateLeftoverYarnDraft,
-  updatePatternRequest,
   type VisionCorrections,
 } from '@/utils/leftoverYarnDraft';
 import { difficultyLabel, yarnWeightMeta } from '@/utils/patternDisplay';
@@ -32,14 +29,15 @@ import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@
 import { hookRangeLabel } from '@/utils/scrapHookRange';
 import { modelTransferStatusLabel } from '@/utils/scrapModelTransfer';
 import { hookForYarnWeight, parseAvailableYards, tierForYards, type ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
-import { recommendConfirmedCatalog, type VisionCatalogCard } from '@/utils/scrapVisionCatalog';
+import { recommendScannedCatalog, type VisionCatalogCard } from '@/utils/scrapVisionCatalog';
+import type { VisionScanDetail } from '@/utils/scrapVisionConfig';
 import { prepareVisionPhoto } from '@/utils/scrapVisionImage';
 import { QUANTITY_CATEGORIES, VISION_SUBJECTS, weightFromLabel, type QuantityCategory, type VisionSubject } from '@/utils/scrapVisionOutput';
 import {
   analyzeLeftoverPhoto,
   cancelActiveVisionAnalysis,
   cancelVisionDownload,
-  createLeftoverPatternDraft,
+  warmLeftoverVisionEngine,
 } from '@/utils/scrapVisionRun';
 
 type ScrapBusterModalProps = {
@@ -50,14 +48,15 @@ type ScrapBusterModalProps = {
   onSaveToStash: (draft: ScannedLeftoverDraft) => void;
 };
 
-const SKILLS: readonly PatternDifficulty[] = ['beginner', 'easy', 'intermediate', 'advanced'];
-
 function useLeftoverYarnDraft() {
   return useSyncExternalStore(subscribeLeftoverYarnDraft, getLeftoverYarnDraft, getLeftoverYarnDraft);
 }
 
 export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern, onSaveToStash }: ScrapBusterModalProps) {
   const draft = useLeftoverYarnDraft();
+  useEffect(() => {
+    if (visible) warmLeftoverVisionEngine();
+  }, [visible]);
   return (
     <BottomSheet
       visible={visible}
@@ -71,7 +70,7 @@ export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern
             <Text role="heading" aria-level={2} style={styles.title}>
               Leftover yarn
             </Text>
-            <Text style={styles.subtitle}>Take a photo, confirm the findings, then open matching tutorials</Text>
+            <Text style={styles.subtitle}>Scan your yarn to find projects you could make</Text>
           </View>
           {draft.photoUri ? (
             <Pressable
@@ -100,7 +99,7 @@ export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern
         </View>
       }
     >
-      {visible ? <ScrapBusterForm onPreviewPattern={onPreviewPattern} onSaveToStash={onSaveToStash} /> : null}
+      {visible ? <ScrapBusterForm key={draft.sessionEpoch} onPreviewPattern={onPreviewPattern} onSaveToStash={onSaveToStash} /> : null}
     </BottomSheet>
   );
 }
@@ -113,292 +112,235 @@ function ScrapBusterForm({
   onSaveToStash: (draft: ScannedLeftoverDraft) => void;
 }) {
   const draft = useLeftoverYarnDraft();
+  const scrollRef = useBottomSheetScrollRef();
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [ratio, setRatio] = useState(0);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(draft.analysisSource === 'user' && !draft.confirmed);
   const mounted = useRef(true);
+  // Synchronous guard: a double tap cannot queue a second multi-minute scan.
+  const operation = useRef<symbol | null>(null);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      operation.current = null;
+      cancelActiveVisionAnalysis();
     };
   }, []);
 
-  const onCapture = async (source: CaptureSource) => {
-    cancelActiveVisionAnalysis();
-    setMessage(null);
-    setBusy(null);
-    const captured = await captureProgressPhoto(source);
-    if (!mounted.current || captured.status === 'canceled') return;
-    if (captured.status === 'error') {
-      setMessage(captureErrorMessage(captured.reason, source));
-      return;
-    }
-    replaceLeftoverPhoto(captured.uri);
+  const refreshMatches = () => {
+    const current = getLeftoverYarnDraft().corrections;
+    if (!current) return;
+    Keyboard.dismiss();
+    confirmVisionFindings(recommendScannedCatalog(current));
+    setDetailsOpen(false);
+    updateLeftoverYarnDraft({ scrollY: 0 });
+    scrollRef?.current?.scrollTo({ y: 0, animated: true });
   };
 
-  const onAnalyze = async () => {
-    const photoUri = getLeftoverYarnDraft().photoUri;
-    if (!photoUri || busy) return;
-    const generation = getLeftoverYarnDraft().photoGeneration;
-    const epoch = getLeftoverYarnDraft().sessionEpoch;
+  const onAnalyze = async (detail: VisionScanDetail = 'quick') => {
+    const source = getLeftoverYarnDraft();
+    if (!source.photoUri || operation.current) return;
+    const token = Symbol('scan');
+    operation.current = token;
     const isCurrent = () => {
       const current = getLeftoverYarnDraft();
-      return current.photoGeneration === generation && current.sessionEpoch === epoch;
+      return mounted.current && operation.current === token &&
+        current.photoGeneration === source.photoGeneration && current.sessionEpoch === source.sessionEpoch;
     };
+    setDetailsOpen(false);
     setMessage(null);
-    setRatio(0);
-    setBusy('Preparing the photo');
+    setProgress(null);
+    setBusy('Preparing your photo');
+    const startedAt = Date.now();
     try {
-      const imageUri = await prepareVisionPhoto(photoUri);
+      const imageUri = await prepareVisionPhoto(source.photoUri, detail);
       if (!isCurrent()) return;
       const result = await analyzeLeftoverPhoto({
         imageUri,
-        photoGeneration: generation,
+        scanDetail: detail,
+        photoGeneration: source.photoGeneration,
         isCurrent,
         onProgress: (update) => {
-          if (!mounted.current || !isCurrent()) return;
-          setRatio(update.ratio);
+          if (!isCurrent()) return;
+          setProgress(update.ratio);
           setBusy(modelTransferStatusLabel(update));
         },
         onPhase: (phase) => {
-          if (!mounted.current || !isCurrent()) return;
-          setRatio(0.2);
-          setBusy(phase === 'load' ? 'Loading the vision model' : 'Reading the photo');
+          if (!isCurrent()) return;
+          setProgress(null);
+          setBusy(phase === 'load' ? 'Getting ready to scan' : 'Scanning your yarn');
         },
       });
-      if (!mounted.current || !isCurrent()) return;
+      if (!isCurrent()) return;
+      if (__DEV__) {
+        console.warn('[vision-measure]', JSON.stringify({
+          phase: 'sheet',
+          detail,
+          totalMs: Date.now() - startedAt,
+          status: result.status,
+          findings: result.status === 'findings' ? result.findings : null,
+        }));
+      }
       if (result.status === 'findings') {
-        applyVisionFindings(generation, result.findings);
-        setMessage(null);
+        if (applyVisionFindings(source.photoGeneration, result.findings)) refreshMatches();
       } else if (result.status === 'failed' || result.status === 'unsupported') {
-        if (!result.message.includes('busy')) beginManualYarnFindings(true);
+        if (!result.message.includes('busy')) {
+          beginManualYarnFindings();
+          setDetailsOpen(true);
+        }
         setMessage(result.message);
+      } else if (result.status === 'cancelled') {
+        setMessage('Scan cancelled. You can try again or enter yarn details.');
       }
     } catch (error) {
-      if (__DEV__ && error instanceof Error) {
-        console.warn('[vision] analyze', error.message);
-      }
-      if (mounted.current && isCurrent()) {
-        beginManualYarnFindings(true);
-        setMessage('The photo could not be prepared. You can still enter the yarn details yourself.');
+      if (__DEV__ && error instanceof Error) console.warn('[vision] analyze', error.message);
+      if (isCurrent()) {
+        beginManualYarnFindings();
+        setDetailsOpen(true);
+        setMessage('The scan could not finish. Enter any yarn details you know to see project ideas.');
       }
     } finally {
-      if (mounted.current && isCurrent()) setBusy(null);
+      if (operation.current === token) {
+        operation.current = null;
+        if (mounted.current) setBusy(null);
+      }
     }
   };
 
-  const onCreatePattern = async () => {
-    const request = patternRequestFromDraft();
-    if (!request || busy) return;
-    const generation = getLeftoverYarnDraft().photoGeneration;
-    const epoch = getLeftoverYarnDraft().sessionEpoch;
-    const isCurrent = () => {
-      const current = getLeftoverYarnDraft();
-      return current.photoGeneration === generation && current.sessionEpoch === epoch;
-    };
-    setBusy('Writing a draft pattern');
+  const onCapture = async (source: CaptureSource) => {
+    if (operation.current) return;
+    const token = Symbol('capture');
+    operation.current = token;
     setMessage(null);
-    const result = await createLeftoverPatternDraft({ request, isCurrent });
-    if (!mounted.current || !isCurrent()) return;
-    if (result.kind === 'cancelled' || result.kind === 'discarded') {
-      setBusy(null);
-      return;
+    try {
+      const captured = await captureProgressPhoto(source);
+      if (!mounted.current || operation.current !== token) return;
+      if (captured.status === 'error') setMessage(captureErrorMessage(captured.reason, source));
+      if (captured.status !== 'ok') return;
+      replaceLeftoverPhoto(captured.uri);
+      operation.current = null;
+      await onAnalyze();
+    } finally {
+      if (operation.current === token) operation.current = null;
     }
-    storePatternDraft(result);
-    setBusy(null);
   };
 
   const corrections = draft.corrections;
   const yards = parseAvailableYards(corrections?.yardsText ?? draft.yardsText);
+  const hasResults = draft.confirmed && draft.catalog != null;
 
   return (
     <View style={styles.form}>
       {draft.photoUri ? (
         <View style={styles.block}>
-          <Image accessible accessibilityLabel="Yarn photo" source={{ uri: draft.photoUri }} resizeMode="cover" style={styles.photo} />
-          <View style={styles.captureRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Retake photo"
-              testID="leftover-retake"
-              onPress={() => {
-                void onCapture('camera');
-              }}
-              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
-            >
-              <Text style={styles.secondaryLabel}>Retake</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Change photo"
-              testID="leftover-change-photo"
-              onPress={() => {
-                void onCapture('library');
-              }}
-              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
-            >
-              <Text style={styles.secondaryLabel}>Change photo</Text>
-            </Pressable>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Analyze photo"
-            testID="leftover-analyze"
-            disabled={busy != null}
-            onPress={() => {
-              void onAnalyze();
-            }}
-            style={({ pressed }) => [styles.primaryButton, busy && styles.disabled, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.primaryLabel}>{busy ?? 'Analyze'}</Text>
-          </Pressable>
           {busy ? (
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${Math.round(Math.max(ratio, 0.08) * 100)}%` }]} />
+            <YarnScanLoading photoUri={draft.photoUri} label={busy} progress={progress} />
+          ) : (
+            <Image accessible accessibilityLabel="Yarn photo" source={{ uri: draft.photoUri }} resizeMode="cover" style={[styles.photo, hasResults && styles.resultPhoto]} />
+          )}
+          {busy ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Cancel scan" onPress={() => {
+              operation.current = null;
+              cancelVisionDownload();
+              setBusy(null);
+              setMessage('Scan cancelled. You can try again or enter yarn details.');
+            }} style={styles.textAction}>
+              <Text style={styles.removeLabel}>Cancel scan</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.captureRow}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Retake photo" testID="leftover-retake" onPress={() => { void onCapture('camera'); }} style={styles.secondaryButton}>
+                <Text style={styles.secondaryLabel}>Retake</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Change photo" testID="leftover-change-photo" onPress={() => { void onCapture('library'); }} style={styles.secondaryButton}>
+                <Text style={styles.secondaryLabel}>Change photo</Text>
+              </Pressable>
             </View>
-          ) : null}
-          {busy ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cancel analysis"
-              onPress={() => cancelVisionDownload()}
-              style={({ pressed }) => [styles.textAction, pressed && styles.pressed, webCursor]}
-            >
-              <Text style={styles.removeLabel}>Cancel</Text>
+          )}
+          {!busy && !corrections ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Scan photo" testID="leftover-analyze" onPress={() => { void onAnalyze(); }} style={styles.primaryButton}>
+              <Text style={styles.primaryLabel}>Scan photo</Text>
             </Pressable>
           ) : null}
         </View>
       ) : (
         <View style={styles.block}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Take photo"
-            testID="leftover-take-photo"
-            onPress={() => {
-              void onCapture('camera');
-            }}
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
-          >
+          <Pressable accessibilityRole="button" accessibilityLabel="Take photo" testID="leftover-take-photo" onPress={() => { void onCapture('camera'); }} style={styles.primaryButton}>
             <YarnBallIcon color={Colors.onAccent} />
             <Text style={styles.primaryLabel}>Take photo</Text>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Choose photo"
-            testID="leftover-choose-photo"
-            onPress={() => {
-              void onCapture('library');
-            }}
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
-          >
+          <Pressable accessibilityRole="button" accessibilityLabel="Choose photo" testID="leftover-choose-photo" onPress={() => { void onCapture('library'); }} style={styles.secondaryButton}>
             <Text style={styles.secondaryLabel}>Choose photo</Text>
           </Pressable>
         </View>
       )}
 
-      {message ? (
-        <Text accessibilityLiveRegion="polite" style={styles.error}>
-          {message}
-        </Text>
+      {message ? <Text accessibilityLiveRegion="polite" style={styles.error}>{message}</Text> : null}
+
+      {!busy && hasResults && !detailsOpen ? (
+        <View style={styles.results} testID="leftover-matching-results">
+          <Text style={styles.resultsTitle}>Matching projects</Text>
+          {corrections ? (
+            <Text style={styles.note}>
+              {corrections.yarnCategory === 'uncertain' ? 'Yarn thickness unknown' : `${yarnWeightMeta(corrections.yarnCategory).label} · ${corrections.categorySource === 'label' ? 'from label' : 'estimated or selected'}`}
+              {' · '}{yards > 0 ? `${yards} yd entered` : corrections.quantityCategory === 'uncertain' ? 'Amount unknown' : `${quantityLabel(corrections.quantityCategory)} estimated`}
+            </Text>
+          ) : null}
+          {draft.catalogNote ? <Text style={styles.note}>{draft.catalogNote}</Text> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel="Edit yarn details" testID="leftover-edit-details" onPress={() => setDetailsOpen(true)} style={styles.textAction}>
+            <Text style={styles.accentLabel}>Edit yarn details</Text>
+          </Pressable>
+          {draft.catalog?.map((item) => <CatalogCard key={item.pattern.id} item={item} onPreview={() => onPreviewPattern(item.pattern)} />)}
+          {draft.catalog?.length === 0 ? <Text style={styles.note}>No matching project was found. Try a clearer photo or adjust the details.</Text> : null}
+        </View>
       ) : null}
 
-      {corrections ? (
-        <FindingsEditor
-          corrections={corrections}
-          source={draft.analysisSource}
-          confirmed={draft.confirmed}
-          catalog={draft.catalog}
-          catalogNote={draft.catalogNote}
-          onPreviewPattern={onPreviewPattern}
-          onConfirm={() => {
-            Keyboard.dismiss();
-            const current = getLeftoverYarnDraft().corrections;
-            if (!current) return;
-            confirmVisionFindings(
-              recommendConfirmedCatalog({
-                yarnCategory: current.yarnCategory,
-                quantityCategory: current.quantityCategory,
-                yardsText: current.yardsText,
-                gramsText: current.gramsText,
-              }),
-            );
-          }}
-        />
+      {!busy && corrections && detailsOpen ? (
+        <View style={styles.block}>
+          <FindingsEditor corrections={corrections} source={draft.analysisSource} onConfirm={refreshMatches} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Scan with more detail" onPress={() => {
+            // Explicitly allow a rescan to replace previously corrected findings.
+            updateLeftoverYarnDraft({ findingsEdited: false });
+            void onAnalyze('detailed');
+          }} style={styles.secondaryButton}>
+            <Text style={styles.accentLabel}>Scan with more detail</Text>
+          </Pressable>
+          <Text style={styles.note}>Uses the original photo at higher detail and may take longer.</Text>
+          {corrections.yarnCategory !== 'uncertain' && (yards > 0 || corrections.quantityCategory !== 'uncertain') ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Save leftover to stash" onPress={() => {
+              if (corrections.yarnCategory === 'uncertain') return;
+              const available = yards > 0 ? yards : categoryYards(corrections.quantityCategory);
+              onSaveToStash({ colors: [], yarnWeight: corrections.yarnCategory, yardageTier: tierForYards(available), availableYards: available, hookSize: hookForYarnWeight(corrections.yarnCategory) });
+            }} style={styles.secondaryButton}>
+              <Text style={styles.accentLabel}>Save leftover to stash</Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
-
-      {draft.confirmed && corrections && corrections.yarnCategory !== 'uncertain' ? (
-        <PatternDraftSection
-          make={draft.patternMake}
-          size={draft.patternSize}
-          skill={draft.patternSkill}
-          draftResult={draft.patternDraft}
-          busy={busy != null}
-          onCreate={() => {
-            void onCreatePattern();
-          }}
-        />
-      ) : null}
-
-      {draft.confirmed && corrections && corrections.yarnCategory !== 'uncertain' && (yards > 0 || corrections.quantityCategory !== 'uncertain') ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Save leftover to stash"
-          onPress={() => {
-            const available = yards > 0 ? yards : categoryYards(corrections.quantityCategory);
-            onSaveToStash({
-              colors: [],
-              yarnWeight: corrections.yarnCategory === 'uncertain' ? draft.weight : corrections.yarnCategory,
-              yardageTier: tierForYards(available),
-              availableYards: available,
-              hookSize: hookForYarnWeight(corrections.yarnCategory === 'uncertain' ? draft.weight : corrections.yarnCategory),
-            });
-          }}
-          style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.accentLabel}>Save leftover to stash</Text>
+      {!busy && draft.photoUri && !corrections ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Enter yarn details" onPress={() => { beginManualYarnFindings(); setDetailsOpen(true); }} style={styles.textAction}>
+          <Text style={styles.accentLabel}>Enter yarn details</Text>
         </Pressable>
       ) : null}
     </View>
   );
 }
 
-function FindingsEditor({
-  corrections,
-  source,
-  confirmed,
-  catalog,
-  catalogNote,
-  onPreviewPattern,
-  onConfirm,
-}: {
+function FindingsEditor({ corrections, source, onConfirm }: {
   corrections: VisionCorrections;
   source: 'vision' | 'user' | null;
-  confirmed: boolean;
-  catalog: VisionCatalogCard[] | null;
-  catalogNote: string | null;
-  onPreviewPattern: (pattern: CrochetPattern) => void;
   onConfirm: () => void;
 }) {
-  const scrollRef = useBottomSheetScrollRef();
-  const prompt = catalogNote != null && !catalogNote.startsWith('Searching');
-
-  useEffect(() => {
-    if (!confirmed || !catalogNote) return;
-    const timer = setTimeout(() => {
-      scrollRef?.current?.scrollToEnd({ animated: true });
-    }, 280);
-    return () => clearTimeout(timer);
-  }, [catalogNote, confirmed, scrollRef]);
-
   return (
     <View style={styles.block}>
-      <Text style={styles.resultsTitle}>Findings</Text>
+      <Text style={styles.resultsTitle}>Yarn details</Text>
       <Text style={styles.note}>
         {source === 'vision'
-          ? 'From the photo. Correct anything that looks wrong.'
-          : 'These are your entries. The photo was not analyzed.'}
+          ? 'Filled from the photo. Estimates can be corrected here.'
+          : 'Enter any details you know. Unknown details can stay blank.'}
       </Text>
       <Text style={styles.label}>What is in the photo</Text>
       <View style={styles.chips}>
@@ -520,106 +462,7 @@ function FindingsEditor({
       >
         <Text style={styles.primaryLabel}>View matching projects</Text>
       </Pressable>
-      {confirmed ? (
-        <View style={styles.results}>
-          <Text style={styles.resultsTitle}>Tutorials</Text>
-          {catalogNote ? <Text style={prompt ? styles.error : styles.note}>{catalogNote}</Text> : null}
-          {catalog && catalog.length > 0 ? (
-            catalog.map((item) => <CatalogCard key={item.pattern.id} item={item} onPreview={() => onPreviewPattern(item.pattern)} />)
-          ) : catalogNote?.startsWith('Searching') ? (
-            <Text style={styles.note}>No tutorial in the catalog fits this yarn and amount.</Text>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
-  );
-}
 
-function PatternDraftSection({
-  make,
-  size,
-  skill,
-  draftResult,
-  busy,
-  onCreate,
-}: {
-  make: string;
-  size: string;
-  skill: PatternDifficulty;
-  draftResult: ReturnType<typeof getLeftoverYarnDraft>['patternDraft'];
-  busy: boolean;
-  onCreate: () => void;
-}) {
-  return (
-    <View style={styles.block}>
-      <Text style={styles.resultsTitle}>Create a pattern</Text>
-      <Text style={styles.note}>This writes a separate draft. It is not one of the tutorials above.</Text>
-      <Text style={styles.label}>What do you want to make?</Text>
-      <TextInput
-        accessibilityLabel="What do you want to make"
-        value={make}
-        onChangeText={(patternMake) => updatePatternRequest({ patternMake })}
-        style={styles.yardsInput}
-      />
-      <Text style={styles.label}>Approximate size</Text>
-      <TextInput
-        accessibilityLabel="Approximate size"
-        value={size}
-        onChangeText={(patternSize) => updatePatternRequest({ patternSize })}
-        style={styles.yardsInput}
-      />
-      <Text style={styles.label}>Skill</Text>
-      <View style={styles.chips}>
-        {SKILLS.map((option) => (
-          <Chip key={option} label={difficultyLabel(option)} selected={skill === option} onPress={() => updatePatternRequest({ patternSkill: option })} />
-        ))}
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Create a pattern"
-        testID="leftover-create-pattern"
-        disabled={busy}
-        onPress={onCreate}
-        style={({ pressed }) => [styles.secondaryButton, busy && styles.disabled, pressed && styles.pressed, webCursor]}
-      >
-        <Text style={styles.accentLabel}>Create a pattern</Text>
-      </Pressable>
-      {draftResult && draftResult.kind === 'draft' ? (
-        <View style={styles.draftCard}>
-          <Text style={styles.ideaTitle}>Draft pattern</Text>
-          <Text style={styles.note}>{draftResult.banner}</Text>
-          <Text style={styles.ideaTitle}>{draftResult.title}</Text>
-          <Text style={styles.note}>{draftResult.shapeLabel}</Text>
-          <Text style={styles.note}>{draftResult.materials}</Text>
-          <Text style={styles.note}>Suggested hook: {draftResult.hook}</Text>
-          <Text style={styles.note}>{draftResult.gaugeNote}</Text>
-          <Text style={styles.label}>Abbreviations</Text>
-          {draftResult.abbreviations.map((item) => (
-            <Text key={item.abbr} style={styles.note}>
-              {item.abbr}: {item.meaning}
-            </Text>
-          ))}
-          <Text style={styles.label}>Instructions</Text>
-          {draftResult.instructions.map((step) => (
-            <Text key={step.n} style={styles.note}>
-              {step.n}. {step.text} ({step.stitchCount} stitches)
-            </Text>
-          ))}
-        </View>
-      ) : null}
-      {draftResult && draftResult.kind === 'rejected' ? (
-        <View style={styles.block}>
-          <Text style={styles.note}>This draft did not pass the stitch-count check.</Text>
-          {draftResult.reasons.map((reason) => (
-            <Text key={reason} style={styles.note}>
-              {reason}
-            </Text>
-          ))}
-        </View>
-      ) : null}
-      {draftResult && (draftResult.kind === 'unsupported' || draftResult.kind === 'failed') ? (
-        <Text style={styles.note}>{draftResult.message}</Text>
-      ) : null}
     </View>
   );
 }
@@ -867,20 +710,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     backgroundColor: Colors.elevatedControl,
   },
+  resultPhoto: { height: 112 },
   note: {
     ...Typography.caption,
     color: Colors.textSecondary,
-  },
-  progressTrack: {
-    height: 8,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.cardSurface,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 8,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.accentPrimary,
   },
   removeLabel: {
     ...Typography.caption,
@@ -898,19 +731,9 @@ const styles = StyleSheet.create({
     ...Typography.subhead,
     color: Colors.textPrimary,
   },
-  ideaTitle: {
-    ...Typography.label,
-    color: Colors.textPrimary,
-  },
   ideaMeta: {
     ...Typography.caption,
     color: Colors.textSecondary,
-  },
-  draftCard: {
-    gap: Spacing.xs,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.elevatedControl,
   },
   patternCard: {
     flexDirection: 'row',

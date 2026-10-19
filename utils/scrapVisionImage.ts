@@ -4,22 +4,32 @@
  */
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { Image } from 'react-native';
+import { VISION_SCAN_PROFILES, type VisionScanDetail } from '@/utils/scrapVisionConfig';
 
-const LONG_EDGE = 768;
-
-export async function prepareVisionPhoto(uri: string): Promise<string> {
+export async function prepareVisionPhoto(uri: string, detail: VisionScanDetail = 'quick'): Promise<string> {
+  const longEdge = VISION_SCAN_PROFILES[detail].longEdge;
   const size = await readImageSize(uri);
-  const actions = size ? resizeActions(size.width, size.height) : [{ resize: { width: LONG_EDGE } }];
+  const actions = size ? resizeActions(size.width, size.height, longEdge) : [{ resize: { width: longEdge } }];
   const result = await manipulateAsync(uri, actions, { compress: 0.85, format: SaveFormat.JPEG });
   if (!result.uri) throw new Error('The photo could not be prepared.');
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    console.warn('[vision-measure]', JSON.stringify({
+      phase: 'prepare',
+      detail,
+      sourceWidth: size?.width ?? null,
+      sourceHeight: size?.height ?? null,
+      width: result.width,
+      height: result.height,
+    }));
+  }
   return result.uri.startsWith('file://') || result.uri.startsWith('data:') ? result.uri : `file://${result.uri}`;
 }
 
-function resizeActions(width: number, height: number): { resize: { width?: number; height?: number } }[] {
+function resizeActions(width: number, height: number, limit: number): { resize: { width?: number; height?: number } }[] {
   const longEdge = Math.max(width, height);
-  if (longEdge <= LONG_EDGE) return [];
-  if (width >= height) return [{ resize: { width: LONG_EDGE } }];
-  return [{ resize: { height: LONG_EDGE } }];
+  if (longEdge <= limit) return [];
+  if (width >= height) return [{ resize: { width: limit } }];
+  return [{ resize: { height: limit } }];
 }
 
 function readImageSize(uri: string): Promise<{ width: number; height: number } | null> {

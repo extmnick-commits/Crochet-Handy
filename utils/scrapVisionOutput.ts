@@ -116,12 +116,13 @@ export const VISION_SYSTEM_PROMPT = [
   'If a yarn label is readable, copy that text and prefer it over a visual guess.',
   'If a hook shows a readable size marking, copy only that marking.',
   'Name stitches only when crocheted fabric is clear.',
+  'For loose yarn, estimate the most likely thickness category when visible; mark visual estimates as visual.',
+  'Use a rough quantity category only when the visible amount supports it. Otherwise say uncertain.',
 ].join(' ');
 
 export const VISION_USER_PROMPT = [
-  'What is in this photo? Identify loose yarn, crocheted fabric, a hook, or a readable yarn label. Estimate a yarn category only when the photo supports it.',
-  'Reply with one JSON object and no other text.',
-  '{"subjects":["loose-yarn"],"yarnCategory":"uncertain","categorySource":"uncertain","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}',
+  'Inspect the photo for leftover-yarn project suggestions. Fill the JSON schema with what you can see: subjects, estimated yarn thickness, readable label or hook markings, stitches if fabric, and rough amount.',
+  'Use null for absent text and uncertain for details you cannot infer. Do not invent a measurement.',
 ].join(' ');
 
 export function visionPromptMentionsColor(): boolean {
