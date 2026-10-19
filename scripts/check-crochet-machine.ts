@@ -1268,14 +1268,16 @@ assert(
   'scrape topic tag blankets matches the blankets chip',
 );
 assert(
-  patternFeedCategories(new Date('2026-07-01T12:00:00'), []).some((item) => item.id === 'blankets'),
+  patternFeedCategories(new Date('2026-07-01T12:00:00')).some((item) => item.id === 'blankets'),
   'patterns feed always includes blankets chip',
 );
 assert(
-  patternFeedCategories(new Date('2026-07-01T12:00:00'), [
-    categoryFeedPattern('Turkey applique', ['thanksgiving']),
-  ]).some((item) => item.id === 'thanksgiving'),
-  'off-season holiday chip appears when the catalog has matching patterns',
+  !patternFeedCategories(new Date('2026-07-01T12:00:00')).some((item) => item.id === 'thanksgiving'),
+  'holiday chips are hidden outside their seasonal window',
+);
+assert(
+  patternFeedCategories(new Date('2026-10-18T12:00:00')).some((item) => item.id === 'halloween'),
+  'holiday chips appear during their seasonal window',
 );
 
 const beanie = mapExtractedPattern(

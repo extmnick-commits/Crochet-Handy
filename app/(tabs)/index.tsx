@@ -74,7 +74,7 @@ export default function PatternsScreen() {
     router.setParams({ tag: undefined });
   }, [routeParams.tag, router]);
 
-  const categories = useMemo(() => patternFeedCategories(new Date(), patterns), [patterns]);
+  const categories = useMemo(() => patternFeedCategories(), []);
 
   useEffect(() => {
     if (!categories.some((item) => item.id === category)) {

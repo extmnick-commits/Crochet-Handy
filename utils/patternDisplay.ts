@@ -15,7 +15,6 @@ import { SEED_PATTERNS, seedCommunityReviewsForPattern, type SeedPatternMaterial
 import {
   getActiveHolidayTopics,
   getHolidayTopic,
-  HOLIDAY_TOPICS,
   holidayChipLabel,
   isHolidayTopicId,
   scrapeCategoryKeywords,
@@ -83,31 +82,18 @@ export function packMasonryColumns(
   return columns;
 }
 
-/** Patterns tab chips: core categories, seasonal holidays, and catalog-backed holiday chips. */
-export function patternFeedCategories(
-  date = new Date(),
-  patterns: readonly CrochetPattern[] = [],
-): readonly PatternFeedCategory[] {
+/** Patterns tab chips: core categories plus holiday chips only during each holiday window. */
+export function patternFeedCategories(date = new Date()): readonly PatternFeedCategory[] {
   const seasonal = getActiveHolidayTopics(date).map((holiday) => ({
     id: holiday.id,
     label: holidayChipLabel(holiday.id),
   }));
-  const seasonalIds = new Set(seasonal.map((item) => item.id));
-
-  const catalogHolidays = HOLIDAY_TOPICS
-    .filter((holiday) => !seasonalIds.has(holiday.id))
-    .filter((holiday) => patterns.some((pattern) => matchesPatternCategory(pattern, holiday.id)))
-    .map((holiday) => ({
-      id: holiday.id,
-      label: holidayChipLabel(holiday.id),
-    }));
 
   return [
     { id: 'following', label: 'Following' },
     { id: 'for-you', label: 'For You' },
     { id: 'trending', label: 'Trending' },
     ...seasonal,
-    ...catalogHolidays,
     { id: 'amigurumi', label: 'Amigurumi' },
     { id: 'wearables', label: 'Wearables' },
     { id: 'blankets', label: 'Blankets' },
