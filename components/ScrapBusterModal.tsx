@@ -3,10 +3,11 @@
  * the findings and opens matching tutorials. Color is not part of this sheet.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { useBottomSheetScrollRef } from '@/components/ui/BottomSheetScrollContext';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import type { PatternDifficulty } from '@/store/machine';
 import { YARN_WEIGHTS, type CrochetPattern } from '@/store/useCrochetStore';
@@ -29,6 +30,7 @@ import {
 import { difficultyLabel, yarnWeightMeta } from '@/utils/patternDisplay';
 import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@/utils/progressPhoto';
 import { hookRangeLabel } from '@/utils/scrapHookRange';
+import { modelTransferStatusLabel } from '@/utils/scrapModelTransfer';
 import { hookForYarnWeight, parseAvailableYards, tierForYards, type ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
 import { recommendConfirmedCatalog, type VisionCatalogCard } from '@/utils/scrapVisionCatalog';
 import { prepareVisionPhoto } from '@/utils/scrapVisionImage';
@@ -158,7 +160,7 @@ function ScrapBusterForm({
         onProgress: (update) => {
           if (!mounted.current || !isCurrent()) return;
           setRatio(update.ratio);
-          setBusy(update.phase === 'download' ? 'Preparing on-device analysis' : 'Verifying the on-device model');
+          setBusy(modelTransferStatusLabel(update));
         },
         onPhase: (phase) => {
           if (!mounted.current || !isCurrent()) return;
@@ -311,6 +313,7 @@ function ScrapBusterForm({
           catalogNote={draft.catalogNote}
           onPreviewPattern={onPreviewPattern}
           onConfirm={() => {
+            Keyboard.dismiss();
             const current = getLeftoverYarnDraft().corrections;
             if (!current) return;
             confirmVisionFindings(
@@ -378,6 +381,17 @@ function FindingsEditor({
   onPreviewPattern: (pattern: CrochetPattern) => void;
   onConfirm: () => void;
 }) {
+  const scrollRef = useBottomSheetScrollRef();
+  const prompt = catalogNote != null && !catalogNote.startsWith('Searching');
+
+  useEffect(() => {
+    if (!confirmed || !catalogNote) return;
+    const timer = setTimeout(() => {
+      scrollRef?.current?.scrollToEnd({ animated: true });
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [catalogNote, confirmed, scrollRef]);
+
   return (
     <View style={styles.block}>
       <Text style={styles.resultsTitle}>Findings</Text>
@@ -509,7 +523,7 @@ function FindingsEditor({
       {confirmed ? (
         <View style={styles.results}>
           <Text style={styles.resultsTitle}>Tutorials</Text>
-          {catalogNote ? <Text style={styles.note}>{catalogNote}</Text> : null}
+          {catalogNote ? <Text style={prompt ? styles.error : styles.note}>{catalogNote}</Text> : null}
           {catalog && catalog.length > 0 ? (
             catalog.map((item) => <CatalogCard key={item.pattern.id} item={item} onPreview={() => onPreviewPattern(item.pattern)} />)
           ) : catalogNote?.startsWith('Searching') ? (

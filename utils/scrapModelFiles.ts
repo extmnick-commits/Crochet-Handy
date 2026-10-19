@@ -1,8 +1,10 @@
 /**
  * expo-file-system adapter for the pinned scrap model.
- * Hashing uses FileHandle.readBytes in 4 MB chunks.
+ * Installed builds hash with the native scrap-file-hash module.
+ * A binary that has not been rebuilt yet falls back to JavaScript chunks.
  */
 import { Directory, File, FileMode, Paths } from 'expo-file-system';
+import { hashFileSha256, isScrapFileHashCancelled } from 'scrap-file-hash';
 
 import {
   OBSOLETE_ANDROID_VISION_FILENAMES,
@@ -15,9 +17,11 @@ import {
   deletePinnedModel,
   downloadPinnedModel,
   downloadPinnedPair,
+  hashFileChunks,
   inspectPinnedModel,
   inspectPinnedPair,
   scrapModelPaths,
+  ScrapTransferCancelledError,
   type ModelTransferIO,
   type ModelTransferProgress,
 } from '@/utils/scrapModelTransfer';
@@ -48,7 +52,7 @@ function expoTransferIO(): ModelTransferIO {
     open?.handle.close();
     open = null;
   };
-  return {
+  const io: ModelTransferIO = {
     availableBytes: () => Paths.availableDiskSpace,
     fileSize: (path) => {
       const file = fileAt(path);
@@ -88,6 +92,19 @@ function expoTransferIO(): ModelTransferIO {
       if (!file.exists) file.create();
       file.write(text);
     },
+    hashFile: async (path, size, onHashed, cancelled) => {
+      try {
+        const hash = await hashFileSha256(path, { onHashed, cancelled });
+        if (hash != null) return hash;
+      } catch (error) {
+        if (isScrapFileHashCancelled(error)) throw new ScrapTransferCancelledError();
+        throw error;
+      }
+      return hashFileChunks((offset, length) => io.readChunk(path, offset, length), size, {
+        onProgress: (update) => onHashed(update.written),
+        cancelled,
+      });
+    },
     download: async ({ url, destination, onProgress, bindCancel }) => {
       const file = fileAt(destination);
       if (file.exists) file.delete();
@@ -108,6 +125,7 @@ function expoTransferIO(): ModelTransferIO {
       await task.downloadAsync();
     },
   };
+  return io;
 }
 
 export async function inspectInstalledScrapModel(
@@ -173,8 +191,8 @@ export async function downloadInstalledVisionPair(
 
 function visionTransferItems(directory: string, pair: VisionModelPair) {
   return [
-    { pin: pair.text, paths: scrapModelPaths(directory, pair.text.filename) },
-    { pin: pair.projector, paths: scrapModelPaths(directory, pair.projector.filename) },
+    { pin: pair.text, paths: scrapModelPaths(directory, pair.text.filename), label: 'language model' },
+    { pin: pair.projector, paths: scrapModelPaths(directory, pair.projector.filename), label: 'image projector' },
   ];
 }
 

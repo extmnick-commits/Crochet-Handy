@@ -1,0 +1,11 @@
+{
+  "name": "scrap-file-hash",
+  "version": "1.0.0",
+  "description": "Streaming SHA-256 for local Crochet Handy model files.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

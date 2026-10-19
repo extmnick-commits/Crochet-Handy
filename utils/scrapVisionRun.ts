@@ -12,8 +12,7 @@ import {
   installedVisionPairPaths,
 } from '@/utils/scrapModelFiles';
 import { visionModelPair } from '@/utils/scrapModelPin';
-import type { ModelTransferProgress } from '@/utils/scrapModelTransfer';
-import { ScrapEngineBusyError, ScrapTransferCancelledError } from '@/utils/scrapModelTransfer';
+import { modelTransferStatusLabel, ScrapEngineBusyError, ScrapTransferCancelledError, type ModelTransferProgress } from '@/utils/scrapModelTransfer';
 import type { PatternDraftCheck, PatternDraftRequest } from '@/utils/scrapPatternDraft';
 import { isLocalScrapAiSupported } from '@/utils/scrapYarnAi';
 import {
@@ -32,7 +31,7 @@ let preparing: Promise<{ textPath: string; projectorPath: string }> | null = nul
 
 export type VisionModelStatus =
   | { phase: 'idle' }
-  | { phase: 'checking' | 'download'; ratio: number }
+  | { phase: 'checking' | 'download'; ratio: number; detail: string }
   | { phase: 'ready' }
   | { phase: 'failed' };
 
@@ -52,10 +51,15 @@ export function subscribeVisionModelStatus(listener: () => void): () => void {
 
 let lastStatusAt = 0;
 
+function statusDetail(status: VisionModelStatus): string {
+  return status.phase === 'checking' || status.phase === 'download' ? status.detail : '';
+}
+
 function publishVisionStatus(next: VisionModelStatus, force = false): void {
   const now = Date.now();
   const samePhase = visionStatus.phase === next.phase;
-  if (!force && samePhase && now - lastStatusAt < 400) return;
+  const sameDetail = statusDetail(visionStatus) === statusDetail(next);
+  if (!force && samePhase && sameDetail && now - lastStatusAt < 400) return;
   lastStatusAt = now;
   visionStatus = next;
   for (const listener of statusListeners) listener();
@@ -85,6 +89,7 @@ function emitProgress(update: ModelTransferProgress): void {
   publishVisionStatus({
     phase: update.phase === 'download' ? 'download' : 'checking',
     ratio: Math.max(0, Math.min(1, update.ratio)),
+    detail: modelTransferStatusLabel(update),
   });
   for (const listener of progressListeners) listener(update);
 }

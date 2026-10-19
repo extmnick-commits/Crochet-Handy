@@ -280,8 +280,8 @@ export function confirmVisionFindings(result: ConfirmedCatalogResult): Confirmed
       result.status === 'results'
         ? result.amountNote
         : result.status === 'need-category'
-          ? 'Choose a yarn category before searching tutorials.'
-          : 'Choose a rough amount, or enter yards, before searching tutorials. Grams are not turned into yards.',
+          ? 'Choose a yarn category in the list above, then tap View matching projects again.'
+          : 'Choose a leftover amount above, or enter yards, then tap View matching projects again. Grams are not turned into yards.',
   };
   emit();
   return result;

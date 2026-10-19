@@ -36,10 +36,12 @@ import {
   downloadPinnedModel,
   downloadPinnedPair,
   inspectPinnedModel,
+  modelTransferStatusLabel,
   scrapEngineLockKind,
   scrapModelPaths,
   verifyPinnedFile,
   type ModelTransferIO,
+  type ModelTransferProgress,
 } from '../utils/scrapModelTransfer';
 import { rankScrapPlans } from '../utils/scrapPlans';
 import {
@@ -243,6 +245,109 @@ async function checkTransfers() {
   };
   const hugePaths = scrapModelPaths('memory://models/', SCRAP_MODEL_PIN.filename);
   equal(await verifyPinnedFile(oversized, SCRAP_MODEL_PIN, hugePaths), 'invalid', 'a file over 400 MB is not ready unless it is the pinned size');
+
+  const nativeHash = createMemoryTransferIO();
+  nativeHash.setDownload(async () => bytes);
+  let hashedPath = '';
+  const nativeIo: ModelTransferIO = {
+    ...nativeHash.io,
+    async hashFile(path) {
+      hashedPath = path;
+      return pin.sha256;
+    },
+  };
+  await downloadPinnedModel(nativeIo, pin, paths);
+  equal(hashedPath, paths.partial, 'a native hash reads the partial download');
+  assert(!nativeHash.events.some((event) => event.startsWith('read:')), 'a native hash does not read the file in JavaScript');
+  assert(nativeHash.has(paths.final) && nativeHash.has(paths.receipt), 'a native hash still writes the receipt');
+
+  const badNative = createMemoryTransferIO();
+  badNative.setDownload(async () => bytes);
+  const badNativeIo: ModelTransferIO = {
+    ...badNative.io,
+    async hashFile() {
+      return 'ab'.repeat(32);
+    },
+  };
+  await expectReject(downloadPinnedModel(badNativeIo, pin, paths), ScrapChecksumError, 'a native hash mismatch removes the partial');
+  assert(!badNative.has(paths.partial) && !badNative.has(paths.final), 'a mismatched native hash is not kept');
+
+  const cancelHash = createMemoryTransferIO();
+  cancelHash.setDownload(async () => bytes);
+  let hashing = false;
+  const cancelHashIo: ModelTransferIO = {
+    ...cancelHash.io,
+    async hashFile(_path, _size, _onHashed, cancelled) {
+      hashing = true;
+      if (cancelled?.()) throw new ScrapTransferCancelledError();
+      return pin.sha256;
+    },
+  };
+  await expectReject(
+    downloadPinnedModel(cancelHashIo, pin, paths, undefined, { cancelled: () => hashing, bind() {} }),
+    ScrapTransferCancelledError,
+    'cancel during native hash',
+  );
+  assert(!cancelHash.has(paths.partial) && !cancelHash.has(paths.final), 'a cancelled native hash deletes the partial');
+
+  const kept = createMemoryTransferIO();
+  kept.put(paths.final, bytes);
+  const diskIo: ModelTransferIO = {
+    ...kept.io,
+    async hashFile() {
+      throw new Error('disk');
+    },
+  };
+  let diskError: unknown = null;
+  try {
+    await inspectPinnedModel(diskIo, pin, paths);
+  } catch (error) {
+    diskError = error;
+  }
+  assert(diskError instanceof Error && diskError.message === 'disk', 'a hash failure stays an error');
+  assert(kept.has(paths.final), 'a hash error does not delete the saved file');
+
+  const receiptIoBase = createMemoryTransferIO();
+  receiptIoBase.put(paths.final, bytes);
+  let hashCalls = 0;
+  const receiptIo: ModelTransferIO = {
+    ...receiptIoBase.io,
+    async hashFile() {
+      hashCalls += 1;
+      return pin.sha256;
+    },
+  };
+  equal(await inspectPinnedModel(receiptIo, pin, paths), 'ready', 'the first native hash accepts the pinned file');
+  equal(hashCalls, 1, 'the first inspect hashes once');
+  equal(await inspectPinnedModel(receiptIo, pin, paths), 'ready', 'a matching receipt skips the native hash');
+  equal(hashCalls, 1, 'a matching receipt does not hash again');
+
+  equal(
+    modelTransferStatusLabel({
+      phase: 'download',
+      written: 1,
+      total: 2,
+      ratio: 0.5,
+      fileLabel: 'language model',
+      fileIndex: 0,
+      fileCount: 2,
+    }),
+    'Downloading language model (1 of 2)',
+    'download status names the language file',
+  );
+  equal(
+    modelTransferStatusLabel({
+      phase: 'verify',
+      written: 2,
+      total: 2,
+      ratio: 1,
+      fileLabel: 'image projector',
+      fileIndex: 1,
+      fileCount: 2,
+    }),
+    'Verifying image projector (2 of 2)',
+    'verify status names the projector',
+  );
 
   const tight = createMemoryTransferIO({ available: 1024 });
   tight.setDownload(async () => bytes);
@@ -655,15 +760,30 @@ async function checkVisionSessions() {
   const projectorBytes = new Uint8Array([5, 6, 7, 8]);
   textPin.sha256 = sha256Bytes(textBytes);
   projectorPin.sha256 = sha256Bytes(projectorBytes);
-  memory.setDownload(async ({ destination, cancelled }) => {
+  memory.setDownload(async ({ destination, onProgress, cancelled }) => {
     if (cancelled()) throw new ScrapTransferCancelledError();
-    return destination.includes('proj') ? projectorBytes : textBytes;
+    const body = destination.includes('proj') ? projectorBytes : textBytes;
+    onProgress(body.length, body.length);
+    return body;
   });
-  const saved = await downloadPinnedPair(memory.io, [
-    { pin: textPin, paths: scrapModelPaths('mem/', textPin.filename) },
-    { pin: projectorPin, paths: scrapModelPaths('mem/', projectorPin.filename) },
-  ]);
+  const pairUpdates: ModelTransferProgress[] = [];
+  const saved = await downloadPinnedPair(
+    memory.io,
+    [
+      { pin: textPin, paths: scrapModelPaths('mem/', textPin.filename), label: 'language model' },
+      { pin: projectorPin, paths: scrapModelPaths('mem/', projectorPin.filename), label: 'image projector' },
+    ],
+    (update) => pairUpdates.push(update),
+  );
   equal(saved.length, 2, 'a vision pair downloads both files');
+  assert(
+    pairUpdates.some((update) => update.phase === 'download' && update.fileLabel === 'language model' && update.fileIndex === 0 && update.fileCount === 2),
+    'the language file is labeled while it downloads',
+  );
+  assert(
+    pairUpdates.some((update) => update.phase === 'verify' && update.fileLabel === 'image projector' && update.fileIndex === 1 && update.fileCount === 2),
+    'the projector is labeled while it is verified',
+  );
   memory.put(scrapModelPaths('mem/', projectorPin.filename).partial, new Uint8Array([1]));
   const corruptPin = { ...projectorPin, sha256: 'f'.repeat(64), bytes: 1 };
   await expectReject(

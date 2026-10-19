@@ -14,6 +14,10 @@ export type ModelTransferProgress = {
   written: number;
   total: number;
   ratio: number;
+  /** Human name for the file in a vision pair, such as "language model". */
+  fileLabel?: string;
+  fileIndex?: number;
+  fileCount?: number;
 };
 
 export type ModelTransferPaths = {
@@ -33,6 +37,16 @@ export type ModelTransferIO = {
   writeText(path: string, text: string): void | Promise<void>;
   /** Close a sequential read before the file is moved or deleted. */
   finishRead?: () => void | Promise<void>;
+  /**
+   * Native streaming SHA-256. When omitted, the file is hashed in JavaScript.
+   * `onHashed` receives the number of bytes hashed so far.
+   */
+  hashFile?: (
+    path: string,
+    size: number,
+    onHashed: (hashedBytes: number) => void,
+    cancelled?: () => boolean,
+  ) => Promise<string>;
   download(args: {
     url: string;
     destination: string;
@@ -129,6 +143,50 @@ function progress(phase: ModelTransferProgress['phase'], written: number, total:
   };
 }
 
+export function modelTransferStatusLabel(update: ModelTransferProgress): string {
+  const action = update.phase === 'download' ? 'Downloading' : 'Verifying';
+  const file = update.fileLabel ?? 'on-device model';
+  const place =
+    update.fileCount != null && update.fileCount > 1 && update.fileIndex != null
+      ? ` (${update.fileIndex + 1} of ${update.fileCount})`
+      : '';
+  return `${action} ${file}${place}`;
+}
+
+function pairProgress(
+  index: number,
+  count: number,
+  label: string | undefined,
+  update: ModelTransferProgress,
+): ModelTransferProgress {
+  const next: ModelTransferProgress = {
+    phase: update.phase,
+    written: update.written,
+    total: update.total,
+    ratio: count > 0 ? (index + update.ratio) / count : update.ratio,
+    fileIndex: index,
+    fileCount: count,
+  };
+  if (label) next.fileLabel = label;
+  return next;
+}
+
+function createVerifyReporter(total: number, onProgress?: (update: ModelTransferProgress) => void) {
+  let reported = -1;
+  return (written: number) => {
+    const update = progress('verify', written, total);
+    if (update.ratio === reported) return;
+    if (update.ratio === 1 || update.ratio - reported >= 0.02) {
+      reported = update.ratio;
+      onProgress?.(update);
+    }
+  };
+}
+
+function isNativeHashCancelled(error: unknown): boolean {
+  return !!error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === 'ERR_SCRAP_HASH_CANCELLED';
+}
+
 const SCRAP_HASH_YIELD_BYTES = 8 * 1024 * 1024;
 
 function yieldToUi(): Promise<void> {
@@ -148,8 +206,9 @@ export async function hashFileChunks(
 ): Promise<string> {
   const chunkBytes = options?.chunkBytes ?? SCRAP_HASH_CHUNK_BYTES;
   const hasher = createSha256();
+  const report = createVerifyReporter(size, options?.onProgress);
+  report(0);
   let offset = 0;
-  let reported = -1;
   let sinceYield = SCRAP_HASH_YIELD_BYTES;
   while (offset < size) {
     if (sinceYield >= SCRAP_HASH_YIELD_BYTES) {
@@ -165,13 +224,9 @@ export async function hashFileChunks(
     hasher.update(chunk);
     offset += length;
     sinceYield += length;
-    const update = progress('verify', offset, size);
-    if (update.ratio === 1 || update.ratio - reported >= 0.02) {
-      reported = update.ratio;
-      options?.onProgress?.(update);
-    }
+    report(offset);
   }
-  options?.onProgress?.(progress('verify', size, size));
+  report(size);
   return hasher.digest();
 }
 
@@ -184,6 +239,20 @@ async function hashStoredFile(
   chunkBytes?: number,
 ): Promise<string> {
   try {
+    if (io.hashFile) {
+      const report = createVerifyReporter(size, onProgress);
+      report(0);
+      try {
+        const hash = await io.hashFile(path, size, report, cancelled);
+        report(size);
+        return hash;
+      } catch (error) {
+        if (error instanceof ScrapTransferCancelledError || isNativeHashCancelled(error)) {
+          throw new ScrapTransferCancelledError();
+        }
+        throw error;
+      }
+    }
     return await hashFileChunks((offset, length) => io.readChunk(path, offset, length), size, {
       chunkBytes,
       onProgress,
@@ -257,6 +326,8 @@ export async function downloadPinnedModel(
 export type PinnedTransferItem = {
   pin: ScrapModelPin;
   paths: ModelTransferPaths;
+  /** Shown while this file is downloading or being verified. */
+  label?: string;
 };
 
 /** One lock for the language file and its matching vision projector. */
@@ -281,12 +352,7 @@ export async function downloadPinnedPair(
         item.pin,
         item.paths,
         (update) => {
-          onProgress?.({
-            phase: update.phase,
-            written: update.written,
-            total: update.total,
-            ratio: items.length > 0 ? (index + update.ratio) / items.length : update.ratio,
-          });
+          onProgress?.(pairProgress(index, items.length, item.label, update));
         },
         cancel,
         chunkBytes,
@@ -313,12 +379,7 @@ export async function inspectPinnedPair(
         item.pin,
         item.paths,
         (update) => {
-          onProgress?.({
-            phase: update.phase,
-            written: update.written,
-            total: update.total,
-            ratio: items.length > 0 ? (index + update.ratio) / items.length : update.ratio,
-          });
+          onProgress?.(pairProgress(index, items.length, item.label, update));
         },
         undefined,
         chunkBytes,

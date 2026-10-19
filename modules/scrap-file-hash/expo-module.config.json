@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["ScrapFileHashModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.scrapfilehash.ScrapFileHashModule"]
+  }
+}

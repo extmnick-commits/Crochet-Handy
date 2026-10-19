@@ -48,6 +48,9 @@ yarn-error.*
 /ios
 /android
 
+# local Expo module build outputs
+modules/**/android/build/
+
 # local iOS sideload packaging (unsigned / ad-hoc builds)
 *.ipa
 Payload/
