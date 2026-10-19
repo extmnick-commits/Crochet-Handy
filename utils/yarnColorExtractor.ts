@@ -227,29 +227,6 @@ export function isYarnNativePaletteAvailable(): boolean {
   return hasImageColorsNativeModule();
 }
 
-/**
- * Expo Go samples yarn colors in a hidden WebView. `content://` and some `file://`
- * URIs cannot be drawn to canvas there, so convert to a JPEG data URL when needed.
- */
-export async function prepareYarnColorProbeUri(imageUri: string): Promise<string> {
-  const uri = imageUri.trim();
-  if (!uri) return uri;
-  const scaled = await downscaleYarnPhoto(uri);
-  const candidate = scaled.trim() || uri;
-  if (candidate.startsWith('data:image/')) return candidate;
-  try {
-    const base64 = await FileSystem.readAsStringAsync(candidate, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    if (!base64) return candidate;
-    const lower = candidate.toLowerCase();
-    const mime = lower.includes('.png') ? 'image/png' : 'image/jpeg';
-    return `data:${mime};base64,${base64}`;
-  } catch {
-    return candidate;
-  }
-}
-
 export async function downscaleYarnPhoto(imageUri: string): Promise<string> {
   const uri = imageUri.trim();
   if (!uri) return imageUri;
@@ -271,6 +248,29 @@ export async function downscaleYarnPhoto(imageUri: string): Promise<string> {
     // A missing resize just means the probe reads the original photo.
   }
   return uri;
+}
+
+/**
+ * Expo Go samples yarn colors in a hidden WebView. `content://` and some `file://`
+ * URIs cannot be drawn to canvas there, so convert to a JPEG data URL when needed.
+ */
+export async function prepareYarnColorProbeUri(imageUri: string): Promise<string> {
+  const uri = imageUri.trim();
+  if (!uri) return uri;
+  const scaled = await downscaleYarnPhoto(uri);
+  const candidate = scaled.trim() || uri;
+  if (candidate.startsWith('data:image/')) return candidate;
+  try {
+    const base64 = await FileSystem.readAsStringAsync(candidate, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    if (!base64) return candidate;
+    const lower = candidate.toLowerCase();
+    const mime = lower.includes('.png') ? 'image/png' : 'image/jpeg';
+    return `data:${mime};base64,${base64}`;
+  } catch {
+    return candidate;
+  }
 }
 
 /** Canvas page for Expo Go, where the palette module is not linked. */

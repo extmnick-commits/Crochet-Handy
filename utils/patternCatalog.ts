@@ -4,6 +4,7 @@
 import Constants from 'expo-constants';
 
 import { parseCatalogPatterns, type CrochetPattern, type YarnWeight } from '@/store/machine';
+import { rankScrapCatalog, readTutorialYards, type ScrapRankInput } from '@/utils/scrapCatalogRank';
 
 import bundledCatalogFile from '../catalog/pattern-catalog.json';
 
@@ -100,63 +101,68 @@ export async function fetchRemotePatternCatalog(
   return best;
 }
 
-const SCRAP_HINTS = [
-  'amigurumi',
-  'plush',
-  'plushie',
-  'doll',
-  'keychain',
-  'coaster',
-  'scrunchie',
-  'ornament',
-  'applique',
-  'appliqué',
-  'dishcloth',
-  'washcloth',
-  'headband',
-  'ear warmer',
-  'flower',
-  'bookmark',
-  'charm',
-  'mini',
-] as const;
-
-function patternHaystack(pattern: CrochetPattern): string {
-  return `${pattern.title} ${pattern.tags.join(' ')} ${pattern.summary ?? ''}`.toLowerCase();
-}
-
-function mentionsHint(pattern: CrochetPattern, hint: string): boolean {
-  const needle = hint.toLowerCase();
-  if (pattern.tags.some((tag) => tag.toLowerCase().includes(needle))) return true;
-  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`, 'i').test(patternHaystack(pattern));
-}
-
-function isScrapFriendlyPattern(pattern: CrochetPattern): boolean {
-  return SCRAP_HINTS.some((hint) => mentionsHint(pattern, hint));
-}
-
-function scoreScrapPattern(pattern: CrochetPattern, yarnWeight?: YarnWeight): number {
-  const text = patternHaystack(pattern);
-  let score = 0;
-  if (yarnWeight && pattern.yarnWeight === yarnWeight) score += 5;
-  if (mentionsHint(pattern, 'amigurumi') || mentionsHint(pattern, 'plushie') || text.includes('plush')) score += 3;
-  if (mentionsHint(pattern, 'keychain') || mentionsHint(pattern, 'coaster') || mentionsHint(pattern, 'scrunchie')) {
-    score += 2;
-  }
-  if (mentionsHint(pattern, 'mini')) score += 1;
-  return score;
-}
+export type ScrapCatalogSuggestion = {
+  pattern: CrochetPattern;
+  yardageNote: string;
+};
 
 /**
- * Bundled catalog rows that suit leftover yarn: amigurumi, keychains, coasters,
- * and other small or medium makes. Same-weight matches sort first.
+ * Bundled catalog rows that suit leftover yarn.
+ * Rows whose planning size, or a real tutorial yardage, exceeds the entered total are left out.
+ * Missing tutorial yardage is never filled in.
  */
-export function patternsForScrapProjects(options?: { yarnWeight?: YarnWeight; limit?: number }): CrochetPattern[] {
-  const limit = options?.limit ?? 6;
-  const yarnWeight = options?.yarnWeight;
-  return loadRepoPatternCatalog()
-    .filter(isScrapFriendlyPattern)
-    .sort((a, b) => scoreScrapPattern(b, yarnWeight) - scoreScrapPattern(a, yarnWeight) || a.title.localeCompare(b.title))
-    .slice(0, Math.max(0, limit));
+export function scrapCatalogSuggestions(options?: {
+  yarnWeight?: YarnWeight;
+  availableYards?: number;
+  limit?: number;
+}): ScrapCatalogSuggestion[] {
+  const patterns = loadRepoPatternCatalog();
+  const ranked = rankScrapCatalog(
+    patterns.map((pattern) => toRankInput(pattern)),
+    options ?? {},
+  );
+  const byId = new Map(patterns.map((pattern) => [pattern.id, pattern]));
+  return ranked.flatMap((card) => {
+    const pattern = byId.get(card.id);
+    if (!pattern) return [];
+    return [{ pattern, yardageNote: card.yardageNote }];
+  });
+}
+
+export function patternsForScrapProjects(options?: {
+  yarnWeight?: YarnWeight;
+  availableYards?: number;
+  limit?: number;
+}): CrochetPattern[] {
+  return scrapCatalogSuggestions(options).map((item) => item.pattern);
+}
+
+function toRankInput(pattern: CrochetPattern): ScrapRankInput {
+  return {
+    id: pattern.id,
+    title: pattern.title,
+    tags: pattern.tags,
+    summary: pattern.summary,
+    yarnWeight: pattern.yarnWeight,
+    tutorialYards: tutorialYardsFor(pattern.id),
+  };
+}
+
+let tutorialYardIndex: Map<string, number> | null = null;
+
+function tutorialYardsFor(id: string): number | null {
+  if (!tutorialYardIndex) {
+    tutorialYardIndex = new Map();
+    const rows = (bundledCatalogFile as { patterns?: unknown[] }).patterns;
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        if (!row || typeof row !== 'object') continue;
+        const record = row as { id?: unknown };
+        if (typeof record.id !== 'string') continue;
+        const yards = readTutorialYards(record);
+        if (yards != null) tutorialYardIndex.set(record.id, yards);
+      }
+    }
+  }
+  return tutorialYardIndex.get(id) ?? null;
 }

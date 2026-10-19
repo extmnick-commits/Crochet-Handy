@@ -1,11 +1,12 @@
 /** Pass the existing YouTube key into the app so chapter lookup can run on device. */
 const fs = require('fs');
 const path = require('path');
-const { withAndroidManifest, withDangerousMod } = require('@expo/config-plugins');
+const { withDangerousMod } = require('@expo/config-plugins');
 
 /**
  * llama.rn compiles Metal on iOS unless RNLLAMA_DISABLE_METAL=1.
- * Keep that env var unset when the Podfile is generated.
+ * The llama.rn config plugin has no enableMetal option, so this env delete
+ * is what keeps the Metal backend in the Pod.
  */
 function withLlamaMetalEnabled(config) {
   return withDangerousMod(config, [
@@ -23,33 +24,14 @@ function withLlamaMetalEnabled(config) {
   ]);
 }
 
-/** Optional Vulkan loader so Android builds can use the GPU next to OpenCL. */
-function withLlamaVulkanEnabled(config) {
-  return withAndroidManifest(config, (mod) => {
-    const application = mod.modResults.manifest.application?.[0];
-    if (!application) return mod;
-    if (!application['uses-native-library']) application['uses-native-library'] = [];
-    const libraries = application['uses-native-library'];
-    const present = libraries.some((lib) => lib.$?.['android:name'] === 'libvulkan.so');
-    if (!present) {
-      libraries.push({
-        $: {
-          'android:name': 'libvulkan.so',
-          'android:required': 'false',
-        },
-      });
-    }
-    return mod;
-  });
-}
-
 const llamaRnPlugin = [
   'llama.rn',
   {
-    // Metal stays on for iOS (withLlamaMetalEnabled). Android OpenCL is the
-    // supported GPU flag; enableVulkan is applied by withLlamaVulkanEnabled.
-    enableMetal: true,
-    enableVulkan: true,
+    // Installed llama.rn 0.13 only reads these options. enableMetal and
+    // enableVulkan are not plugin options. Vulkan sources are not in the
+    // published package, so a libvulkan.so manifest entry would not turn a
+    // GPU backend on. OpenCL and optional Hexagon are declared here; Hexagon
+    // stays off at runtime unless SCRAP_HEXAGON_OPT_IN is set.
     enableOpenCLAndHexagon: true,
     enableEntitlements: true,
     entitlementsProfile: ['production', 'development', 'preview'],
@@ -59,7 +41,7 @@ const llamaRnPlugin = [
 
 module.exports = ({ config }) => ({
   ...config,
-  plugins: [...(config.plugins ?? []), llamaRnPlugin, withLlamaMetalEnabled, withLlamaVulkanEnabled],
+  plugins: [...(config.plugins ?? []), llamaRnPlugin, withLlamaMetalEnabled],
   scheme: config.scheme || 'crochethandy',
   ios: {
     ...config.ios,

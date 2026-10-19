@@ -3,8 +3,8 @@
  * come from the on-device model when it is downloaded, otherwise from the
  * offline scrap rules in `utils/scrapYarnAi.ts`.
  */
-import { useEffect, useState } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { YarnColorSwatchPicker } from '@/components/YarnColorSwatchPicker';
@@ -17,15 +17,20 @@ import {
   LOCAL_AI_ENGINE_LABEL,
   YARDAGE_TIERS,
   analyzeLeftoverYarnAndSuggest,
+  cancelActiveScrapSuggestion,
+  cancelScrapModelDownload,
   deleteScrapModel,
   downloadScrapModel,
   hookForYarnWeight,
   isLocalScrapAiSupported,
   isScrapModelDownloaded,
+  offlineScrapSuggestion,
+  parseAvailableYards,
+  tierForYards,
+  type ModelDownloadProgress,
   type ScannedLeftoverDraft,
   type ScrapSuggestionResult,
   type ScrapYarnColor,
-  type YardageTier,
 } from '@/utils/scrapYarnAi';
 import { formatYarnColorLabel, type YarnNamedColor } from '@/utils/yarnColorExtractor';
 
@@ -36,7 +41,7 @@ type ScrapBusterModalProps = {
   onSaveToStash: (draft: ScannedLeftoverDraft) => void;
 };
 
-type EngineState = 'checking' | 'unsupported' | 'missing' | 'downloading' | 'ready';
+type EngineState = 'checking' | 'unsupported' | 'missing' | 'downloading' | 'verifying' | 'ready';
 
 export function ScrapBusterModal({ visible, onClose, onOpenPattern, onSaveToStash }: ScrapBusterModalProps) {
   return (
@@ -50,7 +55,9 @@ export function ScrapBusterModal({ visible, onClose, onOpenPattern, onSaveToStas
               <Text role="heading" aria-level={2} style={styles.title}>
                 Leftover yarn
               </Text>
-              <Text style={styles.subtitle}>Scan scraps and get small projects that use those colors</Text>
+              <Text style={styles.subtitle}>
+                Confirm the sampled colors, then pick projects that fit the yards you have
+              </Text>
             </View>
             <Pressable
               accessibilityRole="button"
@@ -80,17 +87,44 @@ function ScrapBusterForm({
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [selected, setSelected] = useState<ScrapYarnColor[]>([]);
   const [weight, setWeight] = useState<YarnWeight>('worsted');
-  const [tier, setTier] = useState<YardageTier>('small_25_75yd');
+  const [yardsText, setYardsText] = useState('75');
   const [engine, setEngine] = useState<EngineState>(() => (isLocalScrapAiSupported() ? 'checking' : 'unsupported'));
-  const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<ScrapSuggestionResult | null>(null);
+  const [progress, setProgress] = useState<ModelDownloadProgress | null>(null);
+  const [aiResult, setAiResult] = useState<{ key: string; result: ScrapSuggestionResult } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [canCancelDownload, setCanCancelDownload] = useState(false);
+  const requestRef = useRef(0);
+  const yards = parseAvailableYards(yardsText);
+  const colorKey = selected.map((color) => `${color.name}:${color.hex}`).join('|');
+  const inputKey = `${colorKey}|${weight}|${yards}`;
+  const offline = useMemo(
+    () => offlineScrapSuggestion({ colors: selected, weight, availableYards: yards }),
+    [selected, weight, yards],
+  );
+  const shown =
+    aiResult && aiResult.key === inputKey && !aiResult.result.discarded ? aiResult.result : offline;
+
+  useEffect(() => {
+    return () => {
+      cancelActiveScrapSuggestion();
+      cancelScrapModelDownload();
+    };
+  }, []);
+
+  useEffect(() => {
+    requestRef.current += 1;
+    cancelActiveScrapSuggestion();
+  }, [inputKey]);
 
   useEffect(() => {
     if (!isLocalScrapAiSupported()) return undefined;
     let alive = true;
-    void isScrapModelDownloaded().then((ready) => {
+    void isScrapModelDownloaded((update) => {
+      if (!alive) return;
+      setEngine('verifying');
+      setProgress(update);
+    }).then((ready) => {
       if (alive) setEngine(ready ? 'ready' : 'missing');
     });
     return () => {
@@ -107,41 +141,57 @@ function ScrapBusterForm({
       return;
     }
     setPhotoUri(captured.uri);
-    setResult(null);
     setSelected([]);
   };
 
   const onDetectedColors = (colors: YarnNamedColor[]) => {
-    setResult(null);
     setSelected(colors.map((color) => ({ hex: color.hex, name: color.name })));
   };
 
   const onDownload = async () => {
     setEngine('downloading');
-    setProgress(0);
+    setCanCancelDownload(true);
+    setProgress({ phase: 'download', written: 0, total: 1, ratio: 0 });
     setStatus(null);
     try {
-      await downloadScrapModel((update) => setProgress(update.ratio));
+      await downloadScrapModel((update) => {
+        setProgress(update);
+        if (update.phase === 'verify') setEngine('verifying');
+      });
       setEngine('ready');
-      setProgress(1);
+      setProgress({ phase: 'verify', written: 1, total: 1, ratio: 1 });
     } catch (error) {
       setEngine('missing');
+      setProgress(null);
+      if (error instanceof Error && error.name === 'ScrapTransferCancelledError') {
+        setStatus('Download cancelled.');
+        return;
+      }
       setStatus(error instanceof Error ? error.message : 'The local AI engine could not be downloaded.');
+    } finally {
+      setCanCancelDownload(false);
     }
   };
 
   const onDeleteEngine = async () => {
-    await deleteScrapModel();
-    setEngine('missing');
-    setProgress(0);
+    try {
+      await deleteScrapModel();
+      setEngine('missing');
+      setProgress(null);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'The local AI engine could not be removed.');
+    }
   };
 
-  const onSuggest = async () => {
-    if (!photoUri || selected.length === 0 || busy) {
+  const onPersonalize = async () => {
+    if (!photoUri || selected.length === 0 || yards <= 0 || busy) {
       if (!photoUri) setStatus('Take a photo of the leftover yarn first.');
-      else if (selected.length === 0) setStatus('Choose at least one leftover color.');
+      else if (selected.length === 0) setStatus('Keep at least one sampled color.');
+      else if (yards <= 0) setStatus('Enter how many yards you have.');
       return;
     }
+    const requestId = requestRef.current;
+    const key = inputKey;
     setBusy(true);
     setStatus(null);
     try {
@@ -149,11 +199,14 @@ function ScrapBusterForm({
         imageUri: photoUri,
         colors: selected.map((color) => formatYarnColorLabel(color)),
         weight,
-        yardageTier: tier,
+        yardageTier: tierForYards(yards),
+        availableYards: yards,
+        requestId,
       });
-      setResult(next);
+      if (requestId !== requestRef.current || next.discarded) return;
+      setAiResult({ key, result: next });
     } catch {
-      setStatus('Could not build suggestions. Try again.');
+      if (requestId === requestRef.current) setStatus('Could not build suggestions. Try again.');
     } finally {
       setBusy(false);
     }
@@ -192,24 +245,32 @@ function ScrapBusterForm({
         {photoUri ? (
           <YarnColorSwatchPicker imageUri={photoUri} maxColors={4} onChange={onDetectedColors} />
         ) : (
-          <Text style={styles.note}>Take a photo, then keep the yarn colors and drop the table.</Text>
+          <Text style={styles.note}>Take a photo, then keep the yarn colors and drop the background.</Text>
         )}
+        <Text style={styles.note}>
+          Confirm the colors the photo sampler found. Suggestions use only those colors. The on-device text model does not see the photo.
+        </Text>
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Leftover amount</Text>
+        <Text style={styles.label}>Total yards available</Text>
+        <TextInput
+          accessibilityLabel="Total yards available"
+          keyboardType="number-pad"
+          inputMode="numeric"
+          value={yardsText}
+          onChangeText={setYardsText}
+          style={styles.yardsInput}
+        />
         <View style={styles.chips}>
           {YARDAGE_TIERS.map((option) => {
-            const active = tier === option.id;
+            const active = yardsText === String(option.yards);
             return (
               <Pressable
                 key={option.id}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
-                onPress={() => {
-                  setTier(option.id);
-                  setResult(null);
-                }}
+                onPress={() => setYardsText(String(option.yards))}
                 style={({ pressed }) => [styles.chip, active && styles.chipSelected, pressed && styles.pressed, webCursor]}
               >
                 <Text style={[styles.chipText, active && styles.chipTextSelected]}>{option.label}</Text>
@@ -232,7 +293,6 @@ function ScrapBusterForm({
                 accessibilityState={{ selected: active }}
                 onPress={() => {
                   setWeight(option);
-                  setResult(null);
                 }}
                 style={({ pressed }) => [styles.chip, active && styles.chipSelected, pressed && styles.pressed, webCursor]}
               >
@@ -251,6 +311,10 @@ function ScrapBusterForm({
         onDownload={() => {
           void onDownload();
         }}
+        canCancel={canCancelDownload}
+        onCancel={() => {
+          cancelScrapModelDownload();
+        }}
         onDelete={() => {
           void onDeleteEngine();
         }}
@@ -262,50 +326,57 @@ function ScrapBusterForm({
         </Text>
       ) : null}
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={busy ? 'Finding projects' : 'Suggest scrap projects'}
-        disabled={busy}
-        onPress={() => {
-          void onSuggest();
-        }}
-        style={({ pressed }) => [styles.suggest, busy && styles.disabled, pressed && styles.pressed, webCursor]}
-      >
-        <Text style={styles.suggestText}>{busy ? 'Finding projects…' : 'Suggest scrap projects'}</Text>
-      </Pressable>
+      {engine === 'ready' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={busy ? 'Personalizing projects' : 'Personalize with local AI'}
+          disabled={busy || selected.length === 0 || yards <= 0}
+          onPress={() => {
+            void onPersonalize();
+          }}
+          style={({ pressed }) => [styles.suggest, (busy || selected.length === 0 || yards <= 0) && styles.disabled, pressed && styles.pressed, webCursor]}
+        >
+          <Text style={styles.suggestText}>{busy ? 'Personalizing…' : 'Personalize with local AI'}</Text>
+        </Pressable>
+      ) : null}
 
-      {result ? (
+      {selected.length > 0 && yards > 0 ? (
         <View style={styles.results}>
-          <Text style={styles.resultsTitle}>{result.source === 'local-ai' ? 'Local AI ideas' : 'Offline ideas'}</Text>
-          {result.note ? <Text style={styles.note}>{result.note}</Text> : null}
-          {result.ideas.map((idea) => (
-            <View key={idea.title} style={styles.ideaCard}>
-              <Text style={styles.ideaTitle}>{idea.title}</Text>
-              <Text style={styles.ideaMeta}>
-                {idea.estimatedYardage} · {idea.hookSize} · {difficultyLabel(idea.difficulty)}
-              </Text>
-              <Text style={styles.ideaBody}>{idea.colorPlacement}</Text>
-            </View>
-          ))}
-
-          <Text style={styles.resultsTitle}>Catalog matches</Text>
-          {result.patterns.length === 0 ? (
-            <Text style={styles.note}>No small catalog patterns matched this yarn.</Text>
+          <Text style={styles.resultsTitle}>{shown.source === 'local-ai' ? 'Local AI ideas' : 'Offline ideas'}</Text>
+          {shown.note ? <Text style={styles.note}>{shown.note}</Text> : null}
+          {shown.ideas.length === 0 ? (
+            <Text style={styles.note}>No planning estimate fits in {yards} yd.</Text>
           ) : (
-            result.patterns.map((pattern) => (
+            shown.ideas.map((idea) => (
+              <View key={idea.planId} style={styles.ideaCard}>
+                <Text style={styles.ideaTitle}>{idea.title}</Text>
+                <Text style={styles.ideaMeta}>
+                  {idea.estimatedYardage} · {idea.hookSize} · {difficultyLabel(idea.difficulty)}
+                </Text>
+                <Text style={styles.ideaBody}>{idea.colorPlacement}</Text>
+              </View>
+            ))
+          )}
+
+          <Text style={styles.resultsTitle}>Catalog tutorials</Text>
+          {shown.catalog.length === 0 ? (
+            <Text style={styles.note}>No catalog tutorial fits this yarn weight and yard total.</Text>
+          ) : (
+            shown.catalog.map((item) => (
               <Pressable
-                key={pattern.id}
+                key={item.pattern.id}
                 accessibilityRole="button"
-                accessibilityLabel={`Open ${pattern.title}`}
-                onPress={() => openCatalogPattern(pattern, onOpenPattern)}
+                accessibilityLabel={`Open ${item.pattern.title}`}
+                onPress={() => openCatalogPattern(item.pattern, onOpenPattern)}
                 style={({ pressed }) => [styles.patternCard, pressed && styles.pressed, webCursor]}
               >
                 <Text numberOfLines={2} style={styles.patternTitle}>
-                  {pattern.title}
+                  {item.pattern.title}
                 </Text>
                 <Text style={styles.ideaMeta}>
-                  {pattern.creator} · {pattern.hookSize} · {difficultyLabel(pattern.difficulty)}
+                  {item.pattern.creator} · {item.pattern.hookSize} · {difficultyLabel(item.pattern.difficulty)}
                 </Text>
+                <Text style={styles.note}>{item.yardageNote}</Text>
               </Pressable>
             ))
           )}
@@ -318,8 +389,9 @@ function ScrapBusterForm({
               onSaveToStash({
                 colors: selected,
                 yarnWeight: weight,
-                yardageTier: tier,
-                hookSize: result.ideas[0]?.hookSize ?? hookForYarnWeight(weight),
+                yardageTier: tierForYards(yards),
+                availableYards: yards,
+                hookSize: shown.ideas[0]?.hookSize ?? hookForYarnWeight(weight),
               });
             }}
             style={({ pressed }) => [styles.saveStash, pressed && styles.pressed, webCursor]}
@@ -366,12 +438,16 @@ function openCatalogPattern(pattern: CrochetPattern, onOpenPattern: (patternId: 
 function EngineCard({
   engine,
   progress,
+  canCancel,
   onDownload,
+  onCancel,
   onDelete,
 }: {
   engine: EngineState;
-  progress: number;
+  progress: ModelDownloadProgress | null;
+  canCancel: boolean;
   onDownload: () => void;
+  onCancel: () => void;
   onDelete: () => void;
 }) {
   if (engine === 'unsupported') {
@@ -388,7 +464,9 @@ function EngineCard({
     return (
       <View style={styles.engineCard}>
         <Text style={styles.engineTitle}>Local AI engine ready</Text>
-        <Text style={styles.note}>Suggestions run on this device. Remove the engine if you need the space back.</Text>
+        <Text style={styles.note}>
+          Personalization runs on this device and does not see the photo. Remove the engine if you need the space back.
+        </Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Remove local AI engine"
@@ -400,20 +478,37 @@ function EngineCard({
       </View>
     );
   }
-  const percent = Math.round(Math.min(1, Math.max(0, progress)) * 100);
+  const ratio = progress?.ratio ?? 0;
+  const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100);
+  const transferring = engine === 'downloading' || engine === 'verifying';
+  const phaseLabel = progress?.phase === 'verify' || engine === 'verifying' ? 'Verifying' : 'Downloading';
   return (
     <View style={styles.engineCard}>
       <Text style={styles.engineTitle}>{LOCAL_AI_ENGINE_LABEL}</Text>
       <Text style={styles.note}>
-        {engine === 'downloading'
-          ? `Downloading… ${percent}%`
-          : 'Download once, then scrap suggestions run without a network.'}
+        {transferring
+          ? `${phaseLabel}… ${percent}%`
+          : engine === 'checking'
+            ? 'Checking the saved engine…'
+            : 'Download once if you want on-device personalization. Project ideas above do not need it.'}
       </Text>
-      {engine === 'downloading' ? (
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${percent}%` }]} />
+      {transferring ? (
+        <View>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${percent}%` }]} />
+          </View>
+          {canCancel ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel local AI engine download"
+              onPress={onCancel}
+              style={({ pressed }) => [pressed && styles.pressed, webCursor]}
+            >
+              <Text style={styles.removeLabel}>Cancel download</Text>
+            </Pressable>
+          ) : null}
         </View>
-      ) : (
+      ) : engine === 'checking' ? null : (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={LOCAL_AI_ENGINE_LABEL}
@@ -540,6 +635,16 @@ const styles = StyleSheet.create({
   },
   chipTextSelected: {
     color: Colors.accentPrimary,
+  },
+  yardsInput: {
+    ...Typography.body,
+    color: Colors.textPrimary,
+    backgroundColor: Colors.cardSurface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    minHeight: 44,
   },
   engineCard: {
     gap: Spacing.sm,

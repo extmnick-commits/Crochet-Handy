@@ -210,7 +210,9 @@ function AddYarnForm({
   };
 
   const scannedLabel = scannedLeftover
-    ? YARDAGE_TIERS.find((tier) => tier.id === scannedLeftover.yardageTier)?.label
+    ? scannedLeftover.availableYards != null
+      ? `${scannedLeftover.availableYards} yd leftover`
+      : YARDAGE_TIERS.find((tier) => tier.id === scannedLeftover.yardageTier)?.label
     : null;
 
   const onSnapYarn = async (source: CaptureSource) => {

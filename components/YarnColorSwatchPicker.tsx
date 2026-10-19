@@ -144,8 +144,8 @@ function PickerForPhoto({
           {status === 'empty'
             ? isYarnNativePaletteAvailable()
               ? 'No yarn color stood out in this photo. Tap + to add one.'
-              : 'No colors detected from this photo. Tap + to add one. Local AI only suggests scrap projects after you pick colors (dev build + downloaded engine).'
-            : 'Tap a swatch to drop a background color. The first selected swatch is the one that gets used.'}
+              : 'No colors detected from this photo. Tap + to add one.'
+            : 'Tap a swatch to keep or drop a color. These swatches come from the photo sampler. The text model does not see the photo.'}
         </Text>
       )}
 
