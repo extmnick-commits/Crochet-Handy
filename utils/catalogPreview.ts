@@ -6,7 +6,7 @@
  */
 import type { CrochetPattern, NewPatternInput } from '@/store/machine';
 
-import { patternPosterUri } from '@/utils/youtube';
+import { patternPosterUri, youtubeThumbnailUrl } from '@/utils/youtube';
 
 export type CatalogPreviewPhase = 'idle' | 'scrap' | 'closing-scrap' | 'preview' | 'closing-preview';
 
@@ -93,17 +93,40 @@ export type RecommendationThumb = {
 };
 
 const STORED_THUMB = /^https:\/\/\S+/i;
+const YOUTUBE_THUMB_HOST = /i\.ytimg\.com\/vi\//i;
 
-/** Stored tutorial art first, then the YouTube poster for that same video. */
+/** Ordered fallbacks for `<Image onError>` retry (hq first — catalog maxres links often 404). */
+export function patternThumbnailUriCandidates(pattern: {
+  thumbnailUrl?: string | null;
+  videoId?: string | null;
+}): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (uri: string | null | undefined) => {
+    if (!uri || seen.has(uri)) return;
+    seen.add(uri);
+    out.push(uri);
+  };
+  const videoId = pattern.videoId?.trim() ?? '';
+  if (videoId.length === 11) {
+    add(patternPosterUri(videoId, 'hq'));
+    add(youtubeThumbnailUrl(videoId, 'mq'));
+    add(youtubeThumbnailUrl(videoId, 'default'));
+  }
+  const stored = pattern.thumbnailUrl?.trim() ?? '';
+  if (STORED_THUMB.test(stored) && !YOUTUBE_THUMB_HOST.test(stored)) add(stored);
+  if (STORED_THUMB.test(stored)) add(stored);
+  return out;
+}
+
+/** Same poster strategy as the pattern feed: reliable YouTube hq, then other stored art. */
 export function recommendationThumbnail(pattern: {
   thumbnailUrl?: string | null;
   videoId?: string | null;
 }): RecommendationThumb {
-  const stored = pattern.thumbnailUrl?.trim() ?? '';
-  if (STORED_THUMB.test(stored)) return { uri: stored, source: 'stored' };
-  const poster = patternPosterUri(pattern.videoId, 'hq');
-  if (poster) return { uri: poster, source: 'youtube' };
-  return { uri: null, source: 'none' };
+  const primary = patternThumbnailUriCandidates(pattern)[0];
+  if (!primary) return { uri: null, source: 'none' };
+  return { uri: primary, source: YOUTUBE_THUMB_HOST.test(primary) ? 'youtube' : 'stored' };
 }
 
 /** Generated planning ideas are not tutorials and do not borrow a video thumbnail. */

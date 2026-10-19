@@ -210,8 +210,14 @@ function checkThumbnails() {
     thumbnailUrl: 'https://i.ytimg.com/vi/abcdefghijk/maxresdefault.jpg',
     videoId: 'abcdefghijk',
   });
-  equal(stored.source, 'stored', 'stored thumbnail wins');
-  equal(stored.uri, 'https://i.ytimg.com/vi/abcdefghijk/maxresdefault.jpg', 'stored uri');
+  equal(stored.source, 'youtube', 'youtube hq wins over catalog maxres');
+  assert(stored.uri?.includes('hqdefault.jpg'), 'hq poster for tutorials');
+
+  const cdn = recommendationThumbnail({
+    thumbnailUrl: 'https://cdn.example.com/pattern.jpg',
+    videoId: 'abcdefghijk',
+  });
+  equal(cdn.uri?.includes('hqdefault.jpg'), true, 'youtube still preferred when both exist');
 
   const poster = recommendationThumbnail({ thumbnailUrl: '', videoId: 'abcdefghijk' });
   equal(poster.source, 'youtube', 'youtube poster fallback');

@@ -181,6 +181,7 @@ export function PatternDetailSheet({
 
   const tagPress = previewing ? undefined : onTagPress;
   const detailKey = previewPattern?.id ?? patternId ?? '';
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
   const [seenDetailKey, setSeenDetailKey] = useState(detailKey);
   if (seenDetailKey !== detailKey) {
     setSeenDetailKey(detailKey);
@@ -373,7 +374,10 @@ export function PatternDetailSheet({
             onScroll={onScroll}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 96 }]}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: Math.max(insets.bottom + 96, bottomBarHeight + 56) },
+            ]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             automaticallyAdjustKeyboardInsets
@@ -663,7 +667,10 @@ export function PatternDetailSheet({
             </View>
           </ScrollView>
 
-          <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
+          <View
+            style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.sm }]}
+            onLayout={(event) => setBottomBarHeight(event.nativeEvent.layout.height)}
+          >
             {previewing ? (
               <Pressable
                 accessibilityRole="button"
@@ -717,7 +724,11 @@ export function PatternDetailSheet({
             </Pressable>
           </View>
 
-          <CrochetHelperHost surface={`pattern-${detailKey}`} pattern={pattern} inline
+          <CrochetHelperHost
+            surface={`pattern-${detailKey}`}
+            pattern={pattern}
+            inline
+            launcherBottomInset={bottomBarHeight}
             renderPreview={(nextPattern, onPreviewClose) => (
               <PatternDetailSheet patternId={null} previewPattern={nextPattern} onClose={onPreviewClose} />
             )}

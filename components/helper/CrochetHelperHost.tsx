@@ -11,7 +11,7 @@ import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/const
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 import { selectActiveProject, useCrochetStore, type CrochetPattern } from '@/store/useCrochetStore';
 import { loadRepoPatternCatalog } from '@/utils/patternCatalog';
-import { recommendationThumbnail } from '@/utils/catalogPreview';
+import { patternThumbnailUriCandidates } from '@/utils/catalogPreview';
 import {
   CALCULATIONS, CALCULATOR_FIELDS, CALCULATOR_NAMES, CONVERSION_PAIRS,
   calculateCrochet, type Calculation,
@@ -25,6 +25,8 @@ type Props = {
   surface?: string;
   pattern?: CrochetPattern | null;
   inline?: boolean;
+  /** Distance from the screen bottom to the inline launcher (e.g. pattern detail action bar). */
+  launcherBottomInset?: number;
   renderPreview: (pattern: CrochetPattern, onClose: () => void) => ReactNode;
 };
 const STARTERS = ['Explain this pattern', 'Calculate stitches', 'Will I have enough yarn?', 'Help me fix a mistake', 'Find beginner coaster patterns'];
@@ -32,7 +34,13 @@ let messageSequence = 0;
 const id = () => `helper-${Date.now()}-${++messageSequence}`;
 
 /** One conversation, with an overlay rendered inside the currently active native surface. */
-export function CrochetHelperHost({ surface = 'main', pattern = null, inline = false, renderPreview }: Props) {
+export function CrochetHelperHost({
+  surface = 'main',
+  pattern = null,
+  inline = false,
+  launcherBottomInset = 0,
+  renderPreview,
+}: Props) {
   const state = useSyncExternalStore(helperSession.subscribe, helperSession.snapshot, helperSession.snapshot);
   const account = useCrochetStore((s) => s.account);
   const patterns = useCrochetStore((s) => s.patterns);
@@ -55,6 +63,7 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
     return { pattern, project: null };
   }, [pattern, project, patterns, pathname, state.contextChoice]);
   const key = contextKey(context);
+  const activeContextPattern = project?.patternId ? patterns.find((p) => p.id === project.patternId) ?? null : null;
   const open = state.surface === surface && state.owner === uid && uid !== null;
   const catalog = useMemo(() => {
     const byId = new Map(loadRepoPatternCatalog().map((p) => [p.id, p]));
@@ -100,6 +109,10 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
     if (open && !previousOpen.current) requestAnimationFrame(() => input.current?.focus());
     previousOpen.current = open;
   }, [open]);
+  useEffect(() => {
+    if (!open || keyboardHeight <= 0) return;
+    requestAnimationFrame(() => scroll.current?.scrollToEnd({ animated: true }));
+  }, [keyboardHeight, open]);
 
   const send = async (question = helperSession.snapshot().draft) => {
     const text = question.trim().slice(0, 1000);
@@ -147,6 +160,10 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
   };
   if (!uid || uid !== state.owner) return null;
   const lastReply = state.messages[state.messages.length - 1];
+  const preferredPanelHeight = Math.min(700, height * 0.86);
+  const panelHeight = keyboardHeight > 0
+    ? Math.min(preferredPanelHeight, height - keyboardHeight - Spacing.lg)
+    : preferredPanelHeight;
   return (
     <>
       {!open && !preview && (inline || keyboardHeight === 0) ? (
@@ -154,19 +171,27 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
           accessibilityRole="button" accessibilityLabel={inline ? 'Ask Crochet Handy Helper about this pattern' : 'Open Crochet Handy Helper'}
           testID={inline ? 'pattern-ask-helper' : 'crochet-helper-launcher'}
           onPress={() => { if (inline) helperSession.patch({ contextChoice: 'auto' }); helperSession.open(surface); }}
-          style={({ pressed }) => [inline ? styles.inlineLauncher : styles.launcher,
-            !inline && { bottom: Layout.tabBarHeight + Math.max(insets.bottom, Spacing.md) + Spacing.lg }, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            inline
+              ? [styles.inlineLauncher, { bottom: launcherBottomInset + Spacing.sm }]
+              : [styles.launcher, { bottom: Layout.tabBarHeight + Math.max(insets.bottom, Spacing.md) + Spacing.lg }],
+            pressed && styles.pressed,
+          ]}
         >
           <HelperIcon />
           <Text style={styles.launcherText}>{inline ? 'Ask Helper' : 'Helper'}</Text>
         </Pressable>
       ) : null}
       {open ? (
-        <KeyboardAvoidingView style={styles.overlay} behavior={!inline && Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={inline ? insets.top : 0} accessibilityViewIsModal testID="crochet-helper-panel">
+        <KeyboardAvoidingView style={styles.overlay} behavior={undefined} accessibilityViewIsModal testID="crochet-helper-panel">
           <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Minimize helper" onPress={() => { Keyboard.dismiss(); helperSession.close(surface); }} />
-          <View style={[styles.panel, { maxHeight: '95%',
-            height: Math.min(700, height * 0.86), width: Math.min(width, 560), paddingBottom: Math.max(insets.bottom, Spacing.sm) }]}>
+          <View style={[styles.panel, {
+            maxHeight: '95%',
+            height: panelHeight,
+            width: Math.min(width, 560),
+            marginBottom: keyboardHeight,
+            paddingBottom: Math.max(insets.bottom, Spacing.sm),
+          }]}>
             <View style={styles.header}>
               <View style={styles.headerCopy}>
                 <Text style={styles.title}>Crochet Handy Helper</Text>
@@ -190,11 +215,25 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
             </View>
             {contextMenu ? (
               <View style={styles.menu}>
-                {(['auto', 'active', 'none'] as const).map((choice) => (
-                  <Pressable key={choice} accessibilityRole="button" onPress={() => { helperSession.cancel(); helperSession.patch({ contextChoice: choice }); setContextMenu(false); }} style={styles.menuItem}>
-                    <Text style={styles.body}>{choice === 'auto' ? (pattern?.title ?? 'Current screen') : choice === 'active' ? (project?.name ?? 'No active project') : 'General help · clear context'}</Text>
-                  </Pressable>
-                ))}
+                {(['auto', 'active', 'none'] as const).map((choice) => {
+                  const menuPattern = choice === 'auto' ? pattern : choice === 'active' ? activeContextPattern : null;
+                  const menuLabel = choice === 'auto'
+                    ? (pattern?.title ?? 'Current screen')
+                    : choice === 'active'
+                      ? (project?.name ?? 'No active project')
+                      : 'General help · clear context';
+                  return (
+                    <Pressable
+                      key={choice}
+                      accessibilityRole="button"
+                      onPress={() => { helperSession.cancel(); helperSession.patch({ contextChoice: choice }); setContextMenu(false); }}
+                      style={styles.menuItem}
+                    >
+                      <HelperPatternThumbnail pattern={menuPattern} size={44} />
+                      <Text style={[styles.body, styles.menuItemLabel]} numberOfLines={2}>{menuLabel}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             ) : null}
             <ScrollView ref={scroll} style={styles.chatScroll} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.messages}
@@ -238,13 +277,48 @@ export function CrochetHelperHost({ surface = 'main', pattern = null, inline = f
   );
 }
 
+function HelperPatternThumbnail({
+  pattern,
+  size = 44,
+}: {
+  pattern: Pick<CrochetPattern, 'thumbnailUrl' | 'videoId' | 'title'> | null;
+  size?: number;
+}) {
+  const candidates = pattern ? patternThumbnailUriCandidates(pattern) : [];
+  const [attempt, setAttempt] = useState(0);
+  const uri = candidates[attempt];
+  const radius = Radius.sm;
+  useEffect(() => {
+    setAttempt(0);
+  }, [pattern?.videoId, pattern?.thumbnailUrl]);
+  return (
+    <View style={[styles.patternThumbShell, { width: size, height: size, borderRadius: radius }]}>
+      {uri ? (
+        <Image
+          accessibilityIgnoresInvertColors
+          source={{ uri }}
+          onError={() => setAttempt((value) => value + 1)}
+          resizeMode="cover"
+          style={{ width: size, height: size, borderRadius: radius }}
+        />
+      ) : (
+        <HelperIcon compact={size < 48} />
+      )}
+    </View>
+  );
+}
+
 function HelperPatternCard({ pattern, onPress }: { pattern: CrochetPattern; onPress: () => void }) {
-  const [failed, setFailed] = useState(false);
-  const uri = recommendationThumbnail(pattern).uri;
-  return <Pressable accessibilityRole="button" accessibilityLabel={`Preview ${pattern.title}`} onPress={onPress} style={styles.patternCard}>
-    {uri && !failed ? <Image source={{ uri }} onError={() => setFailed(true)} style={styles.thumbnail} /> : <View style={styles.thumbnail}><HelperIcon /></View>}
-    <View style={styles.patternCopy}><Text numberOfLines={2} style={styles.body}>{pattern.title}</Text><Text style={styles.caption}>{pattern.creator} · {pattern.difficulty}</Text><Text style={styles.accentText}>Preview pattern →</Text></View>
-  </Pressable>;
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`Preview ${pattern.title}`} onPress={onPress} style={styles.patternCard}>
+      <HelperPatternThumbnail pattern={pattern} size={56} />
+      <View style={styles.patternCopy}>
+        <Text numberOfLines={2} style={styles.body}>{pattern.title}</Text>
+        <Text style={styles.caption}>{pattern.creator} · {pattern.difficulty}</Text>
+        <Text style={styles.accentText}>Preview pattern →</Text>
+      </View>
+    </Pressable>
+  );
 }
 function CalculatorPanel({ operation, onChoose, onCalculate }: {
   operation: Calculation; onChoose: (value: Calculation) => void;
@@ -274,13 +348,36 @@ function CalculatorPanel({ operation, onChoose, onCalculate }: {
     }} style={styles.send}><Text style={styles.sendText}>Calculate</Text></Pressable>
   </View>;
 }
-export function HelperIcon() {
-  return <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"><Path d="M20 11.5a8 8 0 0 1-8 8H8l-4 2v-5a8 8 0 1 1 16-5Z" stroke={Colors.accentPrimary} strokeWidth={1.7} /><Circle cx={8} cy={11} r={1} fill={Colors.accentPrimary} /><Circle cx={12} cy={11} r={1} fill={Colors.accentPrimary} /><Circle cx={16} cy={11} r={1} fill={Colors.accentPrimary} /></Svg>;
+export function HelperIcon({ compact = false }: { compact?: boolean }) {
+  const dim = compact ? 18 : 22;
+  return (
+    <Svg width={dim} height={dim} viewBox="0 0 24 24" fill="none">
+      <Path d="M20 11.5a8 8 0 0 1-8 8H8l-4 2v-5a8 8 0 1 1 16-5Z" stroke={Colors.accentPrimary} strokeWidth={1.7} />
+      <Circle cx={8} cy={11} r={1} fill={Colors.accentPrimary} />
+      <Circle cx={12} cy={11} r={1} fill={Colors.accentPrimary} />
+      <Circle cx={16} cy={11} r={1} fill={Colors.accentPrimary} />
+    </Svg>
+  );
 }
 const styles = StyleSheet.create({
   launcher: { position: 'absolute', right: Spacing.lg, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     padding: Spacing.md, backgroundColor: Colors.cardSurface, borderWidth: 1, borderColor: Colors.accentPrimary, borderRadius: Radius.pill, zIndex: 20, minHeight: 48 },
-  inlineLauncher: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, padding: Spacing.md, backgroundColor: Colors.accentMuted, borderRadius: Radius.md, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, minHeight: 44 },
+  inlineLauncher: {
+    position: 'absolute',
+    left: Spacing.lg,
+    right: Spacing.lg,
+    zIndex: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    backgroundColor: Colors.accentMuted,
+    borderRadius: Radius.md,
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: Colors.accentPrimary,
+  },
   launcherText: { ...Typography.caption, color: Colors.accentPrimary, fontWeight: FontWeight.semibold },
   overlay: { ...StyleSheet.absoluteFill, backgroundColor: Colors.scrim, justifyContent: 'flex-end', alignItems: 'center', zIndex: 100 },
   panel: { flexShrink: 1, backgroundColor: Colors.cardSurface, borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl, overflow: 'hidden' },
@@ -291,7 +388,10 @@ const styles = StyleSheet.create({
   accentText: { ...Typography.caption, color: Colors.accentPrimary, fontWeight: FontWeight.semibold },
   toolbar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, gap: Spacing.sm },
   contextChip: { flex: 1, borderRadius: Radius.pill, backgroundColor: Colors.elevatedControl, padding: Spacing.sm, minHeight: 44, justifyContent: 'center' },
-  menu: { padding: Spacing.sm, backgroundColor: Colors.elevatedControl }, menuItem: { padding: Spacing.md, minHeight: 44 },
+  menu: { padding: Spacing.sm, backgroundColor: Colors.elevatedControl, gap: Spacing.xs },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, minHeight: 44 },
+  menuItemLabel: { flex: 1 },
+  patternThumbShell: { backgroundColor: Colors.elevatedControl, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   chatScroll: { flex: 1, minHeight: 0 },
   messages: { padding: Spacing.lg, gap: Spacing.md }, starters: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   starter: { padding: Spacing.sm, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, minHeight: 44, justifyContent: 'center' },
@@ -304,8 +404,7 @@ const styles = StyleSheet.create({
   send: { backgroundColor: Colors.accentPrimary, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radius.md, minHeight: 48, justifyContent: 'center', alignItems: 'center' },
   sendText: { ...Typography.caption, color: Colors.onAccent, fontWeight: FontWeight.bold },
   disabled: { opacity: 0.4 }, pressed: { opacity: 0.75 },
-  patternCard: { flexDirection: 'row', gap: Spacing.md, padding: Spacing.sm, backgroundColor: Colors.cardSurface, borderRadius: Radius.md },
-  thumbnail: { width: 76, height: 76, borderRadius: Radius.sm, backgroundColor: Colors.elevatedControl, justifyContent: 'center', alignItems: 'center' },
+  patternCard: { flexDirection: 'row', gap: Spacing.md, padding: Spacing.sm, backgroundColor: Colors.cardSurface, borderRadius: Radius.md, alignItems: 'center' },
   patternCopy: { flex: 1, gap: Spacing.xs }, calculator: { padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.elevatedControl, gap: Spacing.md },
   field: { gap: Spacing.xs }, numberInput: { ...Typography.body, color: Colors.textPrimary, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.sm, minHeight: 44, padding: Spacing.sm, backgroundColor: Colors.cardSurface },
   selected: { borderColor: Colors.accentPrimary, backgroundColor: Colors.accentMuted }, error: { ...Typography.caption, color: Colors.danger },
