@@ -2,6 +2,8 @@ import { Redirect } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { Platform, StyleSheet, View } from 'react-native';
 
+import { CrochetHelperHost } from '@/components/helper/CrochetHelperHost';
+import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { CollectToastHost } from '@/components/CollectToast';
 import { LaunchSplash } from '@/components/LaunchSplash';
 import { BambuTabBar } from '@/components/navigation/BambuTabBar';
@@ -71,6 +73,9 @@ export default function TabLayout() {
       />
     </Tabs>
     <CollectToastHost />
+    <CrochetHelperHost renderPreview={(pattern, onClose) => (
+      <PatternDetailSheet patternId={null} previewPattern={pattern} onClose={onClose} />
+    )} />
     </>
   );
 }

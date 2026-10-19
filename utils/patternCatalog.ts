@@ -35,7 +35,7 @@ export function patternCatalogUrl(): string {
   return DEFAULT_CATALOG_URL;
 }
 
-function loadRepoPatternCatalog(): CrochetPattern[] {
+export function loadRepoPatternCatalog(): CrochetPattern[] {
   const payload = bundledCatalogFile as PatternCatalogFile;
   return parseCatalogPatterns(payload.patterns);
 }

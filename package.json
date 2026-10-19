@@ -67,7 +67,8 @@
     "prune-non-english-thumbnails": "npx tsx scripts/prune-non-english-thumbnails.ts",
     "clean-catalog": "npm run prune-non-english-patterns && npm run prune-non-english-thumbnails",
     "sync-eas-env": "node scripts/sync-eas-production-env.mjs",
-    "ios:testflight": "powershell -ExecutionPolicy Bypass -File ./scripts/ios-testflight-build.ps1"
+    "ios:testflight": "powershell -ExecutionPolicy Bypass -File ./scripts/ios-testflight-build.ps1",
+    "check-helper": "node --import tsx scripts/check-crochet-helper.ts"
   },
   "private": true,
   "ts-node": {

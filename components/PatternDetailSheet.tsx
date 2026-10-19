@@ -25,6 +25,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { PatternTutorialVideo } from '@/components/media/PatternTutorialVideo';
+import { CrochetHelperHost } from '@/components/helper/CrochetHelperHost';
+import { dismissCrochetHelper } from '@/utils/helper/session';
 import { HeartIcon } from '@/components/HeartIcon';
 import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { SaveToFolderSheet } from '@/components/SaveToFolderSheet';
@@ -292,7 +294,7 @@ export function PatternDetailSheet({
     <Modal
       visible={pattern !== null}
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={() => { if (!dismissCrochetHelper(`pattern-${detailKey}`)) onClose(); }}
       onDismiss={onDismiss}
       statusBarTranslucent
       presentationStyle="fullScreen"
@@ -715,6 +717,11 @@ export function PatternDetailSheet({
             </Pressable>
           </View>
 
+          <CrochetHelperHost surface={`pattern-${detailKey}`} pattern={pattern} inline
+            renderPreview={(nextPattern, onPreviewClose) => (
+              <PatternDetailSheet patternId={null} previewPattern={nextPattern} onClose={onPreviewClose} />
+            )}
+          />
           <SaveToFolderSheet
             visible={folderPickerOpen}
             patternId={pattern.id}
