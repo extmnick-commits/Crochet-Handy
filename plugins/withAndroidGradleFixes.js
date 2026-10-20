@@ -71,6 +71,30 @@ function withAndroidGradleFixes(config) {
         `autolinkLibrariesWithApp()\n\n    // Standalone APK: ship the JS bundle in debug builds (no Metro required).\n    debuggableVariants = []\n`,
       );
     }
+
+    // Local release builds: signing from MYAPP_UPLOAD_* in ~/.gradle/gradle.properties or android/gradle.properties.
+    // https://docs.expo.dev/guides/local-app-production/
+    if (!contents.includes('MYAPP_UPLOAD_STORE_FILE')) {
+      if (!contents.includes('signingConfigs.release')) {
+        contents = contents.replace(
+          /(signingConfigs\s*\{\s*debug\s*\{[\s\S]*?\n        \}\n)(    \})/,
+          `$1        release {
+            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
+                storeFile file(MYAPP_UPLOAD_STORE_FILE)
+                storePassword MYAPP_UPLOAD_STORE_PASSWORD
+                keyAlias MYAPP_UPLOAD_KEY_ALIAS
+                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+            }
+        }
+$2`,
+        );
+      }
+      contents = contents.replace(
+        /(buildTypes\s*\{[\s\S]*?release\s*\{[\s\S]*?)signingConfig signingConfigs\.debug/,
+        '$1signingConfig signingConfigs.release',
+      );
+    }
+
     config.modResults.contents = contents;
     return config;
   });
