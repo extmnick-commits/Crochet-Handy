@@ -99,6 +99,7 @@ export function batchExtractionSystemPrompt(videoCount: number): string {
     'Each item must include videoIndex (0-based, matching Video N in the user message),',
     FIELD_RULES,
     `Include exactly ${videoCount} entries with videoIndex 0 through ${videoCount - 1}.`,
+    'estimatedTimeMinutes, totalRows, stitchesPerRow, and videoIndex must each be a single JSON integer (never ranges like 20-25).',
     'Infer reasonable values when a video omits them.',
   ].join(' ');
 }

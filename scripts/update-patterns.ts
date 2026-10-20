@@ -33,6 +33,7 @@ import {
   varietyScrapeQuotas,
 } from '../utils/holidayTopics';
 import { isValidEnglishYoutubeSnippet } from '../utils/patternEnglishFilter';
+import { parseBatchPatternsResponse } from '../utils/batchPatternJsonParse';
 import { batchExtractionSystemPrompt, mapExtractedPattern } from '../utils/patternExtraction';
 import { derivePatternSummary } from '../utils/patternSummary';
 import { filterVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
@@ -506,28 +507,55 @@ export async function extractBatchPatterns(
   videos: YouTubeVideoItem[],
   transcripts: ReadonlyMap<string, string> = new Map(),
 ): Promise<AiBatchPatternPayload[]> {
-  const completion = await client.chat.completions.create({
-    model,
-    response_format: { type: 'json_object' },
-    messages: [
-      {
-        role: 'system',
-        content: batchExtractionSystemPrompt(videos.length),
-      },
-      {
-        role: 'user',
-        content: formatVideosForBatchPrompt(videos, transcripts),
-      },
-    ],
-  });
+  const baseMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    {
+      role: 'system',
+      content: batchExtractionSystemPrompt(videos.length),
+    },
+    {
+      role: 'user',
+      content: formatVideosForBatchPrompt(videos, transcripts),
+    },
+  ];
 
-  const raw = completion.choices[0]?.message?.content;
-  if (!raw) {
-    throw new Error('AI returned an empty response');
+  let lastParseError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const messages =
+      attempt === 0
+        ? baseMessages
+        : [
+            ...baseMessages,
+            {
+              role: 'user' as const,
+              content:
+                'Your previous reply was not valid JSON. Return the same extraction again as strict JSON only. Use single integers for estimatedTimeMinutes, totalRows, stitchesPerRow, and videoIndex (no ranges).',
+            },
+          ];
+
+    const completion = await client.chat.completions.create({
+      model,
+      response_format: { type: 'json_object' },
+      messages,
+    });
+
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) {
+      throw new Error('AI returned an empty response');
+    }
+
+    try {
+      const parsed = parseBatchPatternsResponse(raw) as AiBatchPatternsResponse;
+      return parsed.patterns ?? [];
+    } catch (error) {
+      lastParseError = error;
+      if (attempt === 0) {
+        logTimestamp('AI batch JSON parse failed; retrying once with stricter JSON instructions…');
+      }
+    }
   }
 
-  const parsed = JSON.parse(raw) as AiBatchPatternsResponse;
-  return parsed.patterns ?? [];
+  if (lastParseError instanceof Error) throw lastParseError;
+  throw new SyntaxError('Invalid batch patterns JSON');
 }
 
 export function mapBatchPatternsToSeed(
