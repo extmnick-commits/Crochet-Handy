@@ -311,7 +311,7 @@ export const useCrochetStore = create<CrochetStore>()(
           const id = createId('project');
           const next = applyCreateProject(readData(get()), input, id, Date.now());
           if (!next) return null;
-          set(next);
+          set((state) => ({ ...state, ...next }));
           return id;
         },
         setActiveProject: (projectId) => commit((data, now) => applySetActiveProject(data, projectId, now)),

@@ -47,6 +47,8 @@ export default function TabLayout() {
         tabBarPosition: navPosition,
         // Bambu switches tabs instantly; a quick cross-fade feels native without lag.
         animation: Platform.OS === 'web' ? 'none' : 'fade',
+        // Inactive tabs must still receive store updates (start project from Patterns).
+        freezeOnBlur: false,
         sceneStyle: [styles.scene, contentMaxWidth !== undefined && { maxWidth: contentMaxWidth }],
       }}
     >
@@ -61,6 +63,7 @@ export default function TabLayout() {
         name="active"
         options={{
           title: 'Active Project',
+          lazy: false,
           tabBarIcon: ({ focused, color, size }) => <ProjectIcon focused={focused} color={color} size={size} />,
         }}
       />

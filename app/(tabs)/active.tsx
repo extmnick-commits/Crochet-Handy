@@ -6,6 +6,7 @@
  * screen does not drift it.
  */
 import * as Haptics from 'expo-haptics';
+import { usePathname } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
@@ -58,8 +59,19 @@ import { patternPosterUri } from '@/utils/youtube';
 
 export default function ActiveProjectScreen() {
   const insets = useSafeAreaInsets();
-  const project = useCrochetStore(selectActiveProject);
+  const pathname = usePathname();
+  const activeProjectId = useCrochetStore((state) => state.activeProjectId);
   const projects = useCrochetStore((state) => state.projects);
+  const [focusEpoch, setFocusEpoch] = useState(0);
+  useEffect(() => {
+    if (!pathname.endsWith('/active')) return;
+    // Re-render when this tab is shown so store updates from Patterns apply (iOS tab stack).
+    setFocusEpoch((epoch) => epoch + 1);
+  }, [pathname, activeProjectId, projects.length]);
+  const project = useMemo(() => {
+    if (!activeProjectId) return null;
+    return projects.find((item) => item.id === activeProjectId) ?? null;
+  }, [activeProjectId, projects, focusEpoch]);
   const pattern = useCrochetStore((state) => {
     const current = selectActiveProject(state);
     if (!current?.patternId) return null;

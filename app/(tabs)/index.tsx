@@ -28,6 +28,7 @@ import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useCrochetStore, YARN_WEIGHTS, type CrochetPattern, type YarnWeight } from '@/store/useCrochetStore';
+import { openActiveProjectTab } from '@/utils/openActiveProjectTab';
 import {
   formatHookSize,
   matchesPatternCategory,
@@ -307,7 +308,7 @@ export default function PatternsScreen() {
           const pattern = patterns.find((item) => item.id === patternId);
           if (!pattern) return;
           createProject({ name: pattern.title, patternId: pattern.id });
-          router.navigate('/active');
+          openActiveProjectTab();
         }}
       />
 

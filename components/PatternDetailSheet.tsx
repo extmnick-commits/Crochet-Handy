@@ -61,6 +61,7 @@ import {
 import { patternDescriptionAddsDetail } from '@/utils/patternSummary';
 import { patternPosterUri } from '@/utils/youtube';
 import { catalogPreviewDecision, patternToNewInput } from '@/utils/catalogPreview';
+import { openActiveProjectTab } from '@/utils/openActiveProjectTab';
 
 type PatternDetailSheetProps = {
   patternId: string | null;
@@ -238,13 +239,13 @@ export function PatternDetailSheet({
       const projectId = createProject({ name: pattern.title, patternId: id });
       if (!projectId) return;
       onPreviewStarted?.();
-      router.navigate('/active');
+      openActiveProjectTab();
       return;
     }
     const id = createProject({ name: pattern.title, patternId: pattern.id });
     if (!id) return;
     onClose();
-    router.navigate('/active');
+    openActiveProjectTab();
   };
 
   const onSavePreview = () => {
@@ -255,9 +256,10 @@ export function PatternDetailSheet({
 
   const onLoadActive = () => {
     if (!pattern) return;
-    createProject({ name: pattern.title, patternId: pattern.id });
+    const projectId = createProject({ name: pattern.title, patternId: pattern.id });
+    if (!projectId) return;
     onClose();
-    router.navigate('/active');
+    openActiveProjectTab();
   };
 
   const onShare = async () => {
