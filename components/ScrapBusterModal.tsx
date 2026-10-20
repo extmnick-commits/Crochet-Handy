@@ -3,9 +3,10 @@
  * the findings and opens matching tutorials. Color is not part of this sheet.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Image, Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { YarnColorSwatchRow, YarnInstantColorProbe } from '@/components/YarnInstantColorProbe';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { useBottomSheetScrollRef } from '@/components/ui/BottomSheetScrollContext';
 import { Colors, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
@@ -32,7 +33,7 @@ import { difficultyLabel, yarnWeightMeta } from '@/utils/patternDisplay';
 import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@/utils/progressPhoto';
 import { hookRangeLabel } from '@/utils/scrapHookRange';
 import { modelTransferStatusLabel } from '@/utils/scrapModelTransfer';
-import { hookForYarnWeight, tierForYards, type ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
+import { hookForYarnWeight, tierForYards, type ScannedLeftoverDraft, type ScrapYarnColor } from '@/utils/scrapYarnAi';
 import { recommendConfirmedCatalog, type VisionCatalogCard } from '@/utils/scrapVisionCatalog';
 import { prepareVisionPhoto } from '@/utils/scrapVisionImage';
 import { QUANTITY_CATEGORIES, VISION_SUBJECTS, searchAmount, weightFromLabel, type QuantityCategory, type VisionSubject } from '@/utils/scrapVisionOutput';
@@ -42,6 +43,9 @@ import {
   cancelActiveVisionAnalysis,
   cancelVisionDownload,
   createLeftoverPatternDraft,
+  preloadVisionSession,
+  releaseVisionSession,
+  releaseVisionSessionNow,
 } from '@/utils/scrapVisionRun';
 
 type ScrapBusterModalProps = {
@@ -60,6 +64,39 @@ function useLeftoverYarnDraft() {
 
 export function ScrapBusterModal({ visible, onClose, onDismiss, onPreviewPattern, onSaveToStash }: ScrapBusterModalProps) {
   const draft = useLeftoverYarnDraft();
+
+  useEffect(() => {
+    if (visible) {
+      void preloadVisionSession();
+      return;
+    }
+    releaseVisionSession();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    const releaseNow = () => {
+      invalidateVisionRequest();
+      cancelActiveVisionAnalysis();
+      void releaseVisionSessionNow();
+    };
+    const stateSubscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') releaseNow();
+    });
+    const memorySubscription = AppState.addEventListener('memoryWarning', releaseNow);
+    return () => {
+      stateSubscription.remove();
+      memorySubscription.remove();
+    };
+  }, [visible]);
+
+  useEffect(() => {
+    return () => {
+      releaseVisionSession();
+      void releaseVisionSessionNow();
+    };
+  }, []);
+
   return (
     <BottomSheet
       visible={visible}
@@ -118,6 +155,7 @@ function ScrapBusterForm({
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [ratio, setRatio] = useState(0);
+  const [probeColors, setProbeColors] = useState<ScrapYarnColor[]>([]);
   const mounted = useRef(true);
   const capturePending = useRef(false);
 
@@ -145,6 +183,7 @@ function ScrapBusterForm({
         return;
       }
       replaceLeftoverPhoto(captured.uri);
+      setProbeColors([]);
     } finally {
       capturePending.current = false;
     }
@@ -233,6 +272,14 @@ function ScrapBusterForm({
       {draft.photoUri ? (
         <View style={styles.block}>
           <Image accessible accessibilityLabel="Yarn photo" source={{ uri: draft.photoUri }} resizeMode="cover" style={styles.photo} />
+          <YarnInstantColorProbe
+            imageUri={draft.photoUri}
+            photoGeneration={draft.photoGeneration}
+            onColors={(colors) => {
+              if (mounted.current) setProbeColors(colors);
+            }}
+          />
+          <YarnColorSwatchRow colors={probeColors} />
           <View style={styles.captureRow}>
             <Pressable
               accessibilityRole="button"

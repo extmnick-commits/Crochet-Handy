@@ -16,7 +16,9 @@ Android uses OpenCL and Unsloth's Qwen2.5-VL 3B Instruct pair at revision `20ce6
 - `Qwen2.5-VL-3B-Instruct-Q4_0.gguf` — 1,828,484,448 bytes, SHA-256 `b7bbe51de4b0880be2b6b0c6891bc8e6666e4e535bdc65c78dcbd475d6824b4d`
 - `mmproj-F16.gguf` — 1,338,428,256 bytes, SHA-256 `4c1240f514de94c81b70709b0f9a80c7e3297598ea7c83f39dc00b18ee5be60c`
 
-The Android text model tries the GPU once, then retries on the CPU. The F16 projector stays on the CPU. The smaller SmolVLM trial files are deleted on the next scan. A text file from one publisher is not paired with the other publisher's projector.
+The Android text model tries the GPU once, then retries on the CPU. The F16 projector tries OpenCL first, then falls back to the CPU when GPU init fails. The smaller SmolVLM trial files are deleted on the next scan. A text file from one publisher is not paired with the other publisher's projector.
+
+While the leftover yarn sheet is open, the app preloads and keeps the vision pair in memory. Closing the sheet starts a 60-second idle timer before release. A successful scan outside that flow still keeps the context for 45 seconds. Immediate release happens on app backgrounding, memory warnings, or another engine operation that takes the shared lock.
 
 The older text-only Qwen2.5 1.5B file remains pinned for the previous personalization checks. The leftover sheet does not download it and does not ask it to inspect a photo. A smaller 0.5B file is documented in `scripts/compare-scrap-models.ts` for a device comparison. The app does not download it.
 

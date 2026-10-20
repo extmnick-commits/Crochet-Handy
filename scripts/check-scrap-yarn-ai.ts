@@ -25,6 +25,12 @@ import {
   resetVisionSessionForTests,
   runVisionAnalysis,
   visionCompletionParams,
+  VISION_COMPLETION_MAX_TOKENS,
+  VISION_CONTEXT_TOKENS,
+  VISION_IMAGE_TOKENS,
+  VISION_PHOTO_LONG_EDGE,
+  preloadVisionSession,
+  releaseVisionSessionNow,
   type VisionLlamaContext,
 } from '../utils/scrapVisionSession';
 import {
@@ -667,6 +673,10 @@ async function checkVisionSessions() {
   const messages = imageParams.messages as { content: unknown }[];
   assert(JSON.stringify(messages).includes('file://yarn.jpg'), 'the completion payload contains the local image');
   assert(!JSON.stringify(imageParams).toLowerCase().includes('color'), 'the image request does not ask for color');
+  equal(imageParams.n_predict, VISION_COMPLETION_MAX_TOKENS, 'vision decoding stays within the smaller token budget');
+  equal(VISION_CONTEXT_TOKENS, 1536, 'vision context window is trimmed for mobile');
+  equal(VISION_IMAGE_TOKENS, 256, 'vision image token budget is trimmed for yarn scans');
+  equal(VISION_PHOTO_LONG_EDGE, 448, 'vision photos are downscaled before encode');
 
   const iosCalls: { layers: number; shift: boolean }[] = [];
   const ios = await runVisionAnalysis({
@@ -691,7 +701,7 @@ async function checkVisionSessions() {
 
   resetVisionSessionForTests();
   const androidCalls: number[] = [];
-  let projectorGpu: boolean | null = null;
+  const projectorGpuAttempts: boolean[] = [];
   let projectorPath = '';
   let released = 0;
   const android = await runVisionAnalysis({
@@ -704,9 +714,10 @@ async function checkVisionSessions() {
             released += 1;
           },
           onProjector: (useGpu, path) => {
-            projectorGpu = useGpu;
+            projectorGpuAttempts.push(useGpu);
             projectorPath = path;
           },
+          rejectProjectorGpu: true,
         });
       },
     },
@@ -720,9 +731,42 @@ async function checkVisionSessions() {
   });
   equal(androidCalls.join(','), '99,0', 'Android retries the text model once on CPU');
   equal(android.status, 'findings', 'a CPU retry can still return findings');
-  equal(projectorGpu, false, 'the Android projector stays on the CPU');
+  equal(projectorGpuAttempts.join(','), 'true,false', 'Android tries OpenCL for the projector, then CPU');
   assert(projectorPath.includes('mmproj-F16'), 'Android loads the projector path it was given');
-  equal(released, 1, 'the vision context is released');
+  equal(released, 0, 'a successful scan keeps the vision context warm');
+
+  resetVisionSessionForTests();
+  let warmInits = 0;
+  const warmRuntime = {
+    initLlama: async () => {
+      warmInits += 1;
+      return visionContext('{"subjects":["loose-yarn"],"yarnCategory":"worsted","categorySource":"visual","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}');
+    },
+  };
+  const warmSpec = {
+    runtime: warmRuntime,
+    platform: 'ios' as const,
+    modelPath: 'file://ios.gguf',
+    projectorPath: 'file://mmproj.gguf',
+  };
+  await preloadVisionSession(warmSpec);
+  const warmArgs = {
+    runtime: warmRuntime,
+    supported: true,
+    platform: 'ios' as const,
+    modelPath: 'file://ios.gguf',
+    projectorPath: 'file://mmproj.gguf',
+    imageUri: 'file://yarn-a.jpg',
+    photoGeneration: 20,
+    isCurrent: () => true,
+  };
+  const warmFirst = await runVisionAnalysis(warmArgs);
+  assert(warmFirst.status === 'findings', 'first warm-path scan succeeds');
+  const warmSecond = await runVisionAnalysis({ ...warmArgs, imageUri: 'file://yarn-b.jpg', photoGeneration: 21 });
+  assert(warmSecond.status === 'findings', 'second warm-path scan succeeds');
+  equal(warmInits, 1, 'a scan-flow session avoids reloading the text model between photos');
+  await releaseVisionSessionNow();
+  equal(warmInits, 1, 'releasing the session does not reload the model');
 
   resetVisionSessionForTests();
   let sawImage = false;
@@ -934,20 +978,27 @@ function visionContext(
     onRelease?: () => void;
     onComplete?: (params: Record<string, unknown>) => void;
     onProjector?: (useGpu: boolean, path: string) => void;
+    rejectProjectorGpu?: boolean;
     vision?: boolean;
   },
 ): VisionLlamaContext {
+  let multimodal = false;
   return {
     gpu: true,
     devices: [],
     reasonNoGPU: '',
     initMultimodal: async (params) => {
       hooks?.onProjector?.(params.use_gpu === true, params.path);
-      return hooks?.vision !== false;
+      if (hooks?.rejectProjectorGpu && params.use_gpu === true) return false;
+      if (hooks?.vision === false) return false;
+      multimodal = true;
+      return true;
     },
-    isMultimodalEnabled: async () => hooks?.vision !== false,
-    getMultimodalSupport: async () => ({ vision: hooks?.vision !== false, audio: false }),
-    releaseMultimodal: async () => undefined,
+    isMultimodalEnabled: async () => multimodal && hooks?.vision !== false,
+    getMultimodalSupport: async () => ({ vision: multimodal && hooks?.vision !== false, audio: false }),
+    releaseMultimodal: async () => {
+      multimodal = false;
+    },
     completion: async (params) => {
       hooks?.onComplete?.(params);
       return { text };

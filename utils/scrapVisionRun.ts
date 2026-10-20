@@ -17,14 +17,19 @@ import type { PatternDraftCheck, PatternDraftRequest } from '@/utils/scrapPatter
 import { isLocalScrapAiSupported } from '@/utils/scrapYarnAi';
 import {
   cancelActiveVisionAnalysis,
+  disposeVisionWarmContext,
+  preloadVisionSession as preloadVisionSessionCore,
+  releaseVisionSession,
+  releaseVisionSessionNow,
   runPatternDraft,
   runVisionAnalysis,
   type VisionAnalysisResult,
   type VisionLlamaRuntime,
+  type VisionSessionPaths,
   type VisionSessionPlatform,
 } from '@/utils/scrapVisionSession';
 
-export { cancelActiveVisionAnalysis };
+export { cancelActiveVisionAnalysis, disposeVisionWarmContext, releaseVisionSession, releaseVisionSessionNow };
 
 const progressListeners = new Set<(update: ModelTransferProgress) => void>();
 let preparing: Promise<{ textPath: string; projectorPath: string }> | null = null;
@@ -68,6 +73,31 @@ function publishVisionStatus(next: VisionModelStatus, force = false): void {
 /** Start the platform vision download without blocking launch. A later scan joins the same download. */
 export function prefetchVisionModels(): void {
   void ensureVisionPair().catch(() => undefined);
+}
+
+function visionSessionSpec(): VisionSessionPaths | null {
+  const platform = sessionPlatform();
+  const runtime = loadVisionRuntime();
+  if (!isLocalScrapAiSupported() || !runtime || !visionModelPair(platform)) return null;
+  return { runtime, platform, modelPath: '', projectorPath: '' };
+}
+
+/** Warm the on-device vision stack while the leftover sheet is visible. */
+export async function preloadVisionSession(): Promise<void> {
+  const head = visionSessionSpec();
+  if (!head) return;
+  let paths: { textPath: string; projectorPath: string };
+  try {
+    paths = await ensureVisionPair();
+  } catch {
+    return;
+  }
+  return preloadVisionSessionCore({
+    runtime: head.runtime,
+    platform: head.platform,
+    modelPath: paths.textPath,
+    projectorPath: paths.projectorPath,
+  });
 }
 
 export function ensureVisionPair(

@@ -5,7 +5,9 @@
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { Image } from 'react-native';
 
-const LONG_EDGE = 768;
+import { VISION_PHOTO_LONG_EDGE } from '@/utils/scrapVisionSession';
+
+const LONG_EDGE = VISION_PHOTO_LONG_EDGE;
 
 export async function prepareVisionPhoto(uri: string): Promise<string> {
   const size = await readImageSize(uri);

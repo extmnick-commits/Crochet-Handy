@@ -2,7 +2,7 @@
  * One on-device vision pass. The photo is a local file URI in the user message.
  * A failed or unsupported device does not receive preset findings.
  */
-import { withScrapEngineLock, ScrapEngineBusyError, resetScrapEngineLockForTests } from '@/utils/scrapModelTransfer';
+import { registerScrapIdleCleanup, withScrapEngineLock, ScrapEngineBusyError, resetScrapEngineLockForTests } from '@/utils/scrapModelTransfer';
 import {
   checkPatternDraft,
   patternDraftPrompt,
@@ -21,8 +21,15 @@ import {
 
 export const VISION_TIMEOUT_MS = 300_000;
 export const VISION_TIMEOUT_ANDROID_MS = 720_000;
-export const VISION_CONTEXT_TOKENS = 4096;
-export const VISION_IMAGE_TOKENS = 512;
+/** Idle release when no scan-flow holder has the leftover sheet open. */
+export const VISION_IDLE_MS = 45_000;
+/** Grace period after the leftover sheet closes before native memory is freed. */
+export const VISION_FLOW_RELEASE_IDLE_MS = 60_000;
+export const VISION_CONTEXT_TOKENS = 1536;
+export const VISION_IMAGE_TOKENS = 256;
+export const VISION_COMPLETION_MAX_TOKENS = 180;
+/** Long edge for photos before multimodal encode. */
+export const VISION_PHOTO_LONG_EDGE = 448;
 
 const visionDevLog = (label: string, detail: string): void => {
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
@@ -84,10 +91,199 @@ type SessionControl = {
 let activeControl: SessionControl | null = null;
 let inFlight: Promise<VisionAnalysisResult> | null = null;
 
+type WarmCache = {
+  context: VisionLlamaContext;
+  modelPath: string;
+  projectorPath: string | null;
+  platform: VisionSessionPlatform;
+  runtime: VisionLlamaRuntime;
+};
+
+export type VisionSessionPaths = {
+  runtime: VisionLlamaRuntime;
+  platform: VisionSessionPlatform;
+  modelPath: string;
+  projectorPath: string;
+};
+
+class VisionSessionPool {
+  private cached: WarmCache | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private unregister: (() => void) | null = null;
+  private releasing: Promise<void> | null = null;
+  private revision = 0;
+  private flowHolds = 0;
+  private preloadPromise: Promise<void> | null = null;
+
+  beginJob(): number {
+    return this.revision;
+  }
+
+  pinScanFlow(): void {
+    this.flowHolds += 1;
+    this.clearIdleTimer();
+    this.unregister?.();
+    this.unregister = null;
+  }
+
+  private unpinScanFlow(): void {
+    this.flowHolds = Math.max(0, this.flowHolds - 1);
+  }
+
+  isPrepared(spec: VisionSessionPaths): boolean {
+    return (
+      this.cached != null &&
+      this.cached.runtime === spec.runtime &&
+      this.cached.modelPath === spec.modelPath &&
+      this.cached.platform === spec.platform &&
+      this.cached.projectorPath === spec.projectorPath
+    );
+  }
+
+  releaseNow = async (): Promise<void> => {
+    this.revision += 1;
+    this.flowHolds = 0;
+    this.preloadPromise = null;
+    this.clearIdleTimer();
+    await this.releaseIdle();
+  };
+
+  /** After the leftover sheet closes, drop the model once idle unless the sheet reopens. */
+  scheduleScanFlowRelease(): void {
+    this.unpinScanFlow();
+    if (this.flowHolds > 0) return;
+    this.scheduleIdleRelease(VISION_FLOW_RELEASE_IDLE_MS);
+  }
+
+  private scheduleIdleRelease(idleMs: number): void {
+    this.clearIdleTimer();
+    this.unregister?.();
+    this.unregister = registerScrapIdleCleanup('load', this.releaseNow);
+    this.idleTimer = setTimeout(() => {
+      void this.releaseNow().catch(() => undefined);
+    }, idleMs);
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  private async releaseIdle(): Promise<void> {
+    this.clearIdleTimer();
+    const cached = this.cached;
+    this.cached = null;
+    if (cached) {
+      this.releasing = releaseContext(cached.context).then(() => undefined);
+    }
+    const pending = this.releasing;
+    if (pending) {
+      await pending;
+      if (this.releasing === pending) this.releasing = null;
+    }
+    this.unregister?.();
+    this.unregister = null;
+  }
+
+  async ensurePrepared(args: {
+    runtime: VisionLlamaRuntime;
+    modelPath: string;
+    projectorPath: string | null;
+    platform: VisionSessionPlatform;
+    needVision: boolean;
+  }): Promise<VisionLlamaContext> {
+    this.clearIdleTimer();
+    this.unregister?.();
+    this.unregister = null;
+    if (this.releasing) await this.releasing;
+    const mismatch =
+      !this.cached ||
+      this.cached.runtime !== args.runtime ||
+      this.cached.modelPath !== args.modelPath ||
+      this.cached.platform !== args.platform;
+    if (mismatch) await this.releaseIdle();
+    let context = this.cached?.context ?? null;
+    if (!context) {
+      context = await initVisionContext(args.runtime, args.modelPath, args.platform);
+      this.cached = {
+        context,
+        modelPath: args.modelPath,
+        projectorPath: null,
+        platform: args.platform,
+        runtime: args.runtime,
+      };
+    }
+    if (args.needVision && args.projectorPath) {
+      const ready = await ensureVisionMultimodal(context, args.platform, args.projectorPath);
+      if (!ready) throw new Error('vision-multimodal-unavailable');
+      if (this.cached) this.cached.projectorPath = args.projectorPath;
+    }
+    return context;
+  }
+
+  runPreload(spec: VisionSessionPaths): Promise<void> {
+    if (this.isPrepared(spec)) return Promise.resolve();
+    if (this.preloadPromise) return this.preloadPromise;
+    const pending = withScrapEngineLock('load', async () => {
+      await this.ensurePrepared({
+        runtime: spec.runtime,
+        modelPath: spec.modelPath,
+        projectorPath: spec.projectorPath,
+        platform: spec.platform,
+        needVision: true,
+      });
+    }).finally(() => {
+      if (this.preloadPromise === pending) this.preloadPromise = null;
+    });
+    this.preloadPromise = pending;
+    return pending;
+  }
+
+  async finishJob(successful: boolean, revision: number): Promise<void> {
+    if (revision !== this.revision) return;
+    this.clearIdleTimer();
+    this.unregister?.();
+    this.unregister = null;
+    if (this.flowHolds > 0) return;
+    if (!successful) {
+      await this.releaseIdle();
+      return;
+    }
+    this.scheduleIdleRelease(VISION_IDLE_MS);
+  }
+}
+
+const visionSession = new VisionSessionPool();
+
+/** Load the vision text model and projector while the leftover sheet is open. */
+export function preloadVisionSession(spec: VisionSessionPaths): Promise<void> {
+  visionSession.pinScanFlow();
+  return visionSession.runPreload(spec).catch(() => {
+    visionSession.scheduleScanFlowRelease();
+    return undefined;
+  });
+}
+
+/** Start a 60s idle timer before releasing after the sheet closes. Safe to call repeatedly. */
+export function releaseVisionSession(): void {
+  visionSession.scheduleScanFlowRelease();
+}
+
+/** Drop the cached context immediately (background, memory pressure, or tests). */
+export function releaseVisionSessionNow(): Promise<void> {
+  return visionSession.releaseNow();
+}
+
+/** @deprecated Use `releaseVisionSessionNow`. */
+export function disposeVisionWarmContext(): Promise<void> {
+  return releaseVisionSessionNow();
+}
+
 export function resetVisionSessionForTests(): void {
   activeControl?.cancel();
   activeControl = null;
   inFlight = null;
+  void visionSession.releaseNow();
   resetScrapEngineLockForTests();
 }
 
@@ -127,25 +323,29 @@ async function executeVision(args: VisionAnalysisArgs): Promise<VisionAnalysisRe
     return await withScrapEngineLock('load', async () => {
       let context: VisionLlamaContext | null = null;
       let loaded = false;
+      let successful = false;
+      const revision = visionSession.beginJob();
       try {
         args.onPhase?.('load');
-        context = await initVisionContext(args.runtime!, args.modelPath, args.platform);
+        try {
+          context = await visionSession.ensurePrepared({
+            runtime: args.runtime!,
+            modelPath: args.modelPath,
+            projectorPath: args.projectorPath,
+            platform: args.platform,
+            needVision: true,
+          });
+        } catch (error) {
+          if (error instanceof Error && error.message === 'vision-multimodal-unavailable') {
+            return {
+              status: 'failed',
+              message: 'The vision model did not load on this device, so the photo was not analyzed.',
+            };
+          }
+          throw error;
+        }
         loaded = true;
         control.context = context;
-        if (control.cancelled) return { status: 'cancelled' };
-        if (!args.isCurrent()) return { status: 'discarded' };
-        const enabled = await context.initMultimodal({
-          path: args.projectorPath,
-          use_gpu: args.platform === 'ios',
-          image_max_tokens: VISION_IMAGE_TOKENS,
-        });
-        const support = enabled ? await context.getMultimodalSupport() : { vision: false, audio: false };
-        if (!enabled || !support.vision) {
-          return {
-            status: 'failed',
-            message: 'The vision model did not load on this device, so the photo was not analyzed.',
-          };
-        }
         if (control.cancelled) return { status: 'cancelled' };
         if (!args.isCurrent()) return { status: 'discarded' };
         args.onPhase?.('read');
@@ -170,6 +370,7 @@ async function executeVision(args: VisionAnalysisArgs): Promise<VisionAnalysisRe
           visionDevLog('[vision] unusable reply', outcome.text.slice(0, 400));
           return { status: 'failed', message: 'Image analysis did not return findings this app can use. The photo was not analyzed.' };
         }
+        successful = true;
         return { status: 'findings', findings, photoGeneration: args.photoGeneration };
       } catch (error) {
         if (control.cancelled) return { status: 'cancelled' };
@@ -191,7 +392,8 @@ async function executeVision(args: VisionAnalysisArgs): Promise<VisionAnalysisRe
         return { status: 'failed', message: 'Image analysis could not finish. The photo was not analyzed.' };
       } finally {
         control.context = null;
-        if (context) await releaseContext(context);
+        if (context) await awaitStopCompletion(context);
+        await visionSession.finishJob(successful, revision);
       }
     });
   } catch (error) {
@@ -217,7 +419,7 @@ export function visionCompletionParams(imageUri: string): Record<string, unknown
         ],
       },
     ],
-    n_predict: 320,
+    n_predict: VISION_COMPLETION_MAX_TOKENS,
     temperature: 0.1,
     enable_thinking: false,
     reasoning_format: 'none',
@@ -232,6 +434,39 @@ export function visionCompletionParams(imageUri: string): Record<string, unknown
 
 export function visionInferenceTimeoutMs(platform: VisionSessionPlatform): number {
   return platform === 'android' ? VISION_TIMEOUT_ANDROID_MS : VISION_TIMEOUT_MS;
+}
+
+async function ensureVisionMultimodal(
+  context: VisionLlamaContext,
+  platform: VisionSessionPlatform,
+  projectorPath: string,
+): Promise<boolean> {
+  try {
+    if (await context.isMultimodalEnabled()) {
+      const support = await context.getMultimodalSupport();
+      if (support.vision) return true;
+    }
+  } catch {
+    // Fall through and load the projector again.
+  }
+  try {
+    await Promise.resolve(context.releaseMultimodal());
+  } catch {
+    // Projector may not have been loaded yet.
+  }
+  const attempts: { use_gpu: boolean }[] =
+    platform === 'android' ? [{ use_gpu: true }, { use_gpu: false }] : [{ use_gpu: platform === 'ios' }];
+  for (const attempt of attempts) {
+    const enabled = await context.initMultimodal({
+      path: projectorPath,
+      use_gpu: attempt.use_gpu,
+      image_max_tokens: VISION_IMAGE_TOKENS,
+    });
+    if (!enabled) continue;
+    const support = await context.getMultimodalSupport();
+    if (support.vision) return true;
+  }
+  return false;
 }
 
 async function initVisionContext(
@@ -275,8 +510,16 @@ export async function runPatternDraft(args: {
   try {
     return await withScrapEngineLock('load', async () => {
       let context: VisionLlamaContext | null = null;
+      let successful = false;
+      const revision = visionSession.beginJob();
       try {
-        context = await initVisionContext(args.runtime!, args.modelPath, args.platform);
+        context = await visionSession.ensurePrepared({
+          runtime: args.runtime!,
+          modelPath: args.modelPath,
+          projectorPath: null,
+          platform: args.platform,
+          needVision: false,
+        });
         control.context = context;
         if (control.cancelled) return { kind: 'cancelled' };
         if (!args.isCurrent()) return { kind: 'discarded' };
@@ -313,13 +556,15 @@ export async function runPatternDraft(args: {
         if (outcome.kind === 'timeout') {
           return { kind: 'failed', message: 'The draft took too long and was stopped.' };
         }
+        if (outcome.kind === 'ok') successful = true;
         return checkPatternDraft(outcome.text, args.request);
       } catch {
         if (control.cancelled) return { kind: 'cancelled' };
         return { kind: 'failed', message: 'The draft could not be created on this device.' };
       } finally {
         control.context = null;
-        if (context) await releaseContext(context);
+        if (context) await awaitStopCompletion(context);
+        await visionSession.finishJob(successful, revision);
       }
     });
   } catch (error) {
