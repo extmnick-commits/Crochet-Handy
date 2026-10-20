@@ -6,6 +6,7 @@
 import type { VideoBookmark } from '../utils/chapters';
 import { derivePatternSummary } from '../utils/patternSummary';
 import {
+  MAX_PATTERN_COMMENTS,
   buildPattern,
   type CrochetPattern,
   type CrochetPersistedSlice,
@@ -5636,7 +5637,9 @@ export function createSeedData(): CrochetPersistedSlice {
         isPrivate: false,
       },
     ],
-    patternComments: patterns.flatMap(seedCommunityReviewsForPattern),
+    patternComments: patterns
+      .flatMap(seedCommunityReviewsForPattern)
+      .slice(0, Math.max(0, MAX_PATTERN_COMMENTS - 1)),
     followedCreators: [],
   };
 }

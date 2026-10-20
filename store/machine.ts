@@ -49,7 +49,8 @@ const MAX_FOLDER_NAME_CHARS = 64;
 const MAX_FOLDER_DESC_CHARS = 240;
 const MAX_IDEA_FOLDERS = 48;
 const MAX_PATTERN_COMMENT_BODY_CHARS = 500;
-const MAX_PATTERN_COMMENTS = 240;
+/** Persisted comment cap; seed and repair must stay at or below this. */
+export const MAX_PATTERN_COMMENTS = 240;
 /** Caps a corrupted timestamp that landed in the seconds field (~11 years). */
 const MAX_ACCUMULATED_SECONDS = 100_000 * 60 * 60;
 
