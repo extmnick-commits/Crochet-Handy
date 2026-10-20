@@ -54,6 +54,11 @@ on:
           - amigurumi
           - wearables
           - blankets
+          - beanies
+          - socks
+          - coasters
+          - bags
+          - home-decor
       count:
         description: 'New patterns to add (scrape modes only)'
         required: true

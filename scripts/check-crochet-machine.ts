@@ -1272,6 +1272,18 @@ assert(
   'scrape topic tag blankets matches the blankets chip',
 );
 assert(
+  matchesPatternCategory(categoryFeedPattern('Mug rug set', ['coasters']), 'coasters'),
+  'scrape topic tag coasters matches the coasters chip',
+);
+assert(
+  matchesPatternCategory(categoryFeedPattern('Market tote', ['bag']), 'bags'),
+  'legacy bag tag matches the bags chip',
+);
+assert(
+  patternFeedCategories(new Date('2026-07-01T12:00:00')).some((item) => item.id === 'beanies'),
+  'patterns feed includes beanies chip',
+);
+assert(
   patternFeedCategories(new Date('2026-07-01T12:00:00')).some((item) => item.id === 'blankets'),
   'patterns feed always includes blankets chip',
 );

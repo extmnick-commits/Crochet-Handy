@@ -16,8 +16,11 @@ import {
   getActiveHolidayTopics,
   getHolidayTopic,
   holidayChipLabel,
+  EVERGREEN_SCRAPE_CATEGORY_IDS,
+  isEvergreenScrapeCategory,
   isHolidayTopicId,
   scrapeCategoryKeywords,
+  type EvergreenScrapeCategoryId,
   type HolidayTopicId,
 } from '@/utils/holidayTopics';
 import { derivePatternSummary } from '@/utils/patternSummary';
@@ -26,10 +29,19 @@ export type CorePatternCategoryId =
   | 'following'
   | 'for-you'
   | 'trending'
-  | 'amigurumi'
-  | 'wearables'
-  | 'blankets';
+  | EvergreenScrapeCategoryId;
 export type PatternCategoryId = CorePatternCategoryId | HolidayTopicId;
+
+const EVERGREEN_CHIP_LABELS: Record<EvergreenScrapeCategoryId, string> = {
+  amigurumi: 'Amigurumi',
+  wearables: 'Wearables',
+  blankets: 'Blankets',
+  beanies: 'Beanies',
+  socks: 'Socks',
+  coasters: 'Coasters',
+  bags: 'Bags',
+  'home-decor': 'Home',
+};
 
 export type PatternFeedCategory = { id: PatternCategoryId; label: string };
 
@@ -94,9 +106,7 @@ export function patternFeedCategories(date = new Date()): readonly PatternFeedCa
     { id: 'for-you', label: 'For You' },
     { id: 'trending', label: 'Trending' },
     ...seasonal,
-    { id: 'amigurumi', label: 'Amigurumi' },
-    { id: 'wearables', label: 'Wearables' },
-    { id: 'blankets', label: 'Blankets' },
+    ...EVERGREEN_SCRAPE_CATEGORY_IDS.map((id) => ({ id, label: EVERGREEN_CHIP_LABELS[id] })),
   ];
 }
 
@@ -369,7 +379,7 @@ export function matchesPatternCategory(pattern: CrochetPattern, category: Patter
   if (isHolidayTopicId(category)) {
     return matchesScrapeCategory(pattern, category);
   }
-  if (category === 'amigurumi' || category === 'wearables' || category === 'blankets') {
+  if (isEvergreenScrapeCategory(category)) {
     return matchesScrapeCategory(pattern, category);
   }
   return true;

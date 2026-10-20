@@ -224,8 +224,41 @@ export function scrapeCategoryKeywords(): Record<string, readonly string[]> {
       'dress',
     ],
     blankets: ['blanket', 'blankets', 'afghan', 'throw'],
-    bag: ['bag', 'tote', 'purse', 'pouch'],
+    bags: ['bag', 'bags', 'tote', 'purse', 'pouch', 'market bag'],
+    beanies: ['beanie', 'beanies', 'slouchy hat', 'bucket hat', 'beret'],
+    socks: ['sock', 'socks', 'slipper', 'slippers', 'boot cuff', 'leg warmer'],
+    coasters: ['coaster', 'coasters', 'mug rug', 'dishcloth', 'pot holder', 'trivet', 'washcloth'],
+    'home-decor': [
+      'home decor',
+      'basket',
+      'baskets',
+      'pillow',
+      'wall hanging',
+      'plant hanger',
+      'table runner',
+      'placemat',
+    ],
   };
+}
+
+/** Evergreen catalog buckets (Patterns tab chips + manual scrape topics). */
+export const EVERGREEN_SCRAPE_CATEGORY_IDS = [
+  'amigurumi',
+  'wearables',
+  'blankets',
+  'beanies',
+  'socks',
+  'coasters',
+  'bags',
+  'home-decor',
+] as const;
+
+export type EvergreenScrapeCategoryId = (typeof EVERGREEN_SCRAPE_CATEGORY_IDS)[number];
+
+const EVERGREEN_SCRAPE_CATEGORY_SET = new Set<string>(EVERGREEN_SCRAPE_CATEGORY_IDS);
+
+export function isEvergreenScrapeCategory(value: string): value is EvergreenScrapeCategoryId {
+  return EVERGREEN_SCRAPE_CATEGORY_SET.has(value.trim().toLowerCase());
 }
 
 /** GitHub Actions `pattern-scraper.yml` topic dropdown — keep in sync. */
@@ -238,9 +271,7 @@ export const WORKFLOW_SCRAPE_TOPIC_OPTIONS = [
   'valentines',
   'easter',
   'stpatricks',
-  'amigurumi',
-  'wearables',
-  'blankets',
+  ...EVERGREEN_SCRAPE_CATEGORY_IDS,
 ] as const;
 
 export type WorkflowScrapeTopicOption = (typeof WORKFLOW_SCRAPE_TOPIC_OPTIONS)[number];
@@ -256,7 +287,7 @@ export function isExplicitManualScrapeTopic(topic: string): boolean {
   const normalized = topic.trim().toLowerCase();
   if (normalized === 'trending' || normalized === 'seasonal') return false;
   if (getHolidayTopic(normalized)) return true;
-  return normalized === 'amigurumi' || normalized === 'wearables' || normalized === 'blankets';
+  return isEvergreenScrapeCategory(normalized);
 }
 
 /** Tag stamped on scraped patterns so holiday/category filters match the workflow topic. */
@@ -265,7 +296,7 @@ export function primaryTagForScrapeTopic(resolvedTopic: string): string | undefi
   if (!topic || topic === 'trending') return undefined;
   const holiday = getHolidayTopic(topic);
   if (holiday) return holiday.tag;
-  if (topic === 'amigurumi' || topic === 'wearables' || topic === 'blankets') return topic;
+  if (isEvergreenScrapeCategory(topic)) return topic;
   return undefined;
 }
 
@@ -319,6 +350,27 @@ export function searchQueryForScrapeTopic(topic: string): string {
   }
   if (topic === 'blankets' || topic === 'blanket') {
     return '("crochet blanket" | "crochet granny square") ("tutorial" | "pattern") -shorts';
+  }
+  if (topic === 'beanies') {
+    return '("crochet beanie" | "crochet hat" | "crochet beret") ("tutorial" | "pattern") -shorts';
+  }
+  if (topic === 'socks') {
+    return '("crochet socks" | "crochet slippers" | "crochet leg warmers") ("tutorial" | "pattern") -shorts';
+  }
+  if (topic === 'coasters') {
+    return (
+      '("crochet coaster" | "crochet dishcloth" | "crochet mug rug" | "crochet pot holder") ' +
+      '("tutorial" | "pattern") -shorts'
+    );
+  }
+  if (topic === 'bags') {
+    return '("crochet bag" | "crochet tote" | "crochet market bag") ("tutorial" | "pattern") -shorts';
+  }
+  if (topic === 'home-decor') {
+    return (
+      '("crochet basket" | "crochet pillow" | "crochet wall hanging" | "crochet home decor") ' +
+      '("tutorial" | "pattern") -shorts'
+    );
   }
   return GENERIC_TRENDING_QUERY;
 }

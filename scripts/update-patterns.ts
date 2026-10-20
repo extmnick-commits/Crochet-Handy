@@ -7,7 +7,7 @@
  * Local LM Studio: npm run update-patterns -- --local
  *
  * Batch size: SCRAPE_COUNT or --count (default 10)
- * Topic: SEARCH_TOPIC or --topic (trending | seasonal | amigurumi | wearables | blankets | holiday ids)
+ * Topic: SEARCH_TOPIC or --topic (trending | seasonal | evergreen scrape ids | holiday ids)
  * Seasonal: trending/seasonal auto-target the active holiday window (e.g. halloween in October). Set SCRAPE_SEASONAL=0 to disable.
  * Thumbnail vision: cloud Gemini pass drops foreign on-image text and yarn-only thumbnails. Set SCRAPE_SKIP_THUMBNAIL_CHECK=1 to skip.
  * Dedup: skips any YouTube video id already in store/seed.ts (and catalog/pattern-catalog.json). Paginates search until enough new candidates or SCRAPE_SEARCH_MAX_PAGES.
