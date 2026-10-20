@@ -23,6 +23,8 @@ import {
   resolveScrapeTopic,
   scrapeCategoryKeywords,
   searchQueryForScrapeTopic,
+  VARIETY_SCRAPE_TOPIC_IDS,
+  varietyScrapeQuotas,
   WORKFLOW_SCRAPE_TOPIC_OPTIONS,
 } from '../utils/holidayTopics';
 import { matchesPatternCategory, patternFeedCategories } from '../utils/patternDisplay';
@@ -1223,13 +1225,23 @@ assert(parseCommunityDocument('projects/demo/databases/(default)/documents/commu
 
 const genericTrendingQuery = searchQueryForScrapeTopic('trending');
 for (const topic of WORKFLOW_SCRAPE_TOPIC_OPTIONS) {
-  if (topic === 'trending' || topic === 'seasonal') continue;
+  if (topic === 'trending' || topic === 'seasonal' || topic === 'variety') continue;
   const resolved = resolveScrapeTopic(topic, new Date('2026-07-01T12:00:00'));
   const query = searchQueryForScrapeTopic(resolved);
   assert(query !== genericTrendingQuery, `workflow scrape topic "${topic}" maps to a dedicated YouTube query`);
   const tag = primaryTagForScrapeTopic(resolved);
   assert(tag != null && tag.length > 0, `workflow scrape topic "${topic}" has a primary catalog tag`);
 }
+assert(resolveScrapeTopic('variety', new Date('2026-07-01T12:00:00')) === 'variety', 'variety scrape topic is preserved');
+equal(
+  varietyScrapeQuotas(VARIETY_SCRAPE_TOPIC_IDS.length, 10).reduce((sum, n) => sum + n, 0),
+  10,
+  'variety quotas sum to the search pool size',
+);
+assert(
+  varietyScrapeQuotas(VARIETY_SCRAPE_TOPIC_IDS.length, 10).every((n) => n >= 1),
+  'variety quotas give each bucket at least one slot when pool >= topic count',
+);
 assert(resolveScrapeTopic('halloween', new Date('2026-07-01T12:00:00')) === 'halloween', 'explicit halloween works off-season');
 assert(resolveScrapeTopic('wearables', new Date('2026-10-18T12:00:00')) === 'wearables', 'explicit wearables is not replaced by seasonal trending');
 assert(resolveScrapeTopic('trending', new Date('2026-10-18T12:00:00')) === 'halloween', 'trending follows active holiday in October');

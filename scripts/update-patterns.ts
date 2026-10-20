@@ -7,7 +7,8 @@
  * Local LM Studio: npm run update-patterns -- --local
  *
  * Batch size: SCRAPE_COUNT or --count (default 10)
- * Topic: SEARCH_TOPIC or --topic (trending | seasonal | evergreen scrape ids | holiday ids)
+ * Topic: SEARCH_TOPIC or --topic (trending | seasonal | variety | evergreen scrape ids | holiday ids)
+ * Variety: one run searches beanies, socks, coasters, bags, and home-decor in parallel and tags each video with its bucket.
  * Seasonal: trending/seasonal auto-target the active holiday window (e.g. halloween in October). Set SCRAPE_SEASONAL=0 to disable.
  * Thumbnail vision: cloud Gemini pass drops foreign on-image text and yarn-only thumbnails. Set SCRAPE_SKIP_THUMBNAIL_CHECK=1 to skip.
  * Dedup: skips any YouTube video id already in store/seed.ts (and catalog/pattern-catalog.json). Paginates search until enough new candidates or SCRAPE_SEARCH_MAX_PAGES.
@@ -25,8 +26,11 @@ import { type VideoBookmark } from '../utils/chapters';
 import {
   applyPrimaryScrapeTopicTag,
   getActiveHolidayTopic,
+  isVarietyScrapeTopic,
   resolveScrapeTopic,
   searchQueryForScrapeTopic,
+  VARIETY_SCRAPE_TOPIC_IDS,
+  varietyScrapeQuotas,
 } from '../utils/holidayTopics';
 import { isValidEnglishYoutubeSnippet } from '../utils/patternEnglishFilter';
 import { batchExtractionSystemPrompt, mapExtractedPattern } from '../utils/patternExtraction';
@@ -276,6 +280,7 @@ export async function collectNewSearchVideoIds(
   apiKey: string,
   existingVideoIds: ReadonlySet<string>,
   poolCap: number,
+  scrapeTopic: string = SEARCH_TOPIC,
 ): Promise<{ ids: string[]; skippedKnown: number; pagesFetched: number }> {
   const ids: string[] = [];
   const blocked = new Set(existingVideoIds);
@@ -290,7 +295,7 @@ export async function collectNewSearchVideoIds(
       part: 'snippet',
       type: 'video',
       relevanceLanguage: 'en',
-      q: searchQueryForScrapeTopic(SEARCH_TOPIC),
+      q: searchQueryForScrapeTopic(scrapeTopic),
       videoCategoryId: YOUTUBE_VIDEO_CATEGORY_HOWTO,
       videoDuration: 'medium',
       videoEmbeddable: 'true',
@@ -324,6 +329,42 @@ export async function collectNewSearchVideoIds(
   return { ids, skippedKnown, pagesFetched };
 }
 
+export async function collectVarietySearchVideoIds(
+  apiKey: string,
+  existingVideoIds: ReadonlySet<string>,
+  poolCap: number,
+  topicIds: readonly string[] = VARIETY_SCRAPE_TOPIC_IDS,
+): Promise<{
+  ids: string[];
+  topicByVideoId: Map<string, string>;
+  skippedKnown: number;
+  pagesFetched: number;
+}> {
+  const topicByVideoId = new Map<string, string>();
+  const ids: string[] = [];
+  const blocked = new Set(existingVideoIds);
+  let skippedKnown = 0;
+  let pagesFetched = 0;
+  const quotas = varietyScrapeQuotas(topicIds.length, poolCap);
+
+  for (let index = 0; index < topicIds.length; index += 1) {
+    const subTopic = topicIds[index];
+    const want = quotas[index] ?? 0;
+    if (!subTopic || want <= 0) continue;
+
+    const slice = await collectNewSearchVideoIds(apiKey, blocked, want, subTopic);
+    skippedKnown += slice.skippedKnown;
+    pagesFetched += slice.pagesFetched;
+    for (const videoId of slice.ids) {
+      blocked.add(videoId);
+      topicByVideoId.set(videoId, subTopic);
+      ids.push(videoId);
+    }
+  }
+
+  return { ids, topicByVideoId, skippedKnown, pagesFetched };
+}
+
 async function fetchVideoDetailsBatched(
   apiKey: string,
   videoIds: readonly string[],
@@ -341,19 +382,44 @@ async function fetchVideoDetailsBatched(
   return items;
 }
 
+export type TrendingVideoFetch = {
+  videos: YouTubeVideoItem[];
+  topicByVideoId: ReadonlyMap<string, string>;
+};
+
 /** Fetches embeddable, syndicated, medium-length crochet tutorials (no Shorts). */
 export async function getTrendingVideos(
   apiKey: string,
   existingVideoIds: ReadonlySet<string> = new Set(),
-): Promise<YouTubeVideoItem[]> {
+): Promise<TrendingVideoFetch> {
   const batchSize = Number.isFinite(BATCH_SIZE) && BATCH_SIZE > 0 ? BATCH_SIZE : 10;
   const poolCap = Math.max(batchSize * THUMBNAIL_POOL_MULTIPLIER, THUMBNAIL_POOL_MIN);
+  const topicByVideoId = new Map<string, string>();
 
-  const { ids, skippedKnown, pagesFetched } = await collectNewSearchVideoIds(
-    apiKey,
-    existingVideoIds,
-    poolCap,
-  );
+  let ids: string[] = [];
+  let skippedKnown = 0;
+  let pagesFetched = 0;
+
+  if (isVarietyScrapeTopic(SEARCH_TOPIC)) {
+    const variety = await collectVarietySearchVideoIds(apiKey, existingVideoIds, poolCap);
+    ids = variety.ids;
+    skippedKnown = variety.skippedKnown;
+    pagesFetched = variety.pagesFetched;
+    for (const [videoId, subTopic] of variety.topicByVideoId) {
+      topicByVideoId.set(videoId, subTopic);
+    }
+    logTimestamp(
+      `Variety scrape buckets: ${VARIETY_SCRAPE_TOPIC_IDS.join(', ')} (${ids.length} pooled candidate id(s))`,
+    );
+  } else {
+    const single = await collectNewSearchVideoIds(apiKey, existingVideoIds, poolCap, SEARCH_TOPIC);
+    ids = single.ids;
+    skippedKnown = single.skippedKnown;
+    pagesFetched = single.pagesFetched;
+    for (const videoId of ids) {
+      topicByVideoId.set(videoId, SEARCH_TOPIC);
+    }
+  }
 
   if (skippedKnown > 0 || pagesFetched > 1) {
     logTimestamp(
@@ -362,12 +428,12 @@ export async function getTrendingVideos(
   }
 
   if (ids.length === 0) {
-    return [];
+    return { videos: [], topicByVideoId };
   }
 
   const details = await fetchVideoDetailsBatched(apiKey, ids);
 
-  return details
+  const videos = details
     .filter((item) => {
       const videoId = item.id ?? '';
       return videoId.length > 0 && !existingVideoIds.has(videoId);
@@ -379,6 +445,8 @@ export async function getTrendingVideos(
         (b.snippet?.description?.length ?? 0) - (a.snippet?.description?.length ?? 0),
     )
     .slice(0, poolCap);
+
+  return { videos, topicByVideoId };
 }
 
 export function shouldSkipThumbnailLanguageCheck(isLocal: boolean): boolean {
@@ -467,6 +535,7 @@ export function mapBatchPatternsToSeed(
   batch: AiBatchPatternPayload[],
   watchBookmarksByVideoId: ReadonlyMap<string, VideoBookmark[]> = new Map(),
   resolvedScrapeTopic?: string,
+  topicByVideoId: ReadonlyMap<string, string> = new Map(),
 ): SeedPattern[] {
   const byIndex = new Map<number, AiPatternPayload>();
   for (const item of batch) {
@@ -481,10 +550,12 @@ export function mapBatchPatternsToSeed(
       byIndex.get(index) ?? {},
       watchBookmarksByVideoId.get(video.id ?? '') ?? [],
     );
-    if (!resolvedScrapeTopic) return pattern;
+    const videoId = video.id ?? '';
+    const tagTopic = topicByVideoId.get(videoId) ?? resolvedScrapeTopic;
+    if (!tagTopic || isVarietyScrapeTopic(tagTopic)) return pattern;
     return {
       ...pattern,
-      tags: applyPrimaryScrapeTopicTag(pattern.tags, resolvedScrapeTopic),
+      tags: applyPrimaryScrapeTopicTag(pattern.tags, tagTopic),
     };
   });
 }
@@ -723,7 +794,7 @@ export async function main(): Promise<void> {
     logTimestamp(
       `YouTube fetch starting (topic: ${SEARCH_TOPIC}${seasonalNote}, batch: ${BATCH_SIZE}, catalog: ${existingIds.size})…`,
     );
-    const candidatePool = await getTrendingVideos(youtubeKey, existingIds);
+    const { videos: candidatePool, topicByVideoId } = await getTrendingVideos(youtubeKey, existingIds);
     if (candidatePool.length === 0) {
       logTimestamp(
         `Added 0 new patterns. Catalog now has total of ${existingIds.size} patterns.`,
@@ -780,7 +851,7 @@ export async function main(): Promise<void> {
 
     const seen = new Set(existingIds);
     const patterns = withUniquePatternIds(
-      mapBatchPatternsToSeed(videos, batch, watchBookmarksByVideoId, SEARCH_TOPIC).filter((pattern) => {
+      mapBatchPatternsToSeed(videos, batch, watchBookmarksByVideoId, SEARCH_TOPIC, topicByVideoId).filter((pattern) => {
         if (!pattern.videoId || seen.has(pattern.videoId)) return false;
         seen.add(pattern.videoId);
         return true;

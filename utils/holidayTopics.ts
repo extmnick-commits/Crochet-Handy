@@ -261,10 +261,32 @@ export function isEvergreenScrapeCategory(value: string): value is EvergreenScra
   return EVERGREEN_SCRAPE_CATEGORY_SET.has(value.trim().toLowerCase());
 }
 
+/** One scrape run: mix beanies, socks, coasters, bags, and home decor (even split). */
+export const VARIETY_SCRAPE_TOPIC_IDS: readonly EvergreenScrapeCategoryId[] = [
+  'beanies',
+  'socks',
+  'coasters',
+  'bags',
+  'home-decor',
+];
+
+export function isVarietyScrapeTopic(topic: string): boolean {
+  return topic.trim().toLowerCase() === 'variety';
+}
+
+/** Split search pool slots across topics as evenly as possible (earlier topics get +1 remainder). */
+export function varietyScrapeQuotas(topicCount: number, total: number): number[] {
+  if (topicCount <= 0 || total <= 0) return [];
+  const base = Math.floor(total / topicCount);
+  const extra = total % topicCount;
+  return Array.from({ length: topicCount }, (_, index) => base + (index < extra ? 1 : 0));
+}
+
 /** GitHub Actions `pattern-scraper.yml` topic dropdown — keep in sync. */
 export const WORKFLOW_SCRAPE_TOPIC_OPTIONS = [
   'trending',
   'seasonal',
+  'variety',
   'halloween',
   'christmas',
   'thanksgiving',
@@ -286,6 +308,7 @@ export function isWorkflowScrapeTopic(value: string): value is WorkflowScrapeTop
 export function isExplicitManualScrapeTopic(topic: string): boolean {
   const normalized = topic.trim().toLowerCase();
   if (normalized === 'trending' || normalized === 'seasonal') return false;
+  if (isVarietyScrapeTopic(normalized)) return true;
   if (getHolidayTopic(normalized)) return true;
   return isEvergreenScrapeCategory(normalized);
 }
@@ -293,7 +316,7 @@ export function isExplicitManualScrapeTopic(topic: string): boolean {
 /** Tag stamped on scraped patterns so holiday/category filters match the workflow topic. */
 export function primaryTagForScrapeTopic(resolvedTopic: string): string | undefined {
   const topic = resolvedTopic.trim().toLowerCase();
-  if (!topic || topic === 'trending') return undefined;
+  if (!topic || topic === 'trending' || isVarietyScrapeTopic(topic)) return undefined;
   const holiday = getHolidayTopic(topic);
   if (holiday) return holiday.tag;
   if (isEvergreenScrapeCategory(topic)) return topic;
@@ -340,6 +363,9 @@ const GENERIC_TRENDING_QUERY =
 
 /** Long-form project tutorials only; API params also block Shorts and non-embeddable videos. */
 export function searchQueryForScrapeTopic(topic: string): string {
+  if (isVarietyScrapeTopic(topic)) {
+    return GENERIC_TRENDING_QUERY;
+  }
   const holiday = getHolidayTopic(topic);
   if (holiday) return holiday.searchQuery;
   if (topic === 'amigurumi') {
