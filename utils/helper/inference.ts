@@ -81,13 +81,16 @@ export class HelperInferenceEngine {
         context = this.cached?.context ?? null;
         if (!context) {
           input.onPhase?.('Loading local helper… First question can take a moment.');
-          const params = { model: input.modelPath, n_ctx: 2048, n_gpu_layers: 99, n_batch: 128, n_parallel: 1, ctx_shift: false as const };
-          try { context = await input.runtime.initLlama(params); }
-          catch (error) {
-            check(controller.signal);
-            if (input.platform !== 'android') throw error;
-            context = await input.runtime.initLlama({ ...params, n_gpu_layers: 0, n_batch: 64 });
-          }
+          // Android OpenCL init aborts the process for this text model, so stay on CPU.
+          const params = {
+            model: input.modelPath,
+            n_ctx: 2048,
+            n_gpu_layers: input.platform === 'android' ? 0 : 99,
+            n_batch: input.platform === 'android' ? 64 : 128,
+            n_parallel: 1,
+            ctx_shift: false as const,
+          };
+          context = await input.runtime.initLlama(params);
           this.cached = { context, modelPath: input.modelPath, platform: input.platform, runtime: input.runtime };
         }
         check(controller.signal);
@@ -95,11 +98,13 @@ export class HelperInferenceEngine {
         let messages = [...input.messages];
         let prompt: string;
         for (;;) {
-          // The VL model's Jinja/PEG JSON path produced fenced, unfinished JSON on the reported phone.
-          // Use its ordinary text chat template, then send that exact prompt without a second formatter.
-          const formatted = await context.getFormattedChat(messages, null, { jinja: false, enable_thinking: false, reasoning_format: 'none' });
-          const { tokens } = await context.tokenize(formatted.prompt);
+          // Keep the plain chat template. Thinking flags abort Qwen text models that have no reasoning parser.
+          const formatted = await context.getFormattedChat(messages, null, { jinja: false });
+          if (typeof formatted?.prompt !== 'string' || !formatted.prompt) throw new HelperInferenceError('failed');
+          const tokenized = await context.tokenize(formatted.prompt);
+          const tokens = tokenized?.tokens;
           check(controller.signal);
+          if (!Array.isArray(tokens)) throw new HelperInferenceError('failed');
           if (tokens.length <= 1600) { prompt = formatted.prompt; break; }
           if (messages.length <= 3) throw new HelperInferenceError('context');
           messages = [...messages.slice(0, 2), ...messages.slice(3)];
@@ -110,10 +115,11 @@ export class HelperInferenceEngine {
         const result = await context.completion({
           prompt, n_predict: 160, temperature: 0.25, top_k: 40, top_p: 0.9,
           penalty_last_n: 128, penalty_repeat: 1.15, penalty_freq: 0.1,
-          enable_thinking: false, reasoning_format: 'none', ignore_eos: false,
+          ignore_eos: false,
           stop: ['<|im_end|>', '<|endoftext|>', '<|im_start|>', '\nUser:', '\nHuman:', ' #'],
         }, (token) => {
           if (controller.signal.aborted || stopped) return;
+          try {
           raw = token.accumulated_text ?? (raw + token.token);
           const text = cleanHelperAnswer(raw);
           // Stop runaway output rather than waiting for the token/deadline limit.
@@ -121,6 +127,7 @@ export class HelperInferenceEngine {
           if (text !== lastText && (lastEmit === 0 || Date.now() - lastEmit >= 80)) {
             lastText = text; lastEmit = Date.now(); input.onText?.(text);
           }
+          } catch { /* a bad token must not escape into the native callback */ }
         });
         check(controller.signal);
         const answer = cleanHelperAnswer(result.content || result.text || raw, true);

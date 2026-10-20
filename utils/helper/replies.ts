@@ -88,11 +88,8 @@ export function quickHelperReply(
   if (shaped) return shaped;
   const yarnLeft = naturalYarnLeft(q);
   if (yarnLeft) return yarnLeft;
-  if (/\b(find|recommend|search|show me)\b/.test(q) && /\b(patterns?|projects?|tutorials?|coaster|bag|blanket|amigurumi)\b/.test(q)) {
-    const patterns = searchHelperPatterns(question, catalog);
-    return patterns.length ? { text: 'Here are matching patterns from the local catalog. Check each tutorial’s materials and gauge before starting.', patterns }
-      : { text: 'No close catalog match yet. Try a project type such as coaster, bag, or amigurumi, plus your yarn weight or skill level.' };
-  }
+  const suggested = suggestFromCatalog(question, catalog);
+  if (suggested) return suggested;
   // Require the complete, unambiguous conversion sentence; never infer units/numbers from other text.
   const conversion = q.match(/^(?:please )?(?:convert )?(\d+(?:\.\d+)?)\s*(yd|yards?|m|met(?:er|re)s?|in|inch(?:es)?|cm|centimet(?:er|re)s?|g|grams?|oz|ounces?)\s+(?:to|in|into)\s+(yd|yards?|m|met(?:er|re)s?|in|inch(?:es)?|cm|centimet(?:er|re)s?|g|grams?|oz|ounces?)$/);
   if (conversion) {
@@ -114,6 +111,27 @@ export function quickHelperReply(
     return { text: `The saved details for “${p.title}” list ${/hook/.test(q) ? `hook: ${p.hookSize || 'not recorded'}` : `yarn weight: ${p.yarnWeight || 'not recorded'}`}. Confirm this in the original tutorial and check your gauge.`, patterns: [p] };
   }
   return null;
+}
+
+const PROJECT_TYPES = /\b(?:hats?|beanies?|toques?|scar(?:f|ves)|blankets?|afghans?|bags?|totes?|purses?|coasters?|amigurumi|plush(?:ies)?|dolls?|flowers?|cardigans?|sweaters?|shawls?|dishcloths?|washcloths?|headbands?|ear warmers?|keychains?|bookmarks?|toys?|mushrooms?)\b/;
+
+function asksForCatalogSuggestions(q: string): boolean {
+  if (/\b(?:fix|mistake|wrong|curl|curling|hole|wavy|too (?:many|few))\b/.test(q)) return false;
+  if (/\b(?:suggest(?:ion|ions)?|recommend(?:ation|ations)?|ideas?|find|search|show me|looking for|what (?:can|should) i (?:make|crochet)|something to (?:make|crochet)|next project)\b/.test(q)) return true;
+  if (/\bpatterns?\b/.test(q) && !/\b(?:this|the|my) pattern\b/.test(q)) return true;
+  return PROJECT_TYPES.test(q) && /\b(?:want|need|make|pattern|project|idea|suggest|find|show)\b/.test(q);
+}
+
+function suggestFromCatalog(question: string, catalog: readonly CrochetPattern[]): HelperReply | null {
+  if (!asksForCatalogSuggestions(question.toLowerCase())) return null;
+  let patterns = searchHelperPatterns(question, catalog, 3);
+  if (!patterns.length) {
+    patterns = [...catalog]
+      .sort((a, b) => Number(b.difficulty === 'beginner') - Number(a.difficulty === 'beginner') || a.title.localeCompare(b.title))
+      .slice(0, 3);
+  }
+  if (!patterns.length) return { text: 'The catalog is empty right now. Refresh the Patterns tab, then ask again.' };
+  return { text: 'Here are matching patterns from the local catalog. Open a card to preview it, and check the tutorial’s materials and gauge before starting.', patterns };
 }
 
 function ran(operation: Calculation, values: number[], units: string[], actions?: HelperAction[]): HelperReply {

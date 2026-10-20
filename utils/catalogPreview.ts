@@ -92,13 +92,13 @@ export function patternThumbnailUriCandidates(pattern: {
     seen.add(uri);
     out.push(uri);
   };
-  const videoId = pattern.videoId?.trim() ?? '';
+  const videoId = typeof pattern.videoId === 'string' ? pattern.videoId.trim() : '';
   if (videoId.length === 11) {
     add(patternPosterUri(videoId, 'hq'));
     add(youtubeThumbnailUrl(videoId, 'mq'));
     add(youtubeThumbnailUrl(videoId, 'default'));
   }
-  const stored = pattern.thumbnailUrl?.trim() ?? '';
+  const stored = typeof pattern.thumbnailUrl === 'string' ? pattern.thumbnailUrl.trim() : '';
   if (STORED_THUMB.test(stored) && !YOUTUBE_THUMB_HOST.test(stored)) add(stored);
   if (STORED_THUMB.test(stored)) add(stored);
   return out;

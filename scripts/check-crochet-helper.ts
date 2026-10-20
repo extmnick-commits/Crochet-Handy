@@ -72,6 +72,9 @@ async function main() {
   assert.match(quickHelperReply('Explain this pattern', general, [])!.text, /Open a pattern/);
   assert.equal(quickHelperReply('Explain this pattern', context, [])!.patterns![0].id, p.id);
   assert.match(quickHelperReply('Find beginner coaster patterns', general, [p])!.text, /local catalog/);
+  assert.equal(quickHelperReply('suggest a coaster', general, [p])!.patterns![0].id, p.id);
+  assert.equal(quickHelperReply('what should I make?', general, [p])!.patterns![0].id, p.id);
+  assert.equal(quickHelperReply('Why does the edge of my circle curl?', general, [p]), null);
   assert.match(quickHelperReply('Convert 100 yards to meters', general, [])!.text, /91.44 m/);
   assert.equal(quickHelperReply('I have 100 yards and 40 grams, convert it', general, [])!.calculator, 'convert');
   assert.equal(quickHelperReply('Will I have enough yarn?', general, [])!.calculator, 'yarn');

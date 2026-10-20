@@ -6,7 +6,7 @@ import {
   deleteDownloadedVisionModels,
   downloadInstalledHelperModel,
   inspectInstalledHelperModel,
-  installedHelperModelUri,
+  readyHelperModelUri,
 } from '@/utils/scrapModelFiles';
 import { modelTransferStatusLabel, ScrapTransferCancelledError, type ModelTransferProgress } from '@/utils/scrapModelTransfer';
 import { isLocalScrapAiSupported } from '@/utils/scrapYarnAi';
@@ -34,7 +34,7 @@ export function subscribeHelperModelStatus(listener: () => void): () => void {
 }
 
 export function installedHelperModelPath(): string | null {
-  return helperStatus.phase === 'ready' ? installedHelperModelUri() : null;
+  return helperStatus.phase === 'ready' ? readyHelperModelUri() : null;
 }
 
 function statusDetail(status: HelperModelStatus): string {
@@ -78,7 +78,7 @@ async function prepareHelperModel(): Promise<void> {
   }
   try {
     const installed = await inspectInstalledHelperModel(emitProgress);
-    if (installed === 'ready' && installedHelperModelUri()) {
+    if (installed === 'ready' && readyHelperModelUri()) {
       publish({ phase: 'ready' }, true);
       return;
     }

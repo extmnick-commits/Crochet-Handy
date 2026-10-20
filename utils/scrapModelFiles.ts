@@ -230,6 +230,19 @@ export function installedHelperModelUri(): string | null {
   return scrapModelPaths(directory, HELPER_TEXT_MODEL_PIN.filename).final;
 }
 
+/** Path only when the pinned text file is actually on disk. A missing file must not be passed to llama. */
+export function readyHelperModelUri(): string | null {
+  const uri = installedHelperModelUri();
+  if (!uri || /qwen2\.5-vl|mmproj/i.test(uri)) return null;
+  try {
+    const file = new File(uri);
+    if (!file.exists || file.size !== HELPER_TEXT_MODEL_PIN.bytes) return null;
+    return uri;
+  } catch {
+    return null;
+  }
+}
+
 export async function inspectInstalledHelperModel(
   onProgress?: (update: ModelTransferProgress) => void,
 ): Promise<'ready' | 'missing'> {

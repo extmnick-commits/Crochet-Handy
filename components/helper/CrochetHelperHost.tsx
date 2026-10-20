@@ -43,7 +43,7 @@ export function CrochetHelperHost({
   const state = useSyncExternalStore(helperSession.subscribe, helperSession.snapshot, helperSession.snapshot);
   const account = useCrochetStore((s) => s.account);
   const patterns = useCrochetStore((s) => s.patterns);
-  const yarns = useCrochetStore((s) => s.yarnStash);
+  const yarns = useCrochetStore((s) => s.yarnStash) ?? [];
   const appendRowNote = useCrochetStore((s) => s.appendRowNote);
   const setStitchesPerRow = useCrochetStore((s) => s.setStitchesPerRow);
   const project = useCrochetStore(selectActiveProject);
