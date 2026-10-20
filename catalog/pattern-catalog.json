@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-20T05:44:12.708Z",
+  "generatedAt": "2026-10-20T07:45:43.804Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -4609,6 +4609,125 @@
       ],
       "bookmarks": [],
       "summary": "Beautiful floral granny square with a white flower center and vibrant autumn-toned petals."
+    },
+    {
+      "id": "pattern-how-to-crochet-a-cute-halloween-ghost-in-30-min-",
+      "title": "How to Crochet a Cute Halloween Ghost in 30 Min! 👻✨ Easy Amigurumi Tutorial for Beginners (Part 1)",
+      "creator": "PlushJoy Toys",
+      "youtubeUrl": "https://www.youtube.com/watch?v=4GWUrNDGj4Q",
+      "videoId": "4GWUrNDGj4Q",
+      "thumbnailUrl": "https://i.ytimg.com/vi/4GWUrNDGj4Q/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "sport",
+      "hookSize": "3.5 mm",
+      "totalRows": 10,
+      "stitchesPerRow": 24,
+      "tags": [
+        "amigurumi",
+        "halloween",
+        "single crochet",
+        "ghost",
+        "decor",
+        "winter",
+        "thanksgiving",
+        "christmas"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-5-materials-and-tools-need",
+          "label": "Materials and Tools Needed",
+          "seconds": 5
+        },
+        {
+          "id": "bm-14-round-1-magic-ring-and-8",
+          "label": "ROUND 1: Magic ring and 8 single crochet sc",
+          "seconds": 14
+        },
+        {
+          "id": "bm-98-round-2-8-increases-2-sc",
+          "label": "ROUND 2: 8 increases 2 sc in each stitch — 16 st",
+          "seconds": 98
+        },
+        {
+          "id": "bm-155-round-3-1-sc-inc-repeat-",
+          "label": "ROUND 3: 1 sc, inc repeat 8 times 24 sts",
+          "seconds": 155
+        },
+        {
+          "id": "bm-225-rounds-4-9-24-sc-without",
+          "label": "ROUNDS 4–9: 24 sc without changes 6 rounds",
+          "seconds": 225
+        },
+        {
+          "id": "bm-317-round-10-ruffles-ghost-s",
+          "label": "ROUND 10: Ruffles / Ghost skirt 12 waves",
+          "seconds": 317
+        },
+        {
+          "id": "bm-462-making-a-hanging-loop-ch",
+          "label": "Making a hanging loop / chain stitch tutorial",
+          "seconds": 462
+        },
+        {
+          "id": "bm-552-connecting-the-chain-to-",
+          "label": "Connecting the chain to the body and fastening o",
+          "seconds": 552
+        },
+        {
+          "id": "bm-674-inserting-safety-eyes-ho",
+          "label": "Inserting safety eyes. Hooray! Our Casper is fin",
+          "seconds": 674
+        }
+      ],
+      "summary": "Stitch a friendly, fast ghost amigurumi in just 30 minutes! Perfect for spooky Halloween home decor and using up yarn scraps."
+    },
+    {
+      "id": "pattern-easy-crochet-pumpkin-applique-how-to-crochet-pum",
+      "title": "Easy Crochet Pumpkin Applique.How to Crochet Pumpkin Applique? #crochet",
+      "creator": "Crochet by Michelle",
+      "youtubeUrl": "https://www.youtube.com/watch?v=iFiYnskiBWc",
+      "videoId": "iFiYnskiBWc",
+      "thumbnailUrl": "https://i.ytimg.com/vi/iFiYnskiBWc/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "sport",
+      "hookSize": "3 mm",
+      "totalRows": 4,
+      "stitchesPerRow": 20,
+      "tags": [
+        "thanksgiving",
+        "single crochet",
+        "double crochet",
+        "fall",
+        "pumpkin",
+        "stpatricks",
+        "halloween",
+        "magic ring"
+      ],
+      "bookmarks": [],
+      "summary": "Create an easy and quick crochet pumpkin applique, ideal for autumn bunting, sewing on bags, or festive fall decor."
+    },
+    {
+      "id": "pattern-bl00dy-gloves-crochet-super-quick-halloween-croc",
+      "title": "🩸 bl00dy gloves crochet • super quick halloween crochet",
+      "creator": "tara crochet ☆",
+      "youtubeUrl": "https://www.youtube.com/watch?v=reAopyNn3pM",
+      "videoId": "reAopyNn3pM",
+      "thumbnailUrl": "https://i.ytimg.com/vi/reAopyNn3pM/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4.5 mm",
+      "totalRows": 20,
+      "stitchesPerRow": 15,
+      "tags": [
+        "halloween",
+        "wearables",
+        "single crochet",
+        "easy",
+        "valentines",
+        "chain"
+      ],
+      "bookmarks": [],
+      "summary": "Make ultra-quick, last-minute bloody gloves for a spooky Halloween costume accessory."
     }
   ]
 }
