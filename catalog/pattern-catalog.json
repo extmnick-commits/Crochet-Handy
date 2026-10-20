@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-20T07:45:43.804Z",
+  "generatedAt": "2026-10-20T07:47:53.275Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -4728,6 +4728,502 @@
       ],
       "bookmarks": [],
       "summary": "Make ultra-quick, last-minute bloody gloves for a spooky Halloween costume accessory."
+    },
+    {
+      "id": "pattern-cobnut-beanie-easy-crochet-beanie-pattern-newbor",
+      "title": "Cobnut Beanie: Easy Crochet Beanie Pattern (Newborn to Adult)",
+      "creator": "Concrete Gems Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=VqshwyqADFE",
+      "videoId": "VqshwyqADFE",
+      "thumbnailUrl": "https://i.ytimg.com/vi/VqshwyqADFE/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "dk",
+      "hookSize": "4.5mm",
+      "totalRows": 40,
+      "stitchesPerRow": 35,
+      "tags": [
+        "beanies",
+        "beanie",
+        "hat",
+        "textured crochet",
+        "autumn crochet",
+        "wearables",
+        "valentines",
+        "halloween"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-cobnut-beanie-tutorial-i",
+          "label": "Cobnut Beanie Tutorial: Intro & What You'll Need",
+          "seconds": 0
+        },
+        {
+          "id": "bm-204-getting-started-with-the",
+          "label": "Getting started with the pique stitch",
+          "seconds": 204
+        },
+        {
+          "id": "bm-390-working-the-beanie-side-",
+          "label": "Working the beanie side to side",
+          "seconds": 390
+        },
+        {
+          "id": "bm-550-seaming-the-beanie",
+          "label": "Seaming the beanie",
+          "seconds": 550
+        },
+        {
+          "id": "bm-680-adding-an-edging",
+          "label": "Adding an edging",
+          "seconds": 680
+        },
+        {
+          "id": "bm-757-finishing-touches",
+          "label": "Finishing touches",
+          "seconds": 757
+        }
+      ],
+      "summary": "Crochet a cosy textured beanie using the pique stitch, worked side to side and seamed."
+    },
+    {
+      "id": "pattern-crochet-dog-hat-small-crochet-kitty-or-dog-hat-f",
+      "title": "Crochet Dog Hat / Small Crochet Kitty or Dog Hat / Fun Crochet Hat for Beginners!",
+      "creator": "Montana Crochet Creations",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Cj_oTEloNSE",
+      "videoId": "Cj_oTEloNSE",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Cj_oTEloNSE/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "5.0mm",
+      "totalRows": 15,
+      "stitchesPerRow": 24,
+      "tags": [
+        "beanies",
+        "animal crochet",
+        "dog hat",
+        "cat hat",
+        "pet beanie",
+        "beginner crochet",
+        "winter",
+        "valentines"
+      ],
+      "bookmarks": [],
+      "summary": "Make a quick and adorable small crochet dog or cat beanie for your pet."
+    },
+    {
+      "id": "pattern-how-to-crochet-granny-stitch-full-ruffle-crochet",
+      "title": "HOW TO CROCHET GRANNY STITCH FULL RUFFLE CROCHET HAT",
+      "creator": "Sophia Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=SIX4ZPeFiYo",
+      "videoId": "SIX4ZPeFiYo",
+      "thumbnailUrl": "https://i.ytimg.com/vi/SIX4ZPeFiYo/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "5mm",
+      "totalRows": 16,
+      "stitchesPerRow": 48,
+      "tags": [
+        "granny stitch",
+        "ruffle hat",
+        "hat",
+        "wearables",
+        "crochet hat",
+        "valentines",
+        "beanies",
+        "magic circle"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-intro-let-s-make-a-ruffl",
+          "label": "Intro- let’s make a ruffle crochet hat",
+          "seconds": 0
+        },
+        {
+          "id": "bm-17-materials",
+          "label": "Materials",
+          "seconds": 17
+        },
+        {
+          "id": "bm-30-magic-circle",
+          "label": "magic circle",
+          "seconds": 30
+        },
+        {
+          "id": "bm-45-row-1",
+          "label": "Row 1",
+          "seconds": 45,
+          "rowHint": 1
+        },
+        {
+          "id": "bm-110-row-2",
+          "label": "Row 2",
+          "seconds": 110,
+          "rowHint": 2
+        },
+        {
+          "id": "bm-180-row-3",
+          "label": "Row 3",
+          "seconds": 180,
+          "rowHint": 3
+        },
+        {
+          "id": "bm-257-row-4",
+          "label": "Row 4",
+          "seconds": 257,
+          "rowHint": 4
+        },
+        {
+          "id": "bm-388-row-5-12",
+          "label": "Row 5-12",
+          "seconds": 388,
+          "rowHint": 5
+        },
+        {
+          "id": "bm-645-single-crochet",
+          "label": "Single crochet",
+          "seconds": 645
+        },
+        {
+          "id": "bm-696-ruffle-rows",
+          "label": "Ruffle Rows",
+          "seconds": 696
+        },
+        {
+          "id": "bm-860-the-result",
+          "label": "The result",
+          "seconds": 860
+        }
+      ],
+      "summary": "Crochet a bold statement hat featuring the classic granny stitch and a full ruffle brim."
+    },
+    {
+      "id": "pattern-how-to-crochet-super-easy-tunisian-crochet-hat-c",
+      "title": "How to Crochet Super Easy Tunisian Crochet Hat: Cover Up Hat",
+      "creator": "Exquisite Crochet UK",
+      "youtubeUrl": "https://www.youtube.com/watch?v=rAekPdQhlCk",
+      "videoId": "rAekPdQhlCk",
+      "thumbnailUrl": "https://i.ytimg.com/vi/rAekPdQhlCk/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "6.0mm",
+      "totalRows": 25,
+      "stitchesPerRow": 14,
+      "tags": [
+        "beanies",
+        "tunisian crochet",
+        "crochet cables",
+        "hat",
+        "winter",
+        "wearables",
+        "tunisian simple stitch",
+        "tunisian knit stitch"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-project-materials",
+          "label": "Project materials",
+          "seconds": 0
+        },
+        {
+          "id": "bm-89-starting-the-body",
+          "label": "Starting the body",
+          "seconds": 89
+        },
+        {
+          "id": "bm-186-crocheting-the-body",
+          "label": "Crocheting the body",
+          "seconds": 186
+        },
+        {
+          "id": "bm-387-adding-the-ribbing",
+          "label": "Adding the ribbing",
+          "seconds": 387
+        },
+        {
+          "id": "bm-564-finishing-the-hat",
+          "label": "Finishing the hat",
+          "seconds": 564
+        }
+      ],
+      "summary": "Create a cozy Tunisian crochet hat with wide double brim ribbing and simple knit stitches."
+    },
+    {
+      "id": "pattern-newborn-crochet-hat-tutorial-easy-baby-hat-for-b",
+      "title": "Newborn Crochet Hat Tutorial | Easy Baby Hat for Beginners",
+      "creator": "Lovable Loops by Melissa Hassler",
+      "youtubeUrl": "https://www.youtube.com/watch?v=cXiqwh3vco8",
+      "videoId": "cXiqwh3vco8",
+      "thumbnailUrl": "https://i.ytimg.com/vi/cXiqwh3vco8/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "5.0mm",
+      "totalRows": 10,
+      "stitchesPerRow": 36,
+      "tags": [
+        "baby hat",
+        "newborn hat",
+        "beginner crochet",
+        "wearables",
+        "crochet baby",
+        "beanies",
+        "magic circle",
+        "chain"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-newborn-crochet-hat-tuto",
+          "label": "Newborn Crochet Hat Tutorial",
+          "seconds": 0
+        },
+        {
+          "id": "bm-35-materials",
+          "label": "Materials",
+          "seconds": 35
+        },
+        {
+          "id": "bm-46-starting-the-hat-magic-c",
+          "label": "Starting the Hat + Magic Circle",
+          "seconds": 46
+        },
+        {
+          "id": "bm-143-crown-increases",
+          "label": "Crown Increases",
+          "seconds": 143
+        },
+        {
+          "id": "bm-864-hat-body",
+          "label": "Hat Body",
+          "seconds": 864
+        },
+        {
+          "id": "bm-1063-finishing",
+          "label": "Finishing",
+          "seconds": 1063
+        },
+        {
+          "id": "bm-1143-finished-newborn-hat-out",
+          "label": "Finished Newborn Hat + Outro",
+          "seconds": 1143
+        }
+      ],
+      "summary": "Crochet an adorable and simple newborn baby hat using worsted weight yarn and double crochet."
+    },
+    {
+      "id": "pattern-easy-crochet-baby-hat-tutorial-beautiful-crochet",
+      "title": "Easy Crochet Baby Hat Tutorial 🧶💙 | Beautiful Crochet Cap for Beginners | Step-by-Step Tutorial",
+      "creator": "crochetbyshaziya",
+      "youtubeUrl": "https://www.youtube.com/watch?v=6ZHeXoNRRiI",
+      "videoId": "6ZHeXoNRRiI",
+      "thumbnailUrl": "https://i.ytimg.com/vi/6ZHeXoNRRiI/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "dk",
+      "hookSize": "4.0mm",
+      "totalRows": 12,
+      "stitchesPerRow": 40,
+      "tags": [
+        "beanies",
+        "baby hat",
+        "cap",
+        "textured crochet",
+        "beginner crochet",
+        "wearables",
+        "winter",
+        "valentines"
+      ],
+      "bookmarks": [],
+      "summary": "Hook a charming, textured blue baby cap designed top-down for beginners."
+    },
+    {
+      "id": "pattern-textured-crochet-beanie-for-a-3-year-old-stripes",
+      "title": "Textured Crochet Beanie For A 3-Year-Old| Stripes without even changing colours",
+      "creator": "CrochetSmash",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Wwnce9txBm0",
+      "videoId": "Wwnce9txBm0",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Wwnce9txBm0/maxresdefault.jpg",
+      "difficulty": "intermediate",
+      "yarnWeight": "worsted",
+      "hookSize": "5.0mm",
+      "totalRows": 12,
+      "stitchesPerRow": 36,
+      "tags": [
+        "beanies",
+        "beanie",
+        "toddler hat",
+        "front post double croche",
+        "textured crochet",
+        "wearables",
+        "valentines",
+        "mothers-day"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-the-flopped-beanie-story",
+          "label": "The Flopped Beanie Story Yarn Stretch Mistake",
+          "seconds": 0
+        },
+        {
+          "id": "bm-64-the-fix-red-heart-super-",
+          "label": "The Fix: Red Heart Super Saver & 5mm Hook",
+          "seconds": 64
+        },
+        {
+          "id": "bm-102-round-1-magic-circle-bas",
+          "label": "Round 1: Magic Circle & Base Stitches",
+          "seconds": 102
+        },
+        {
+          "id": "bm-119-round-2-invisible-joinin",
+          "label": "Round 2: Invisible Joining & Sizing Increases",
+          "seconds": 119
+        },
+        {
+          "id": "bm-205-round-3-the-36-stitch-in",
+          "label": "Round 3: The 36-Stitch Increase Formula",
+          "seconds": 205
+        },
+        {
+          "id": "bm-260-round-4-stacking-your-st",
+          "label": "Round 4: Stacking Your Stitches Right",
+          "seconds": 260
+        },
+        {
+          "id": "bm-301-round-5-final-sizing-che",
+          "label": "Round 5: Final Sizing Check for Toddlers",
+          "seconds": 301
+        },
+        {
+          "id": "bm-370-round-6-building-the-hei",
+          "label": "Round 6: Building the Height No More Increases",
+          "seconds": 370
+        },
+        {
+          "id": "bm-458-round-7-creating-the-bar",
+          "label": "Round 7: Creating the Bar Stitch Texture Front P",
+          "seconds": 458
+        },
+        {
+          "id": "bm-649-round-8-the-easy-interme",
+          "label": "Round 8: The Easy Intermediate Relaxed Row",
+          "seconds": 649
+        },
+        {
+          "id": "bm-701-round-9-beyond-repeating",
+          "label": "Round 9 & Beyond: Repeating the Pattern Easily",
+          "seconds": 701
+        },
+        {
+          "id": "bm-816-showcase-the-finished-te",
+          "label": "Showcase: The Finished Textured Striped Beanie",
+          "seconds": 816
+        }
+      ],
+      "summary": "Create a textured toddler beanie with faux 3D vertical stripes using front post double crochet."
+    },
+    {
+      "id": "pattern-easy-crochet-santa-hat-hair-clips-christmas-diy-",
+      "title": "🎅 Easy Crochet Santa Hat Hair Clips 🎄 | Christmas DIY Tutorial",
+      "creator": "TheHappyHues🍁",
+      "youtubeUrl": "https://www.youtube.com/watch?v=n_k4sdGwdcQ",
+      "videoId": "n_k4sdGwdcQ",
+      "thumbnailUrl": "https://i.ytimg.com/vi/n_k4sdGwdcQ/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "sport",
+      "hookSize": "3.5mm",
+      "totalRows": 5,
+      "stitchesPerRow": 12,
+      "tags": [
+        "beanies",
+        "christmas",
+        "santa hat",
+        "hair clip",
+        "holiday crafts",
+        "accessories",
+        "valentines",
+        "wearables"
+      ],
+      "bookmarks": [],
+      "summary": "Craft festive mini Santa hat hair clips with a white brim and cute pearl details."
+    },
+    {
+      "id": "pattern-easy-crochet-cat-ear-hat-tutorial-cute-winter-be",
+      "title": "Easy Crochet Cat Ear Hat Tutorial 🐱 | Cute Winter Beanie for Beginners",
+      "creator": "anxin_crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=bQMLrhzC8L8",
+      "videoId": "bQMLrhzC8L8",
+      "thumbnailUrl": "https://i.ytimg.com/vi/bQMLrhzC8L8/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "5.5mm",
+      "totalRows": 22,
+      "stitchesPerRow": 40,
+      "tags": [
+        "cat hat",
+        "beanie",
+        "winter crochet",
+        "beginner crochet",
+        "wearables",
+        "winter",
+        "valentines",
+        "beanies"
+      ],
+      "bookmarks": [],
+      "summary": "Crochet a fun, beginner-friendly winter beanie featuring cute pointed cat ears."
+    },
+    {
+      "id": "pattern-easy-crochet-beanie-tutorial-2-colours-crochet-b",
+      "title": "Easy Crochet Beanie Tutorial | 2 colours Crochet Beanie",
+      "creator": "crochet Sinarra",
+      "youtubeUrl": "https://www.youtube.com/watch?v=-nkQ-gsm0U8",
+      "videoId": "-nkQ-gsm0U8",
+      "thumbnailUrl": "https://i.ytimg.com/vi/-nkQ-gsm0U8/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4.0mm",
+      "totalRows": 30,
+      "stitchesPerRow": 45,
+      "tags": [
+        "beanie",
+        "colorwork",
+        "ribbed brim",
+        "wearables",
+        "winter",
+        "stpatricks",
+        "halloween",
+        "beanies"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-width-of-the-beanie-circ",
+          "label": "Width of the beanie circumfrenece",
+          "seconds": 0
+        },
+        {
+          "id": "bm-45-materials",
+          "label": "Materials",
+          "seconds": 45
+        },
+        {
+          "id": "bm-60-length-of-the-beanie-fou",
+          "label": "Length of the beanie Foundation chain",
+          "seconds": 60
+        },
+        {
+          "id": "bm-120-width-of-the",
+          "label": "Width of the beanie circumference",
+          "seconds": 120
+        },
+        {
+          "id": "bm-365-switching-colors",
+          "label": "Switching colors",
+          "seconds": 365
+        },
+        {
+          "id": "bm-600-finishing-and-weaving-in",
+          "label": "Finishing and weaving in ends",
+          "seconds": 600
+        }
+      ],
+      "summary": "Master color changes and ribbing while crocheting a stylish two-tone adult beanie."
     }
   ]
 }
