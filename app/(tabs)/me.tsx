@@ -20,9 +20,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { AddYarnModal } from '@/components/AddYarnModal';
 import { AuthAccountModal } from '@/components/AuthAccountModal';
-import { ScrapBusterModal } from '@/components/ScrapBusterModal';
 import { UploadQuotaDevTools } from '@/components/UploadQuotaDevTools';
 import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
@@ -46,23 +44,8 @@ import {
   normalizePatternTag,
   packMasonryColumns,
 } from '@/utils/patternDisplay';
-import type { ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
-import {
-  getVisionModelStatus,
-  prefetchVisionModels,
-  subscribeVisionModelStatus,
-} from '@/utils/scrapVisionRun';
+import { getHelperModelStatus, prefetchHelperModel, subscribeHelperModelStatus } from '@/utils/helper/model';
 import { patternPosterUri } from '@/utils/youtube';
-import {
-  closeCatalogPreview,
-  closeLeftoverScrap,
-  idleCatalogPreview,
-  openLeftoverScrap,
-  previewDismissed,
-  requestCatalogPreview,
-  scrapDismissed,
-  type CatalogPreviewFlow,
-} from '@/utils/catalogPreview';
 
 type LibraryPill = 'collections' | 'likes';
 type CollectionSubTab = 'folders' | 'stories';
@@ -99,23 +82,8 @@ export default function MeScreen() {
   const [addPatternsOpen, setAddPatternsOpen] = useState(false);
   const [patternId, setPatternId] = useState<string | null>(null);
   const [storyProjectId, setStoryProjectId] = useState<string | null>(null);
-  const [previewFlow, setPreviewFlow] = useState<CatalogPreviewFlow<CrochetPattern>>(idleCatalogPreview<CrochetPattern>);
-  const [addYarnOpen, setAddYarnOpen] = useState(false);
-  const [scannedLeftover, setScannedLeftover] = useState<ScannedLeftoverDraft | null>(null);
   const running = projects.some((project) => project.timerStartedAt != null);
   const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (previewFlow.phase !== 'closing-scrap' && previewFlow.phase !== 'closing-preview') return undefined;
-    const timer = setTimeout(() => {
-      setPreviewFlow((current) => {
-        if (current.phase === 'closing-scrap') return scrapDismissed(current);
-        if (current.phase === 'closing-preview') return previewDismissed(current);
-        return current;
-      });
-    }, 360);
-    return () => clearTimeout(timer);
-  }, [previewFlow.phase]);
 
   useEffect(() => {
     if (!running) return undefined;
@@ -242,19 +210,6 @@ export default function MeScreen() {
           }}
           onSignOut={() => void onSignOut()}
         />
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Scan Leftover Yarn (Local AI)"
-          testID="scan-leftover-yarn"
-          onPress={() => {
-            tick();
-            setPreviewFlow((flow) => openLeftoverScrap(flow));
-          }}
-          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.primaryButtonText}>Scan Leftover Yarn (Local AI)</Text>
-        </Pressable>
 
         <UploadQuotaDevTools />
 
@@ -634,44 +589,9 @@ export default function MeScreen() {
       </BottomSheet>
 
       <AuthAccountModal visible={authOpen} initialMode={authMode} onClose={() => setAuthOpen(false)} />
-      <ScrapBusterModal
-        visible={previewFlow.phase === 'scrap'}
-        onClose={() => setPreviewFlow((flow) => closeLeftoverScrap(flow))}
-        onDismiss={() => setPreviewFlow((flow) => scrapDismissed(flow))}
-        onPreviewPattern={(pattern) => {
-          setPatternId(null);
-          setPreviewFlow((flow) => requestCatalogPreview(flow, pattern));
-        }}
-        onSaveToStash={(draft) => {
-          setScannedLeftover(draft);
-          setPreviewFlow((flow) => closeLeftoverScrap(flow));
-          setAddYarnOpen(true);
-        }}
-      />
-      <AddYarnModal
-        visible={addYarnOpen}
-        scannedLeftover={scannedLeftover}
-        onClose={() => {
-          setAddYarnOpen(false);
-          setScannedLeftover(null);
-        }}
-      />
       <PatternDetailSheet
-        patternId={
-          previewFlow.phase === 'preview' || previewFlow.phase === 'closing-preview' || previewFlow.phase === 'closing-scrap'
-            ? null
-            : patternId
-        }
-        previewPattern={previewFlow.phase === 'preview' ? previewFlow.pattern : null}
-        onClose={() => {
-          if (previewFlow.phase === 'preview') {
-            setPreviewFlow((flow) => closeCatalogPreview(flow));
-            return;
-          }
-          setPatternId(null);
-        }}
-        onDismiss={() => setPreviewFlow((flow) => previewDismissed(flow))}
-        onPreviewStarted={() => setPreviewFlow(idleCatalogPreview<CrochetPattern>())}
+        patternId={patternId}
+        onClose={() => setPatternId(null)}
         onPatternChange={setPatternId}
         onTagPress={(tag) => {
           const normalized = normalizePatternTag(tag);
@@ -758,7 +678,7 @@ function ProfileAccountBar({
 }
 
 function VisionModelStatus() {
-  const status = useSyncExternalStore(subscribeVisionModelStatus, getVisionModelStatus, getVisionModelStatus);
+  const status = useSyncExternalStore(subscribeHelperModelStatus, getHelperModelStatus, getHelperModelStatus);
   if (status.phase === 'idle') return null;
   const ratio = status.phase === 'ready' ? 1 : status.phase === 'failed' ? 0 : status.ratio;
   const percent = Math.round(ratio * 100);
@@ -775,7 +695,7 @@ function VisionModelStatus() {
       accessibilityValue={{ min: 0, max: 100, now: percent }}
       disabled={status.phase !== 'failed'}
       onPress={() => {
-        if (status.phase === 'failed') prefetchVisionModels();
+        if (status.phase === 'failed') prefetchHelperModel();
       }}
       style={styles.modelCard}
     >

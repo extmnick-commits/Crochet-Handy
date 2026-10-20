@@ -27,9 +27,7 @@ export const SCRAP_MODEL_PIN: ScrapModelPin = {
 };
 
 /**
- * Smaller comparison candidate. The sheet does not download this file.
- * Device logs are required before calling it faster or better.
- *
+ * Lightweight text model for Crochet Handy Helper.
  * bartowski/Qwen2.5-0.5B-Instruct-GGUF @ 41ba88dbac95fed2528c92514c131d73eb5a174b
  */
 export const SCRAP_COMPARISON_MODEL_PIN: ScrapModelPin = {
@@ -42,6 +40,9 @@ export const SCRAP_COMPARISON_MODEL_PIN: ScrapModelPin = {
 };
 
 export const LOCAL_AI_ENGINE_LABEL = 'Download Local AI Engine (986 MB)';
+
+/** Helper chat uses the smaller text model. The 1.5B pin remains available for existing checks. */
+export const HELPER_TEXT_MODEL_PIN: ScrapModelPin = SCRAP_COMPARISON_MODEL_PIN;
 
 /**
  * Qwen2.5-VL 3B Instruct. The language file cannot see a photo.

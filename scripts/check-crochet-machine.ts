@@ -23,6 +23,8 @@ import {
   resolveScrapeTopic,
   scrapeCategoryKeywords,
   searchQueryForScrapeTopic,
+  VARIETY_SCRAPE_TOPIC_IDS,
+  varietyScrapeQuotas,
   WORKFLOW_SCRAPE_TOPIC_OPTIONS,
 } from '../utils/holidayTopics';
 import { matchesPatternCategory, patternFeedCategories } from '../utils/patternDisplay';
@@ -88,6 +90,7 @@ import {
   applySetPatternBookmarks,
   applySetHookAndYarn,
   applySetRowNote,
+  applyAppendRowNote,
   applySetStitchesPerRow,
   applySetTotalRows,
   applyStartTimer,
@@ -486,6 +489,9 @@ assert(applyUpdateStashItem(recolored, 'missing', { brand: 'Nope' }, 6) == null,
 
 const noted = applySetRowNote(recolored, '  sc x 12  ', 9)!;
 equal(activeProject(noted)?.rowNote, 'sc x 12', 'row note trimmed');
+const appended = applyAppendRowNote(noted, ' inc x 6 ', 10)!;
+equal(activeProject(appended)?.rowNote, 'sc x 12 inc x 6', 'row note appends');
+assert(applyAppendRowNote(appended, '   ', 11) == null, 'blank row note append is ignored');
 assert(applyAddProjectYarnColor(noted, 'color-test', { hexColor: '#ff00aa', label: 'Pop' }, 10) == null, 'palette capped at four');
 const withRoom = applyRemoveProjectYarnColor(noted, 'color-blush', 11)!;
 const withColor = applyAddProjectYarnColor(withRoom, 'color-new', { hexColor: '#112233', label: 'Navy' }, 12)!;
@@ -1219,13 +1225,23 @@ assert(parseCommunityDocument('projects/demo/databases/(default)/documents/commu
 
 const genericTrendingQuery = searchQueryForScrapeTopic('trending');
 for (const topic of WORKFLOW_SCRAPE_TOPIC_OPTIONS) {
-  if (topic === 'trending' || topic === 'seasonal') continue;
+  if (topic === 'trending' || topic === 'seasonal' || topic === 'variety') continue;
   const resolved = resolveScrapeTopic(topic, new Date('2026-07-01T12:00:00'));
   const query = searchQueryForScrapeTopic(resolved);
   assert(query !== genericTrendingQuery, `workflow scrape topic "${topic}" maps to a dedicated YouTube query`);
   const tag = primaryTagForScrapeTopic(resolved);
   assert(tag != null && tag.length > 0, `workflow scrape topic "${topic}" has a primary catalog tag`);
 }
+assert(resolveScrapeTopic('variety', new Date('2026-07-01T12:00:00')) === 'variety', 'variety scrape topic is preserved');
+equal(
+  varietyScrapeQuotas(VARIETY_SCRAPE_TOPIC_IDS.length, 10).reduce((sum, n) => sum + n, 0),
+  10,
+  'variety quotas sum to the search pool size',
+);
+assert(
+  varietyScrapeQuotas(VARIETY_SCRAPE_TOPIC_IDS.length, 10).every((n) => n >= 1),
+  'variety quotas give each bucket at least one slot when pool >= topic count',
+);
 assert(resolveScrapeTopic('halloween', new Date('2026-07-01T12:00:00')) === 'halloween', 'explicit halloween works off-season');
 assert(resolveScrapeTopic('wearables', new Date('2026-10-18T12:00:00')) === 'wearables', 'explicit wearables is not replaced by seasonal trending');
 assert(resolveScrapeTopic('trending', new Date('2026-10-18T12:00:00')) === 'halloween', 'trending follows active holiday in October');
@@ -1266,6 +1282,18 @@ assert(
 assert(
   matchesPatternCategory(categoryFeedPattern('Granny throw', ['blankets']), 'blankets'),
   'scrape topic tag blankets matches the blankets chip',
+);
+assert(
+  matchesPatternCategory(categoryFeedPattern('Mug rug set', ['coasters']), 'coasters'),
+  'scrape topic tag coasters matches the coasters chip',
+);
+assert(
+  matchesPatternCategory(categoryFeedPattern('Market tote', ['bag']), 'bags'),
+  'legacy bag tag matches the bags chip',
+);
+assert(
+  patternFeedCategories(new Date('2026-07-01T12:00:00')).some((item) => item.id === 'beanies'),
+  'patterns feed includes beanies chip',
 );
 assert(
   patternFeedCategories(new Date('2026-07-01T12:00:00')).some((item) => item.id === 'blankets'),

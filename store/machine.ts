@@ -1273,6 +1273,16 @@ export function applySetRowNote(data: CrochetData, note: string, now: number): C
   return replaceProject(data, { ...project, rowNote, updatedAt: now });
 }
 
+/** Append a decoded row or calculation onto the active project's row note. */
+export function applyAppendRowNote(data: CrochetData, note: string, now: number): CrochetData | null {
+  const project = activeProject(data);
+  if (!project) return null;
+  const addition = sanitizeRowNote(note);
+  if (!addition) return null;
+  const combined = project.rowNote ? `${project.rowNote} ${addition}` : addition;
+  return applySetRowNote(data, combined, now);
+}
+
 export function applyAddProjectYarnColor(
   data: CrochetData,
   id: string,

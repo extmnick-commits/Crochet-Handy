@@ -16,7 +16,7 @@ import {
   CALCULATIONS, CALCULATOR_FIELDS, CALCULATOR_NAMES, CONVERSION_PAIRS,
   calculateCrochet, type Calculation,
 } from '@/utils/helper/calculators';
-import { contextKey, contextLabel, HELPER_GREETING, type HelperContext, type HelperMessage } from '@/utils/helper/context';
+import { contextKey, contextLabel, getStarters, HELPER_GREETING, type HelperAction, type HelperContext, type HelperMessage } from '@/utils/helper/context';
 import { answerHelper } from '@/utils/helper/service';
 import { helperInference } from '@/utils/helper/inference';
 import { helperSession } from '@/utils/helper/session';
@@ -29,7 +29,6 @@ type Props = {
   launcherBottomInset?: number;
   renderPreview: (pattern: CrochetPattern, onClose: () => void) => ReactNode;
 };
-const STARTERS = ['Explain this pattern', 'Calculate stitches', 'Will I have enough yarn?', 'Help me fix a mistake', 'Find beginner coaster patterns'];
 let messageSequence = 0;
 const id = () => `helper-${Date.now()}-${++messageSequence}`;
 
@@ -44,6 +43,9 @@ export function CrochetHelperHost({
   const state = useSyncExternalStore(helperSession.subscribe, helperSession.snapshot, helperSession.snapshot);
   const account = useCrochetStore((s) => s.account);
   const patterns = useCrochetStore((s) => s.patterns);
+  const yarns = useCrochetStore((s) => s.yarnStash) ?? [];
+  const appendRowNote = useCrochetStore((s) => s.appendRowNote);
+  const setStitchesPerRow = useCrochetStore((s) => s.setStitchesPerRow);
   const project = useCrochetStore(selectActiveProject);
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -117,19 +119,17 @@ export function CrochetHelperHost({
   const send = async (question = helperSession.snapshot().draft) => {
     const text = question.trim().slice(0, 1000);
     if (!text || helperSession.snapshot().busy) return;
-    if (text === 'Calculate stitches') { setCalculator('gauge'); return; }
-    if (text === 'Will I have enough yarn?') { setCalculator('yarn'); return; }
     const controller = new AbortController();
     const history = helperSession.snapshot().messages;
     const message: HelperMessage = { id: id(), role: 'user', text, contextKey: key, contextLabel: contextLabel(context) };
     const generation = helperSession.begin(message, () => controller.abort());
     if (generation === null) return;
     try {
-      const reply = await answerHelper({ question: text, context, history, catalog, signal: controller.signal,
+      const reply = await answerHelper({ question: text, context, history, catalog, yarns, signal: controller.signal,
         onPhase: (phase) => { if (helperSession.current(generation)) helperSession.patch({ phase }); },
         onText: (partial) => helperSession.stream(generation, partial) });
       if (!reply.text) return;
-      if (helperSession.finish(generation, { ...message, ...reply, id: id(), role: 'assistant' }) && reply.calculator) setCalculator(reply.calculator);
+      if (helperSession.finish(generation, { ...message, ...reply, id: id(), role: 'assistant' }) && reply.calculator && !reply.calculated) setCalculator(reply.calculator);
     } catch {
       helperSession.finish(generation, { ...message, id: id(), role: 'assistant', failed: true,
         text: 'The helper could not finish. Try again or open a calculator.' });
@@ -152,12 +152,39 @@ export function CrochetHelperHost({
     helperSession.close(surface);
     setPreview(p);
   };
+  const runAction = (action: HelperAction) => {
+    if (!project) {
+      helperSession.append({ id: id(), role: 'assistant', text: 'Open an active project before saving this to the row counter.',
+        contextKey: key, contextLabel: contextLabel(context), failed: true });
+      return;
+    }
+    if (action.kind === 'row-note') {
+      appendRowNote(action.text);
+      helperSession.append({ id: id(), role: 'assistant', text: 'Saved to the active project’s row note.',
+        contextKey: key, contextLabel: contextLabel(context) });
+      return;
+    }
+    setStitchesPerRow(action.stitches);
+    helperSession.append({ id: id(), role: 'assistant', text: `Stitch target set to ${action.stitches}.`,
+      contextKey: key, contextLabel: contextLabel(context) });
+  };
   const appendCalculation = (operation: Calculation, values: number[], units: string[]) => {
     const result = calculateCrochet({ operation, values, units });
     if (state.busy) helperSession.cancel();
+    const actions: HelperAction[] = [];
+    if (result.ok) {
+      actions.push({ kind: 'row-note', text: result.text.split('\n')[0] ?? result.text });
+      if (operation === 'shaping' && Number.isInteger(values[1]) && values[1] > 0) actions.push({ kind: 'stitch-target', stitches: values[1] });
+      if (operation === 'gauge') {
+        const count = Number(result.text.match(/^(\d+) stitches/)?.[1]);
+        if (Number.isInteger(count) && count > 0) actions.push({ kind: 'stitch-target', stitches: count });
+      }
+    }
     helperSession.append({ id: id(), role: 'assistant', text: `${CALCULATOR_NAMES[operation]}\n\n${result.text}`,
-      contextKey: key, contextLabel: contextLabel(context), calculator: operation, failed: !result.ok });
+      contextKey: key, contextLabel: contextLabel(context), calculator: operation, calculated: true, failed: !result.ok,
+      actions: actions.length ? actions : undefined });
   };
+  const starters = getStarters(context, pathname, yarns);
   if (!uid || uid !== state.owner) return null;
   const lastReply = state.messages[state.messages.length - 1];
   const preferredPanelHeight = Math.min(700, height * 0.86);
@@ -240,7 +267,7 @@ export function CrochetHelperHost({
               onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: !state.busy })}>
               <View style={styles.assistantMessage}><Text selectable style={styles.body}>{HELPER_GREETING}</Text></View>
               {state.messages.length === 0 ? (
-                <View style={styles.starters}>{STARTERS.map((starter) => (
+                <View style={styles.starters}>{starters.map((starter) => (
                   <Pressable key={starter} accessibilityRole="button" onPress={() => { void send(starter); }} style={styles.starter}>
                     <Text style={styles.accentText}>{starter}</Text>
                   </Pressable>
@@ -251,13 +278,32 @@ export function CrochetHelperHost({
                   <Text style={styles.messageLabel}>{message.role === 'user' ? 'You' : 'Crochet Handy Helper'} · {message.contextLabel}</Text>
                   <Text selectable style={styles.body}>{message.text}</Text>
                   {message.patterns?.map((p) => <HelperPatternCard key={p.id} pattern={p} onPress={() => openPreview(p)} />)}
+                  {message.role === 'assistant' && (message.actions?.length || (message.calculated && message.calculator)) ? (
+                    <View style={styles.starters}>
+                      {message.actions?.map((action) => (
+                        <Pressable
+                          key={action.kind === 'row-note' ? 'row-note' : `stitch-${action.stitches}`}
+                          accessibilityRole="button"
+                          onPress={() => runAction(action)}
+                          style={styles.starter}
+                        >
+                          <Text style={styles.accentText}>{action.kind === 'row-note' ? 'Save to Row Note' : `Set Stitch Target (${action.stitches})`}</Text>
+                        </Pressable>
+                      ))}
+                      {message.calculated && message.calculator ? (
+                        <Pressable accessibilityRole="button" onPress={() => setCalculator(message.calculator!)} style={styles.starter}>
+                          <Text style={styles.accentText}>Adjust in calculator</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
               ))}
               {state.busy && state.partial ? <View style={styles.assistantMessage} testID="crochet-helper-stream"><Text selectable style={styles.body}>{state.partial}</Text></View> : null}
               {state.busy ? <View style={styles.loading}><ActivityIndicator color={Colors.accentPrimary} /><Text accessibilityLiveRegion="polite" style={styles.caption}>{state.phase}</Text></View> : null}
               {!state.busy && lastReply?.failed && !lastReply.calculator ? <Pressable accessibilityRole="button" onPress={retry} style={styles.starter}><Text style={styles.accentText}>Retry last question</Text></Pressable> : null}
               {calculator ? <CalculatorPanel key={calculator} operation={calculator} onChoose={setCalculator} onCalculate={appendCalculation} /> : null}
-              <Text style={styles.caption}>Calculators work without AI. Chat stays in memory and clears when you sign out or start a new conversation.</Text>
+              <Text style={styles.caption}>Calculators work without AI. The last 20 messages stay on this device for this account and clear when you tap New or sign out.</Text>
             </ScrollView>
             <View style={styles.composer}>
               <TextInput ref={input} accessibilityLabel="Message Crochet Handy Helper" placeholder="Ask about crochet…"

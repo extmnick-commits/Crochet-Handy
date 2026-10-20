@@ -540,6 +540,21 @@ function emptyCopy(
   if (category === 'blankets') {
     return { title: 'No blankets yet', body: 'Afghans, throws, and granny-square blankets show up here.' };
   }
+  if (category === 'beanies') {
+    return { title: 'No beanies yet', body: 'Hats and beanies from tutorials tagged or titled here show up in this feed.' };
+  }
+  if (category === 'socks') {
+    return { title: 'No socks yet', body: 'Socks, slippers, and leg warmers show up here.' };
+  }
+  if (category === 'coasters') {
+    return { title: 'No coasters yet', body: 'Coasters, dishcloths, mug rugs, and pot holders show up here.' };
+  }
+  if (category === 'bags') {
+    return { title: 'No bags yet', body: 'Totes, market bags, and pouches show up here.' };
+  }
+  if (category === 'home-decor') {
+    return { title: 'No home decor yet', body: 'Baskets, pillows, and wall hangings show up here.' };
+  }
   return { title: 'No patterns yet', body: 'Save a YouTube tutorial with the + button.' };
 }
 

@@ -3,10 +3,11 @@
  */
 import Constants from 'expo-constants';
 
-import { parseCatalogPatterns, type CrochetPattern, type YarnWeight } from '@/store/machine';
-import { rankScrapCatalog, readTutorialYards, type ScrapRankInput } from '@/utils/scrapCatalogRank';
+import { parseCatalogPatterns, type CrochetPattern } from '@/store/machine';
+import { loadRepoPatternCatalog } from '@/utils/scrapCatalogSource';
 
-import bundledCatalogFile from '../catalog/pattern-catalog.json';
+export { loadRepoPatternCatalog, scrapCatalogSuggestions, patternsForScrapProjects } from '@/utils/scrapCatalogSource';
+export type { ScrapCatalogSuggestion } from '@/utils/scrapCatalogSource';
 
 const JSDELIVR_CATALOG_URL =
   'https://cdn.jsdelivr.net/gh/extmnick-commits/Crochet-Handy@main/catalog/pattern-catalog.json';
@@ -33,11 +34,6 @@ export function patternCatalogUrl(): string {
   const fromExtra = Constants.expoConfig?.extra?.patternCatalogUrl;
   if (typeof fromExtra === 'string' && fromExtra.trim().length > 0) return fromExtra.trim();
   return DEFAULT_CATALOG_URL;
-}
-
-export function loadRepoPatternCatalog(): CrochetPattern[] {
-  const payload = bundledCatalogFile as PatternCatalogFile;
-  return parseCatalogPatterns(payload.patterns);
 }
 
 function catalogFetchUrl(url: string, bustCache: boolean): string {
@@ -99,70 +95,4 @@ export async function fetchRemotePatternCatalog(
     }
   }
   return best;
-}
-
-export type ScrapCatalogSuggestion = {
-  pattern: CrochetPattern;
-  yardageNote: string;
-};
-
-/**
- * Bundled catalog rows that suit leftover yarn.
- * Rows whose planning size, or a real tutorial yardage, exceeds the entered total are left out.
- * Missing tutorial yardage is never filled in.
- */
-export function scrapCatalogSuggestions(options?: {
-  yarnWeight?: YarnWeight;
-  availableYards?: number;
-  limit?: number;
-}): ScrapCatalogSuggestion[] {
-  const patterns = loadRepoPatternCatalog();
-  const ranked = rankScrapCatalog(
-    patterns.map((pattern) => toRankInput(pattern)),
-    options ?? {},
-  );
-  const byId = new Map(patterns.map((pattern) => [pattern.id, pattern]));
-  return ranked.flatMap((card) => {
-    const pattern = byId.get(card.id);
-    if (!pattern) return [];
-    return [{ pattern, yardageNote: card.yardageNote }];
-  });
-}
-
-export function patternsForScrapProjects(options?: {
-  yarnWeight?: YarnWeight;
-  availableYards?: number;
-  limit?: number;
-}): CrochetPattern[] {
-  return scrapCatalogSuggestions(options).map((item) => item.pattern);
-}
-
-function toRankInput(pattern: CrochetPattern): ScrapRankInput {
-  return {
-    id: pattern.id,
-    title: pattern.title,
-    tags: pattern.tags,
-    summary: pattern.summary,
-    yarnWeight: pattern.yarnWeight,
-    tutorialYards: tutorialYardsFor(pattern.id),
-  };
-}
-
-let tutorialYardIndex: Map<string, number> | null = null;
-
-function tutorialYardsFor(id: string): number | null {
-  if (!tutorialYardIndex) {
-    tutorialYardIndex = new Map();
-    const rows = (bundledCatalogFile as { patterns?: unknown[] }).patterns;
-    if (Array.isArray(rows)) {
-      for (const row of rows) {
-        if (!row || typeof row !== 'object') continue;
-        const record = row as { id?: unknown };
-        if (typeof record.id !== 'string') continue;
-        const yards = readTutorialYards(record);
-        if (yards != null) tutorialYardIndex.set(record.id, yards);
-      }
-    }
-  }
-  return tutorialYardIndex.get(id) ?? null;
 }

@@ -7,6 +7,7 @@ import { Directory, File, FileMode, Paths } from 'expo-file-system';
 import { hashFileSha256, isScrapFileHashCancelled } from 'scrap-file-hash';
 
 import {
+  HELPER_TEXT_MODEL_PIN,
   OBSOLETE_ANDROID_VISION_FILENAMES,
   SCRAP_HASH_CHUNK_BYTES,
   SCRAP_MODEL_PIN,
@@ -194,6 +195,80 @@ function visionTransferItems(directory: string, pair: VisionModelPair) {
     { pin: pair.text, paths: scrapModelPaths(directory, pair.text.filename), label: 'language model' },
     { pin: pair.projector, paths: scrapModelPaths(directory, pair.projector.filename), label: 'image projector' },
   ];
+}
+
+const RETIRED_VISION_FILE = /qwen2\.5-vl|mmproj/i;
+
+/** Drop previously downloaded vision GGUFs so the text helper does not keep about 3 GB on disk. */
+export async function deleteDownloadedVisionModels(): Promise<void> {
+  const root = Paths.document;
+  if (!root?.uri) return;
+  const directory = new Directory(root, MODELS_DIRECTORY);
+  if (!directory.exists) return;
+  let entries: { name: string; uri: string }[] = [];
+  try {
+    entries = directory.list().map((entry) => ({ name: entry.name, uri: entry.uri }));
+  } catch {
+    return;
+  }
+  const io = expoTransferIO();
+  for (const entry of entries) {
+    if (!RETIRED_VISION_FILE.test(entry.name)) continue;
+    try { await io.deleteFile(entry.uri); } catch { /* leave unrelated directories alone */ }
+  }
+  for (const filename of OBSOLETE_ANDROID_VISION_FILENAMES) {
+    const paths = scrapModelPaths(directory.uri.endsWith('/') ? directory.uri : `${directory.uri}/`, filename);
+    await io.deleteFile(paths.final);
+    await io.deleteFile(paths.partial);
+    await io.deleteFile(paths.receipt);
+  }
+}
+
+export function installedHelperModelUri(): string | null {
+  const directory = scrapModelDirectoryUri();
+  if (!directory) return null;
+  return scrapModelPaths(directory, HELPER_TEXT_MODEL_PIN.filename).final;
+}
+
+/** Path only when the pinned text file is actually on disk. A missing file must not be passed to llama. */
+export function readyHelperModelUri(): string | null {
+  const uri = installedHelperModelUri();
+  if (!uri || /qwen2\.5-vl|mmproj/i.test(uri)) return null;
+  try {
+    const file = new File(uri);
+    if (!file.exists || file.size !== HELPER_TEXT_MODEL_PIN.bytes) return null;
+    return uri;
+  } catch {
+    return null;
+  }
+}
+
+export async function inspectInstalledHelperModel(
+  onProgress?: (update: ModelTransferProgress) => void,
+): Promise<'ready' | 'missing'> {
+  const directory = scrapModelDirectoryUri();
+  if (!directory) return 'missing';
+  return inspectPinnedModel(
+    expoTransferIO(),
+    HELPER_TEXT_MODEL_PIN,
+    scrapModelPaths(directory, HELPER_TEXT_MODEL_PIN.filename),
+    onProgress,
+  );
+}
+
+export async function downloadInstalledHelperModel(
+  onProgress?: (update: ModelTransferProgress) => void,
+  cancel?: { cancelled: () => boolean; bind: (cancel: () => void) => void },
+): Promise<string> {
+  const directory = scrapModelDirectoryUri();
+  if (!directory) throw new Error('Document storage is not available on this device.');
+  return downloadPinnedModel(
+    expoTransferIO(),
+    HELPER_TEXT_MODEL_PIN,
+    scrapModelPaths(directory, HELPER_TEXT_MODEL_PIN.filename),
+    onProgress,
+    cancel,
+  );
 }
 
 export async function deleteObsoleteAndroidVisionFiles(): Promise<void> {

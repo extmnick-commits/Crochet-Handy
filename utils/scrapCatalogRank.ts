@@ -50,15 +50,21 @@ export function readTutorialYards(record: object): number | null {
   const row = record as Record<string, unknown>;
   for (const key of TUTORIAL_YARD_KEYS) {
     const value = row[key];
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value);
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.ceil(value);
   }
   return null;
 }
 
 export function planningSizeForPattern(pattern: ScrapRankInput): { id: ScrapSizeClass; ceiling: number } | null {
-  const haystack = `${pattern.title} ${pattern.tags.join(' ')} ${pattern.summary ?? ''}`.toLowerCase();
+  // A flower motif in a cardigan or a charm mentioned in a description does
+  // not make the tutorial a standalone scrap project. Prefer its actual title.
+  const title = pattern.title.toLowerCase();
+  if (/\b(blankets?|afghans?|cardigans?|sweaters?|shawls?|scarves|scarf|ponchos?|garments?|bedding)\b/.test(title)) return null;
+  if (/\b(?:part|section|episode)\s*(?:[-:#]\s*)?(?:\d+|one|two|three)\b/i.test(title)) return null;
+  if (/\b(roundup|round-up|compilation|pattern links|patterns you|ideas you)\b/.test(title)) return null;
+  if (/\b(giant|oversized|life.size|large)\b/.test(title)) return null;
   for (const size of SIZE_CLASSES) {
-    if (size.hints.some((hint) => mentions(haystack, pattern.tags, hint))) return size;
+    if (size.hints.some((hint) => mentions(title, hint))) return size;
   }
   return null;
 }
@@ -68,7 +74,7 @@ export function visionFitReason(patternWeight: YarnWeight, confirmedWeight: Yarn
   const weight =
     weightDistance(patternWeight, confirmedWeight) === 0
       ? `${label} matches the yarn you confirmed.`
-      : `${label} is close to the yarn you confirmed.`;
+      : `${label} is close to the yarn you confirmed. Substituting yarn can change size and yardage; check the hook and gauge.`;
   const size =
     sizeClass === 'micro' ? 'Very small project.' : sizeClass === 'small' ? 'Small project.' : 'Medium project.';
   return `${weight} ${size}`;
@@ -97,34 +103,35 @@ export function rankScrapCatalog(
 ): ScrapCatalogCard[] {
   const limit = options.limit ?? 6;
   const available = options.availableYards;
+  if (available != null && (!Number.isFinite(available) || available <= 0)) return [];
   const cards: ScrapCatalogCard[] = [];
   for (const pattern of patterns) {
     const size = planningSizeForPattern(pattern);
     if (!size) continue;
-    const tutorialYards = pattern.tutorialYards ?? null;
-    if (available != null && available > 0) {
-      if (size.ceiling > available) continue;
-      if (tutorialYards != null && tutorialYards > available) continue;
-    }
+    // Filter before limiting, so unrelated weights cannot hide valid matches.
+    if (options.yarnWeight && weightDistance(pattern.yarnWeight, options.yarnWeight) > 1) continue;
+    const tutorialYards = readTutorialYards(pattern);
+    // An explicit requirement takes precedence over a generic size estimate.
+    if (available != null && (tutorialYards ?? size.ceiling) > available) continue;
     cards.push({
       id: pattern.id,
       sizeClass: size.id,
       planningCeiling: size.ceiling,
       tutorialYards,
       yardageNote: yardageNoteFor({ planningCeiling: size.ceiling, tutorialYards }),
-      score: scorePattern(pattern, size.ceiling, options.yarnWeight),
+      score: scorePattern(pattern, size.ceiling, tutorialYards, options.yarnWeight),
     });
   }
   cards.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   return cards.slice(0, Math.max(0, limit));
 }
 
-function scorePattern(pattern: ScrapRankInput, ceiling: number, yarnWeight?: YarnWeight): number {
+function scorePattern(pattern: ScrapRankInput, ceiling: number, tutorialYards: number | null, yarnWeight?: YarnWeight): number {
   let score = ceiling;
+  if (tutorialYards != null) score += 200;
   if (yarnWeight) {
     const distance = weightDistance(pattern.yarnWeight, yarnWeight);
-    if (distance === 0) score += 80;
-    else if (distance === 1) score += 20;
+    if (distance === 0) score += 1000;
   }
   return score;
 }
@@ -136,9 +143,8 @@ function weightDistance(a: YarnWeight, b: YarnWeight): number {
   return Math.abs(left - right);
 }
 
-function mentions(haystack: string, tags: readonly string[], hint: string): boolean {
+function mentions(haystack: string, hint: string): boolean {
   const needle = hint.toLowerCase();
-  if (tags.some((tag) => tag.toLowerCase().includes(needle))) return true;
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`, 'i').test(haystack);
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:s|es)?(?:[^a-z0-9]|$)`, 'i').test(haystack);
 }

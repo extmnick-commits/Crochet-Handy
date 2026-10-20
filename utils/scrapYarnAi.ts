@@ -54,7 +54,8 @@ export type ScannedLeftoverDraft = {
   colors: ScrapYarnColor[];
   yarnWeight: YarnWeight;
   yardageTier: YardageTier;
-  availableYards: number;
+  availableYards: number | null;
+  amountLabel?: string;
   hookSize?: string;
 };
 
