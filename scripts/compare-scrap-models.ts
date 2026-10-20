@@ -1,8 +1,8 @@
 /**
  * Score two on-device scrap-model logs.
  *
- * The sheet keeps Qwen2.5-1.5B-Instruct-Q4_K_M. This script does not download
- * the smaller model and does not declare a winner unless every shared run
+ * Helper chat downloads Qwen2.5-0.5B-Instruct. This script does not download
+ * either model and does not declare a winner unless every shared run
  * recorded latency and peak memory.
  *
  * Usage:

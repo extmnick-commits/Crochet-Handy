@@ -16,7 +16,6 @@ import { createId, decideUploadAccess, DAILY_UPLOAD_LIMIT, normalizeHex } from '
 import { isFirebaseConfigured } from '@/utils/firebase';
 import { yarnWeightMeta } from '@/utils/patternDisplay';
 import { captureErrorMessage, captureProgressPhoto, type CaptureSource } from '@/utils/progressPhoto';
-import { YARDAGE_TIERS, hookForYarnWeight, type ScannedLeftoverDraft } from '@/utils/scrapYarnAi';
 import { hexToYarnColorName } from '@/utils/yarnColorExtractor';
 import { regionSampleKey, type YarnSampleRegion } from '@/utils/yarnRegion';
 import { reserveDailyUpload } from '@/utils/uploadQuota';
@@ -40,11 +39,9 @@ const PRESET_COLORS = [
 type AddYarnModalProps = {
   visible: boolean;
   onClose: () => void;
-  /** Prefills the sheet and offers a one-tap save into the stash. */
-  scannedLeftover?: ScannedLeftoverDraft | null;
 };
 
-export function AddYarnModal({ visible, onClose, scannedLeftover = null }: AddYarnModalProps) {
+export function AddYarnModal({ visible, onClose }: AddYarnModalProps) {
   return (
     <BottomSheet
       visible={visible}
@@ -72,33 +69,22 @@ export function AddYarnModal({ visible, onClose, scannedLeftover = null }: AddYa
       }
     >
       {visible ? (
-        <AddYarnForm
-          key={scannedLeftover?.colors.map((color) => color.hex).join('-') || 'manual'}
-          onClose={onClose}
-          scannedLeftover={scannedLeftover}
-        />
+        <AddYarnForm key="manual" onClose={onClose} />
       ) : null}
     </BottomSheet>
   );
 }
 
-function AddYarnForm({
-  onClose,
-  scannedLeftover,
-}: {
-  onClose: () => void;
-  scannedLeftover: ScannedLeftoverDraft | null;
-}) {
+function AddYarnForm({ onClose }: { onClose: () => void }) {
   const account = useCrochetStore((state) => state.account);
   const addStashItem = useCrochetStore((state) => state.addStashItem);
   const removeStashItem = useCrochetStore((state) => state.removeStashItem);
   const recordLocalUpload = useCrochetStore((state) => state.recordLocalUpload);
   const setUploadQuota = useCrochetStore((state) => state.setUploadQuota);
-  const scannedColor = scannedLeftover?.colors[0];
-  const [colorName, setColorName] = useState(scannedColor?.name ?? '');
-  const [brand, setBrand] = useState(scannedLeftover ? 'Leftover scrap' : '');
-  const [hex, setHex] = useState(scannedColor?.hex ?? '#C6A36E');
-  const [yarnWeight, setYarnWeight] = useState<YarnWeight>(scannedLeftover?.yarnWeight ?? 'worsted');
+  const [colorName, setColorName] = useState('');
+  const [brand, setBrand] = useState('');
+  const [hex, setHex] = useState('#C6A36E');
+  const [yarnWeight, setYarnWeight] = useState<YarnWeight>('worsted');
   const [skeinCount, setSkeinCount] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [paywall, setPaywall] = useState(false);
@@ -190,40 +176,6 @@ function AddYarnForm({
     onClose();
   };
 
-  const onSaveScanned = async () => {
-    if (!scannedLeftover || scannedLeftover.colors.length === 0) return;
-    const hookSize = scannedLeftover.hookSize || hookForYarnWeight(scannedLeftover.yarnWeight);
-    for (const color of scannedLeftover.colors) {
-      const outcome = await persistYarn({
-        hexColor: color.hex,
-        brand: 'Leftover scrap',
-        colorName: color.name,
-        yarnWeight: scannedLeftover.yarnWeight,
-        skeinCount: 1,
-        hookSize,
-      });
-      if (outcome === 'sign-in') {
-        setError('Sign in to add yarn.');
-        return;
-      }
-      if (outcome === 'limit') {
-        setPaywall(true);
-        return;
-      }
-      if (outcome !== 'saved') {
-        setError('Could not save that leftover yarn.');
-        return;
-      }
-    }
-    onClose();
-  };
-
-  const scannedLabel = scannedLeftover
-    ? scannedLeftover.availableYards != null
-      ? `${scannedLeftover.availableYards} yd leftover`
-      : scannedLeftover.amountLabel ?? YARDAGE_TIERS.find((tier) => tier.id === scannedLeftover.yardageTier)?.label
-    : null;
-
   const onSnapYarn = async (source: CaptureSource) => {
     setError(null);
     const captured = await captureProgressPhoto(source);
@@ -259,42 +211,6 @@ function AddYarnForm({
 
   return (
     <View style={styles.form}>
-      {scannedLeftover && scannedLeftover.colors.length === 0 ? (
-        <View style={styles.scannedCard}>
-          <Text style={styles.scannedTitle}>Leftover yarn</Text>
-          <Text style={styles.scannedMeta}>Yarn category filled in. Choose a color and review the details below to save it.</Text>
-          {scannedLabel ? <Text style={styles.scannedMeta}>{scannedLabel}</Text> : null}
-        </View>
-      ) : null}
-      {scannedLeftover && scannedLeftover.colors.length > 0 ? (
-        <View style={styles.scannedCard}>
-          <Text style={styles.scannedTitle}>Scanned leftover yarn</Text>
-          <Text style={styles.scannedMeta}>
-            {scannedLeftover.colors.map((color) => color.name).join(', ')}
-            {scannedLabel ? ` · ${scannedLabel}` : ''}
-          </Text>
-          <View style={styles.presets}>
-            {scannedLeftover.colors.map((color) => (
-              <View key={`${color.hex}-${color.name}`} style={[styles.preset, { backgroundColor: color.hex }]} />
-            ))}
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Save scanned leftover yarn"
-            testID="save-scanned-leftover"
-            onPress={() => {
-              void onSaveScanned();
-            }}
-            style={({ pressed }) => [styles.save, pressed && styles.pressed, webCursor]}
-          >
-            <Text style={styles.saveText}>
-              {scannedLeftover.colors.length === 1
-                ? 'Save scanned leftover yarn'
-                : `Save ${scannedLeftover.colors.length} scanned colors`}
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
       {uploadsLeft != null ? (
         <Text style={styles.quotaHint} testID="yarn-uploads-remaining">
           {uploadsLeft} of {DAILY_UPLOAD_LIMIT} uploads left today (patterns + yarn).
@@ -697,20 +613,6 @@ const styles = StyleSheet.create({
     minWidth: 24,
     textAlign: 'center',
     color: Colors.textPrimary,
-  },
-  scannedCard: {
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.elevatedControl,
-  },
-  scannedTitle: {
-    ...Typography.subhead,
-    color: Colors.textPrimary,
-  },
-  scannedMeta: {
-    ...Typography.callout,
-    color: Colors.textSecondary,
   },
   error: {
     ...Typography.callout,

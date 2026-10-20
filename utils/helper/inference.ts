@@ -30,7 +30,7 @@ export class HelperInferenceEngine {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private unregister: (() => void) | null = null;
   private releasing: Promise<void> | null = null;
-  constructor(private idleMs = 45_000) {}
+  constructor(private idleMs = 180_000) {}
 
   /** Active requests finish cleanup under their lock; idle contexts release immediately. */
   dispose = async (): Promise<void> => {

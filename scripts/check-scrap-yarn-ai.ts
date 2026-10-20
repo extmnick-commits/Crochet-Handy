@@ -18,21 +18,7 @@ import {
   visionModelPair,
   type ScrapModelPin,
 } from '../utils/scrapModelPin';
-import { hookRangeLabel } from '../utils/scrapHookRange';
 import { checkPatternDraft } from '../utils/scrapPatternDraft';
-import { parseVisionFindings, searchAmount, visionPromptMentionsColor } from '../utils/scrapVisionOutput';
-import {
-  resetVisionSessionForTests,
-  runVisionAnalysis,
-  visionCompletionParams,
-  VISION_COMPLETION_MAX_TOKENS,
-  VISION_CONTEXT_TOKENS,
-  VISION_IMAGE_TOKENS,
-  VISION_PHOTO_LONG_EDGE,
-  preloadVisionSession,
-  releaseVisionSessionNow,
-  type VisionLlamaContext,
-} from '../utils/scrapVisionSession';
 import {
   ScrapChecksumError,
   ScrapEngineBusyError,
@@ -83,9 +69,8 @@ async function main() {
   await checkTransfers();
   await checkSessions();
   checkVisionPins();
-  checkVisionFindings();
   checkVisionCatalog();
-  await checkVisionSessions();
+  await checkPinnedPairDownload();
   checkPatternDrafts();
   checkComparison();
   checkNativeConfig();
@@ -576,59 +561,7 @@ function checkVisionPins() {
   }
 }
 
-function checkVisionFindings() {
-  assert(!visionPromptMentionsColor(), 'the vision prompt does not ask for color');
-  const parsed = parseVisionFindings(
-    JSON.stringify({
-      subjects: ['loose-yarn', 'label', 'hook'],
-      yarnCategory: 'bulky',
-      categorySource: 'visual',
-      labelText: 'Red Heart Worsted #4',
-      hookObservedMarking: '5.0 mm',
-      stitches: [{ name: 'double crochet', confidence: 'high', alternatives: [] }],
-      quantityCategory: 'under-25',
-      grams: 40,
-      yards: 120,
-    }),
-  );
-  assert(parsed, 'a labeled photo parses');
-  equal(parsed?.yarnCategory, 'worsted', 'a readable label overrides the visual category');
-  equal(parsed?.categorySource, 'label', 'the category is marked as coming from the label');
-  equal(parsed?.hookObservedMarking, '5.0 mm', 'a readable hook marking is kept');
-  equal(parsed?.stitches, 'uncertain', 'stitches stay uncertain when the photo is not fabric');
-  equal(parsed?.quantityCategory, 'under-25', 'a rough amount can be kept');
-  assert(!JSON.stringify(parsed).includes('120'), 'exact yardage from the model is dropped');
-  assert(!JSON.stringify(parsed).includes('40'), 'grams from the model are dropped');
-  equal(hookRangeLabel('fingering').includes('5.0'), false, 'the suggested range is not the observed hook marking');
-  const fabric = parseVisionFindings(
-    JSON.stringify({
-      subjects: ['fabric'],
-      yarnCategory: 'dk',
-      categorySource: 'visual',
-      labelText: null,
-      hookObservedMarking: '5.0 mm',
-      stitches: [{ name: 'sc', confidence: 'medium', alternatives: ['hdc'] }],
-      quantityCategory: 'uncertain',
-    }),
-  );
-  assert(fabric?.stitches !== 'uncertain' && fabric?.stitches[0]?.name === 'single crochet', 'a clear fabric photo can name a stitch');
-  equal(fabric?.hookObservedMarking, null, 'a hook marking is ignored when no hook is visible');
-  equal(parseVisionFindings('not json'), null, 'invalid model text is rejected');
-  const fenced = parseVisionFindings(
-    'Here is the photo:\n```json\n{"subjects":["yarn","hook"],"yarnCategory":"worsted weight","categorySource":"guess","labelText":null,"hookObservedMarking":"5.0 mm","stitches":"uncertain","quantityCategory":"a skein"}\n```',
-  );
-  assert(fenced?.subjects.includes('loose-yarn') && fenced.subjects.includes('hook'), 'a fenced reply with plain names is kept');
-  equal(fenced?.yarnCategory, 'worsted', 'a weight phrase in the category is kept');
-  equal(fenced?.quantityCategory, 'uncertain', 'an unknown amount stays uncertain');
-  const prose = parseVisionFindings('The photo shows balls of yarn and a crochet hook.');
-  assert(prose?.subjects.includes('loose-yarn') && prose.subjects.includes('hook'), 'a plain description can name yarn and a hook');
-  equal(prose?.yarnCategory, 'uncertain', 'a description without a weight does not invent one');
-}
-
 function checkVisionCatalog() {
-  equal(searchAmount({ quantityCategory: 'uncertain', yardsText: '' }), null, 'grams alone do not become a yard total');
-  equal(searchAmount({ quantityCategory: 'under-25', yardsText: '40' })?.kind, 'entered-yards', 'entered yards win over the rough category');
-  equal(searchAmount({ quantityCategory: 'skein-or-more', yardsText: '' })?.kind, 'rough-category', 'a rough category can search without a measurement');
   assert(visionFitReason('worsted', 'worsted', 'small').includes('matches'), 'an exact weight is explained');
   assert(visionFitReason('dk', 'worsted', 'micro').includes('close'), 'an adjacent weight is explained');
   equal(tutorialMaterialsNote(null), 'This tutorial does not list materials.', 'missing materials stay unlabeled');
@@ -639,178 +572,7 @@ function checkVisionCatalog() {
   assert(!visionFitReason('worsted', 'worsted', 'small').toLowerCase().includes('guaranteed'), 'a reason does not guarantee the leftovers');
 }
 
-async function checkVisionSessions() {
-  resetVisionSessionForTests();
-  let finishLoading: (context: VisionLlamaContext) => void = () => undefined;
-  const loading = new Promise<VisionLlamaContext>((resolve) => { finishLoading = resolve; });
-  const firstPhoto = runVisionAnalysis({
-    runtime: { initLlama: () => loading },
-    supported: true,
-    platform: 'ios',
-    modelPath: 'file://ios.gguf',
-    projectorPath: 'file://mmproj.gguf',
-    imageUri: 'file://first-yarn.jpg',
-    photoGeneration: 10,
-    isCurrent: () => true,
-  });
-  const secondPhoto = await runVisionAnalysis({
-    runtime: { initLlama: () => loading },
-    supported: true,
-    platform: 'ios',
-    modelPath: 'file://ios.gguf',
-    projectorPath: 'file://mmproj.gguf',
-    imageUri: 'file://second-yarn.jpg',
-    photoGeneration: 11,
-    isCurrent: () => true,
-  });
-  assert(secondPhoto.status === 'failed' && secondPhoto.message.includes('busy'), 'a new photo never joins an old photo’s inference');
-  finishLoading(visionContext('{"subjects":["loose-yarn"],"yarnCategory":"dk","categorySource":"visual","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}'));
-  const firstResult = await firstPhoto;
-  assert(firstResult.status === 'findings' && firstResult.photoGeneration === 10, 'findings remain tied to their own photo');
-
-  resetVisionSessionForTests();
-  const imageParams = visionCompletionParams('file://yarn.jpg');
-  const messages = imageParams.messages as { content: unknown }[];
-  assert(JSON.stringify(messages).includes('file://yarn.jpg'), 'the completion payload contains the local image');
-  assert(!JSON.stringify(imageParams).toLowerCase().includes('color'), 'the image request does not ask for color');
-  equal(imageParams.n_predict, VISION_COMPLETION_MAX_TOKENS, 'vision decoding stays within the smaller token budget');
-  equal(VISION_CONTEXT_TOKENS, 1536, 'vision context window is trimmed for mobile');
-  equal(VISION_IMAGE_TOKENS, 256, 'vision image token budget is trimmed for yarn scans');
-  equal(VISION_PHOTO_LONG_EDGE, 448, 'vision photos are downscaled before encode');
-
-  const iosCalls: { layers: number; shift: boolean }[] = [];
-  const ios = await runVisionAnalysis({
-    runtime: {
-      initLlama: async (params) => {
-        iosCalls.push({ layers: params.n_gpu_layers, shift: params.ctx_shift });
-        throw new Error('metal failed');
-      },
-    },
-    supported: true,
-    platform: 'ios',
-    modelPath: 'file://ios.gguf',
-    projectorPath: 'file://ios-mmproj.gguf',
-    imageUri: 'file://yarn.jpg',
-    photoGeneration: 1,
-    isCurrent: () => true,
-  });
-  equal(ios.status, 'unsupported', 'a failed Metal init is unsupported');
-  equal(iosCalls.length, 1, 'iOS does not retry the vision model on the CPU');
-  equal(iosCalls[0]?.layers, 99, 'iOS asks for the Metal layer count');
-  equal(iosCalls[0]?.shift, false, 'vision context shifting stays off');
-
-  resetVisionSessionForTests();
-  const androidCalls: number[] = [];
-  const projectorGpuAttempts: boolean[] = [];
-  let projectorPath = '';
-  let released = 0;
-  const android = await runVisionAnalysis({
-    runtime: {
-      initLlama: async (params) => {
-        androidCalls.push(params.n_gpu_layers);
-        if (params.n_gpu_layers > 0) throw new Error('opencl failed');
-        return visionContext('{"subjects":["uncertain"],"yarnCategory":"uncertain","categorySource":"uncertain","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}', {
-          onRelease: () => {
-            released += 1;
-          },
-          onProjector: (useGpu, path) => {
-            projectorGpuAttempts.push(useGpu);
-            projectorPath = path;
-          },
-          rejectProjectorGpu: true,
-        });
-      },
-    },
-    supported: true,
-    platform: 'android',
-    modelPath: 'file://android.gguf',
-    projectorPath: 'file://mmproj-F16.gguf',
-    imageUri: 'file://yarn.jpg',
-    photoGeneration: 2,
-    isCurrent: () => true,
-  });
-  equal(androidCalls.join(','), '99,0', 'Android retries the text model once on CPU');
-  equal(android.status, 'findings', 'a CPU retry can still return findings');
-  equal(projectorGpuAttempts.join(','), 'true,false', 'Android tries OpenCL for the projector, then CPU');
-  assert(projectorPath.includes('mmproj-F16'), 'Android loads the projector path it was given');
-  equal(released, 0, 'a successful scan keeps the vision context warm');
-
-  resetVisionSessionForTests();
-  let warmInits = 0;
-  const warmRuntime = {
-    initLlama: async () => {
-      warmInits += 1;
-      return visionContext('{"subjects":["loose-yarn"],"yarnCategory":"worsted","categorySource":"visual","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}');
-    },
-  };
-  const warmSpec = {
-    runtime: warmRuntime,
-    platform: 'ios' as const,
-    modelPath: 'file://ios.gguf',
-    projectorPath: 'file://mmproj.gguf',
-  };
-  await preloadVisionSession(warmSpec);
-  const warmArgs = {
-    runtime: warmRuntime,
-    supported: true,
-    platform: 'ios' as const,
-    modelPath: 'file://ios.gguf',
-    projectorPath: 'file://mmproj.gguf',
-    imageUri: 'file://yarn-a.jpg',
-    photoGeneration: 20,
-    isCurrent: () => true,
-  };
-  const warmFirst = await runVisionAnalysis(warmArgs);
-  assert(warmFirst.status === 'findings', 'first warm-path scan succeeds');
-  const warmSecond = await runVisionAnalysis({ ...warmArgs, imageUri: 'file://yarn-b.jpg', photoGeneration: 21 });
-  assert(warmSecond.status === 'findings', 'second warm-path scan succeeds');
-  equal(warmInits, 1, 'a scan-flow session avoids reloading the text model between photos');
-  await releaseVisionSessionNow();
-  equal(warmInits, 1, 'releasing the session does not reload the model');
-
-  resetVisionSessionForTests();
-  let sawImage = false;
-  const staleFlag = { current: true };
-  const stale = await runVisionAnalysis({
-    runtime: {
-      initLlama: async () =>
-        visionContext('{"subjects":["loose-yarn"],"yarnCategory":"worsted","categorySource":"visual","labelText":null,"hookObservedMarking":null,"stitches":"uncertain","quantityCategory":"uncertain"}', {
-          onComplete: (params) => {
-            sawImage = JSON.stringify(params).includes('file://yarn.jpg');
-            staleFlag.current = false;
-          },
-        }),
-    },
-    supported: true,
-    platform: 'ios',
-    modelPath: 'file://ios.gguf',
-    projectorPath: 'file://mmproj.gguf',
-    imageUri: 'file://yarn.jpg',
-    photoGeneration: 3,
-    isCurrent: () => staleFlag.current,
-  });
-  assert(sawImage, 'the image is passed before a replaced photo is noticed');
-  equal(stale.status, 'discarded', 'a reply after a new photo is discarded');
-
-  resetVisionSessionForTests();
-  const blind = await runVisionAnalysis({
-    runtime: {
-      initLlama: async () =>
-        visionContext('{}', {
-          vision: false,
-        }),
-    },
-    supported: true,
-    platform: 'ios',
-    modelPath: 'file://ios.gguf',
-    projectorPath: 'file://mmproj.gguf',
-    imageUri: 'file://yarn.jpg',
-    photoGeneration: 4,
-    isCurrent: () => true,
-  });
-  equal(blind.status, 'failed', 'analysis stops when the projector does not report vision');
-
-  resetVisionSessionForTests();
+async function checkPinnedPairDownload() {
   const memory = createMemoryTransferIO();
   const textPin: ScrapModelPin = {
     id: 'text',
@@ -970,42 +732,6 @@ function checkPatternDrafts() {
   const sweater = checkPatternDraft(JSON.stringify({ shape: 'unsupported', title: '', hookMm: 5, gaugeNote: '', abbreviations: [], materials: '', instructions: [] }), request);
   equal(sweater.kind, 'unsupported', 'a sweater request stays unsupported');
   assert(sweater.kind === 'unsupported' && !('instructions' in sweater), 'an unsupported shape has no instructions');
-}
-
-function visionContext(
-  text: string,
-  hooks?: {
-    onRelease?: () => void;
-    onComplete?: (params: Record<string, unknown>) => void;
-    onProjector?: (useGpu: boolean, path: string) => void;
-    rejectProjectorGpu?: boolean;
-    vision?: boolean;
-  },
-): VisionLlamaContext {
-  let multimodal = false;
-  return {
-    gpu: true,
-    devices: [],
-    reasonNoGPU: '',
-    initMultimodal: async (params) => {
-      hooks?.onProjector?.(params.use_gpu === true, params.path);
-      if (hooks?.rejectProjectorGpu && params.use_gpu === true) return false;
-      if (hooks?.vision === false) return false;
-      multimodal = true;
-      return true;
-    },
-    isMultimodalEnabled: async () => multimodal && hooks?.vision !== false,
-    getMultimodalSupport: async () => ({ vision: multimodal && hooks?.vision !== false, audio: false }),
-    releaseMultimodal: async () => {
-      multimodal = false;
-    },
-    completion: async (params) => {
-      hooks?.onComplete?.(params);
-      return { text };
-    },
-    stopCompletion: async () => undefined,
-    release: async () => hooks?.onRelease?.(),
-  };
 }
 
 function checkComparison() {

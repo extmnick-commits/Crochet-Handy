@@ -60,8 +60,6 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "check-scrap-ai": "npx tsx scripts/check-scrap-yarn-ai.ts",
-    "check-leftover-yarn": "npx tsx scripts/check-leftover-yarn.ts",
-    "check-leftover-matching": "node --import tsx scripts/check-leftover-matching.ts",
     "update-patterns": "npx tsx scripts/update-patterns.ts",
     "export-pattern-catalog": "npx tsx scripts/export-pattern-catalog.ts",
     "prune-non-english-patterns": "npx tsx scripts/prune-non-english-patterns.ts",

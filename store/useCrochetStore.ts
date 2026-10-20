@@ -53,6 +53,7 @@ import {
   applyRemoveProjectYarnColor,
   applySetAccount,
   applySetRowNote,
+  applyAppendRowNote,
   applyAddPatternComment,
   applyRemovePatternComment,
   applyToggleFollowCreator,
@@ -166,6 +167,8 @@ type CrochetActions = {
   updateStashItem: (stashItemId: string, patch: YarnStashPatch) => void;
   removeStashItem: (stashItemId: string) => void;
   setRowNote: (note: string) => void;
+  /** Appends a decoded row or calculation onto the active project's row note. */
+  appendRowNote: (note: string) => void;
   addProjectYarnColor: (input: NewProjectYarnColorInput) => string | null;
   updateProjectYarnColor: (colorId: string, patch: ProjectYarnColorPatch) => void;
   removeProjectYarnColor: (colorId: string) => void;
@@ -342,6 +345,7 @@ export const useCrochetStore = create<CrochetStore>()(
           commit((data, now) => applyUpdateStashItem(data, stashItemId, patch, now)),
         removeStashItem: (stashItemId) => commit((data, now) => applyRemoveStashItem(data, stashItemId, now)),
         setRowNote: (note) => commit((data, now) => applySetRowNote(data, note, now)),
+        appendRowNote: (note) => commit((data, now) => applyAppendRowNote(data, note, now)),
         addProjectYarnColor: (input) => {
           const id = createId('color');
           const next = applyAddProjectYarnColor(readData(get()), id, input, Date.now());

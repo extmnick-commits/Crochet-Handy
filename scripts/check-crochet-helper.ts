@@ -1,12 +1,12 @@
 /** Framework-free checks. Native model/GPU behavior still needs physical phones. */
 import assert from 'node:assert/strict';
 import { calculateCrochet } from '../utils/helper/calculators';
-import { buildHelperMessages, contextKey, searchHelperPatterns, type HelperMessage } from '../utils/helper/context';
+import { buildHelperMessages, contextKey, getStarters, searchHelperPatterns, type HelperMessage } from '../utils/helper/context';
 import { quickHelperReply, cleanHelperAnswer } from '../utils/helper/replies';
 import { HelperSession } from '../utils/helper/session';
 import { HelperInferenceEngine, HelperInferenceError, type HelperNativeContext, type HelperRuntime } from '../utils/helper/inference';
 import { scrapEngineLockKind, withScrapEngineLock } from '../utils/scrapModelTransfer';
-import type { CrochetPattern } from '../store/machine';
+import type { CrochetPattern, CrochetProject, YarnStashItem } from '../store/machine';
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
@@ -79,6 +79,66 @@ async function main() {
   assert.equal(quickHelperReply('How many stitches for this width?', general, [])!.calculator, 'gauge');
   assert.equal(quickHelperReply('What does dc mean?', general, [])!.text.includes('UK'), true);
   assert.equal(quickHelperReply('Why does the edge of my circle curl?', general, []), null);
+  const increased = quickHelperReply('increase from 40 to 48 stitches', general, [])!;
+  assert.match(increased.text, /\(4 sc, inc\) × 8/);
+  assert.equal(increased.calculator, 'shaping');
+  assert.equal(increased.calculated, true);
+  assert.equal(increased.actions?.some((action) => action.kind === 'stitch-target' && action.stitches === 48), true);
+  const decreased = quickHelperReply('decrease from 36 to 24', general, [])!;
+  assert.match(decreased.text, /\(1 sc, dec\) × 12/);
+  assert.match(quickHelperReply('how many yards left in 35g of a 100g 220yd skein', general, [])!.text, /77 yd/);
+  const uneven = quickHelperReply('Rnd 4: *2 sc, inc* rep around (18)', general, [])!;
+  assert.match(uneven.text, /single crochet/);
+  assert.match(uneven.text, /not a multiple of 4/);
+  assert.equal(uneven.actions?.some((action) => action.kind === 'row-note'), true);
+  assert.equal(uneven.actions?.some((action) => action.kind === 'stitch-target'), false);
+  const even = quickHelperReply('Rnd 2: *sc, inc* rep around (18)', general, [])!;
+  assert.match(even.text, /6 repeats/);
+  assert.equal(even.actions?.find((action) => action.kind === 'stitch-target' && action.stitches === 18) != null, true);
+  assert.match(quickHelperReply('UK terms: Rnd 1: 6 dc (6)', general, [])!.text, /UK/);
+  const stashYarn: YarnStashItem = { id: 'yarn-1', hexColor: '#C6A36E', brand: 'Paintbox', colorName: 'Soft Fudge', yarnWeight: 'worsted', hookSize: '5 mm', skeinCount: 2 };
+  assert.match(quickHelperReply('What can I make with my stash?', general, [], [])!.text, /empty/);
+  const matched = quickHelperReply('What can I make with my stash?', general, [], [stashYarn])!;
+  assert.match(matched.text, /worsted/);
+  assert.ok(matched.patterns && matched.patterns.length > 0, 'stash matching returns catalog cards');
+  const forThis = quickHelperReply('Do I have stash yarn for this?', context, [], [stashYarn])!;
+  assert.match(forThis.text, /worsted/);
+  assert.ok(forThis.patterns && forThis.patterns.length > 0);
+  const activeProject: CrochetProject = {
+    id: 'project-1', name: 'Swatch', patternId: null, status: 'in-progress', currentStitch: 0, stitchesPerRow: 20,
+    currentRow: 4, totalRows: 10, hookSize: '5 mm', yarnWeight: 'worsted', timerStartedAt: null, accumulatedSeconds: 600,
+    yarnColors: [], rowNote: '', checkpoints: [], createdAt: 0, updatedAt: 0,
+  };
+  assert.deepEqual(getStarters({ pattern: null, project: activeProject }, '/active', []), ['Explain Row 4', 'Evenly space increases', 'Estimate time left', 'Pin a note to this row']);
+  assert.equal(getStarters(context, '/pattern', [])[2], 'Do I have stash yarn for this?');
+  assert.equal(getStarters(general, '/me', [])[0], 'Match patterns to my yarn stash');
+  assert.match(quickHelperReply('Estimate time left', { pattern: null, project: activeProject }, [])!.text, /23\.333 minutes remaining/);
+  const memory = new Map<string, string>();
+  const store = {
+    getItem: async (key: string) => memory.get(key) ?? null,
+    setItem: async (key: string, value: string) => { memory.set(key, value); },
+    removeItem: async (key: string) => { memory.delete(key); },
+  };
+  const persisted = new HelperSession(store, 0);
+  persisted.bindOwner('alice');
+  persisted.append({ ...message, id: 'saved-row', text: 'Rnd 4 decoded' });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(memory.get('crochet-helper-messages:alice') ?? '', /Rnd 4 decoded/);
+  persisted.bindOwner('bob');
+  assert.equal(persisted.snapshot().messages.length, 0);
+  assert.match(memory.get('crochet-helper-messages:alice') ?? '', /Rnd 4 decoded/);
+  persisted.bindOwner('alice');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(persisted.snapshot().messages[0]?.text, 'Rnd 4 decoded');
+  persisted.clear();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(memory.has('crochet-helper-messages:alice'), false);
+  persisted.bindOwner('alice');
+  persisted.append({ ...message, id: 'sign-out', text: 'private' });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  persisted.bindOwner(null);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(memory.has('crochet-helper-messages:alice'), false);
   assert.equal(cleanHelperAnswer('A useful answer. #Crochet #Crochet #Crochet', true), 'A useful answer.');
   assert.equal(cleanHelperAnswer('```json\n{ "answer": "Use a stitch marker. #Crochet #Crochet', true), 'Use a stitch marker.');
   assert.equal(cleanHelperAnswer('```json\n{ "answer": '), '');

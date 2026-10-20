@@ -2,13 +2,13 @@
  * Catalog preview handoff.
  *
  * Opening a recommendation only changes which sheet is visible. Saving and
- * starting are separate actions, and the yarn draft is left untouched.
+ * starting are separate actions.
  */
 import type { CrochetPattern, NewPatternInput } from '@/store/machine';
 
 import { patternPosterUri, youtubeThumbnailUrl } from '@/utils/youtube';
 
-export type CatalogPreviewPhase = 'idle' | 'scrap' | 'closing-scrap' | 'preview' | 'closing-preview';
+export type CatalogPreviewPhase = 'idle' | 'preview' | 'closing-preview';
 
 export type CatalogPreviewFlow<T extends { id: string } = { id: string }> = {
   phase: CatalogPreviewPhase;
@@ -21,28 +21,13 @@ export function idleCatalogPreview<T extends { id: string } = { id: string }>():
   return { phase: 'idle', pattern: null };
 }
 
-export function openLeftoverScrap<T extends { id: string }>(flow: CatalogPreviewFlow<T>): CatalogPreviewFlow<T> {
-  if (flow.phase === 'preview' || flow.phase === 'closing-scrap' || flow.phase === 'closing-preview') return flow;
-  return { phase: 'scrap', pattern: null };
-}
-
-export function closeLeftoverScrap<T extends { id: string }>(flow: CatalogPreviewFlow<T>): CatalogPreviewFlow<T> {
-  if (flow.phase !== 'scrap') return flow;
-  return { phase: 'idle', pattern: null };
-}
-
-/** A second tap while a preview is opening keeps the first pattern. */
+/** A second tap while a preview is open keeps the first pattern. */
 export function requestCatalogPreview<T extends { id: string }>(
   flow: CatalogPreviewFlow<T>,
   pattern: T,
 ): CatalogPreviewFlow<T> {
-  if (flow.phase === 'closing-scrap' || flow.phase === 'preview' || flow.phase === 'closing-preview') return flow;
-  return { phase: 'closing-scrap', pattern };
-}
-
-export function scrapDismissed<T extends { id: string }>(flow: CatalogPreviewFlow<T>): CatalogPreviewFlow<T> {
-  if (flow.phase !== 'closing-scrap' || !flow.pattern) return flow;
-  return { phase: 'preview', pattern: flow.pattern };
+  if (flow.phase === 'preview' || flow.phase === 'closing-preview') return flow;
+  return { phase: 'preview', pattern };
 }
 
 export function closeCatalogPreview<T extends { id: string }>(flow: CatalogPreviewFlow<T>): CatalogPreviewFlow<T> {
@@ -52,7 +37,7 @@ export function closeCatalogPreview<T extends { id: string }>(flow: CatalogPrevi
 
 export function previewDismissed<T extends { id: string }>(flow: CatalogPreviewFlow<T>): CatalogPreviewFlow<T> {
   if (flow.phase !== 'closing-preview') return flow;
-  return { phase: 'scrap', pattern: null };
+  return { phase: 'idle', pattern: null };
 }
 
 export function catalogPreviewDecision(action: CatalogPreviewAction): { importPattern: boolean; startProject: boolean } {

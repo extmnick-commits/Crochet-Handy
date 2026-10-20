@@ -88,6 +88,7 @@ import {
   applySetPatternBookmarks,
   applySetHookAndYarn,
   applySetRowNote,
+  applyAppendRowNote,
   applySetStitchesPerRow,
   applySetTotalRows,
   applyStartTimer,
@@ -486,6 +487,9 @@ assert(applyUpdateStashItem(recolored, 'missing', { brand: 'Nope' }, 6) == null,
 
 const noted = applySetRowNote(recolored, '  sc x 12  ', 9)!;
 equal(activeProject(noted)?.rowNote, 'sc x 12', 'row note trimmed');
+const appended = applyAppendRowNote(noted, ' inc x 6 ', 10)!;
+equal(activeProject(appended)?.rowNote, 'sc x 12 inc x 6', 'row note appends');
+assert(applyAppendRowNote(appended, '   ', 11) == null, 'blank row note append is ignored');
 assert(applyAddProjectYarnColor(noted, 'color-test', { hexColor: '#ff00aa', label: 'Pop' }, 10) == null, 'palette capped at four');
 const withRoom = applyRemoveProjectYarnColor(noted, 'color-blush', 11)!;
 const withColor = applyAddProjectYarnColor(withRoom, 'color-new', { hexColor: '#112233', label: 'Navy' }, 12)!;

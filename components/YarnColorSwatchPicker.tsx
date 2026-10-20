@@ -8,9 +8,6 @@ import { WebView } from 'react-native-webview';
 
 import { Colors, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import {
-  type ExtractionStamp,
-} from '@/utils/leftoverYarnDraft';
-import {
   YARN_COLOR_DICTIONARY,
   YARN_COLOR_FAMILIES,
   cropYarnRegions,
@@ -21,6 +18,11 @@ import {
 import { pixelCrop, regionSampleKey, type YarnSampleRegion } from '@/utils/yarnRegion';
 
 const DEFAULT_MAX_COLORS = 4;
+
+type ExtractionStamp = {
+  generation: number;
+  sampleKey: string;
+};
 
 type Probe = {
   uris: string[];
