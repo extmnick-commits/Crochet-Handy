@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-19T05:49:50.687Z",
+  "generatedAt": "2026-10-20T05:31:56.448Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -4219,6 +4219,115 @@
       ],
       "bookmarks": [],
       "summary": "Create a cozy throw blanket using a simple repeating stitch pattern ideal for beginners."
+    },
+    {
+      "id": "pattern-super-easy-elegant-crochet-stitch-pattern-perfec",
+      "title": "Super Easy & Elegant Crochet Stitch Pattern | Perfect for Top, Cardigan & Shawl 🌸",
+      "creator": "WooL Work",
+      "youtubeUrl": "https://www.youtube.com/watch?v=RH40WO0rTCs",
+      "videoId": "RH40WO0rTCs",
+      "thumbnailUrl": "https://i.ytimg.com/vi/RH40WO0rTCs/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "dk",
+      "hookSize": "4.5 mm",
+      "totalRows": 10,
+      "stitchesPerRow": 40,
+      "tags": [
+        "wearables",
+        "cardigan",
+        "scarf",
+        "blanket",
+        "lace stitch",
+        "crochet top",
+        "winter",
+        "valentines"
+      ],
+      "bookmarks": [],
+      "summary": "Master an elegant, openwork diamond fan lace crochet stitch ideal for handmade tops, lightweight cardigans, and cozy blankets."
+    },
+    {
+      "id": "pattern-part-5-front-body-panel-to-arm-holes-men-s-croch",
+      "title": "Part 5: Front Body Panel to Arm Holes - Men's Crochet Sweater Stitch Along",
+      "creator": "The Crochet Crowd",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Gfp2qehS4IM",
+      "videoId": "Gfp2qehS4IM",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Gfp2qehS4IM/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "aran",
+      "hookSize": "5.5 mm",
+      "totalRows": 50,
+      "stitchesPerRow": 45,
+      "tags": [
+        "wearables",
+        "sweater",
+        "mens sweater",
+        "hdc",
+        "cardigan",
+        "valentines",
+        "mothers-day",
+        "half double crochet"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-start",
+          "label": "Start",
+          "seconds": 0
+        },
+        {
+          "id": "bm-1-pattern-overview",
+          "label": "Pattern Overview",
+          "seconds": 1
+        },
+        {
+          "id": "bm-87-beginning-chain",
+          "label": "Beginning Chain",
+          "seconds": 87
+        },
+        {
+          "id": "bm-128-foundation-row",
+          "label": "Foundation Row",
+          "seconds": 128
+        },
+        {
+          "id": "bm-234-row-1",
+          "label": "Row 1",
+          "seconds": 234,
+          "rowHint": 1
+        },
+        {
+          "id": "bm-385-row-2",
+          "label": "Row 2",
+          "seconds": 385,
+          "rowHint": 2
+        },
+        {
+          "id": "bm-460-rep-rows-1-and-2",
+          "label": "Rep Rows 1 and 2.",
+          "seconds": 460
+        },
+        {
+          "id": "bm-480-rep-row-1",
+          "label": "Rep Row 1",
+          "seconds": 480,
+          "rowHint": 1
+        },
+        {
+          "id": "bm-575-body-panel",
+          "label": "Body Panel",
+          "seconds": 575
+        },
+        {
+          "id": "bm-767-finishing-up-to-16-5-hei",
+          "label": "Finishing Up to 16.5\" height",
+          "seconds": 767
+        },
+        {
+          "id": "bm-798-shape-armholes",
+          "label": "Shape Armholes",
+          "seconds": 798
+        }
+      ],
+      "summary": "Crochet the front body panel up to the armholes for a beginner-friendly men's sweater using Red Heart Super Saver yarn."
     }
   ]
 }
