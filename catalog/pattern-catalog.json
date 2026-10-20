@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-20T07:47:53.275Z",
+  "generatedAt": "2026-10-20T07:59:25.095Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -5224,6 +5224,104 @@
         }
       ],
       "summary": "Master color changes and ribbing while crocheting a stylish two-tone adult beanie."
+    },
+    {
+      "id": "pattern-crochet-slippers-for-women-easy-bootie-style-tut",
+      "title": "Crochet Slippers for Women | Easy Bootie Style Tutorial",
+      "creator": "Diving Ducks Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=lA5nbTZIiLA",
+      "videoId": "lA5nbTZIiLA",
+      "thumbnailUrl": "https://i.ytimg.com/vi/lA5nbTZIiLA/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "super-bulky",
+      "hookSize": "6 mm",
+      "totalRows": 20,
+      "stitchesPerRow": 18,
+      "tags": [
+        "socks",
+        "slippers",
+        "booties",
+        "wearables",
+        "hdc",
+        "cozy",
+        "winter",
+        "valentines"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-crochet-bootie-slippers",
+          "label": "Crochet bootie slippers",
+          "seconds": 0
+        },
+        {
+          "id": "bm-28-yarn-and-materials",
+          "label": "Yarn and materials",
+          "seconds": 28
+        },
+        {
+          "id": "bm-51-starting-the-toe",
+          "label": "Starting the toe",
+          "seconds": 51
+        },
+        {
+          "id": "bm-614-shaping-the-slipper-and-",
+          "label": "Shaping the slipper and heel",
+          "seconds": 614
+        },
+        {
+          "id": "bm-773-crocheting-the-boot-cuff",
+          "label": "Crocheting the boot cuff and finishing",
+          "seconds": 773
+        }
+      ],
+      "summary": "Cozy, warm bootie slippers crocheted with super bulky yarn, featuring a textured toe and tall wearable cuff."
+    },
+    {
+      "id": "pattern-spooky-knit-or-crochet-socks-for-spooky-people",
+      "title": "Spooky Knit or Crochet Socks for Spooky People",
+      "creator": "KJ's Stitching Studio",
+      "youtubeUrl": "https://www.youtube.com/watch?v=NM_8GldmhyA",
+      "videoId": "NM_8GldmhyA",
+      "thumbnailUrl": "https://i.ytimg.com/vi/NM_8GldmhyA/maxresdefault.jpg",
+      "difficulty": "intermediate",
+      "yarnWeight": "fingering",
+      "hookSize": "3.25 mm",
+      "totalRows": 60,
+      "stitchesPerRow": 32,
+      "tags": [
+        "socks",
+        "halloween",
+        "wearables",
+        "colorwork",
+        "sc",
+        "dc"
+      ],
+      "bookmarks": [],
+      "summary": "Explore a collection of 14 spooky-themed knitted and crocheted sock patterns perfect for the Halloween season."
+    },
+    {
+      "id": "pattern-easy-crochet-socks-tutorial-beautiful-diy-sock-m",
+      "title": "Easy Crochet Socks Tutorial 🧦 | Beautiful DIY Sock Makeover",
+      "creator": "Manita’s Craft",
+      "youtubeUrl": "https://www.youtube.com/watch?v=2YbBUtVIgxo",
+      "videoId": "2YbBUtVIgxo",
+      "thumbnailUrl": "https://i.ytimg.com/vi/2YbBUtVIgxo/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "fingering",
+      "hookSize": "2.5 mm",
+      "totalRows": 5,
+      "stitchesPerRow": 40,
+      "tags": [
+        "socks",
+        "diy",
+        "wearables",
+        "easycrochet",
+        "beginner",
+        "sc",
+        "sl st"
+      ],
+      "bookmarks": [],
+      "summary": "Transform an ordinary pair of socks into a custom creation with this easy crochet edge makeover tutorial."
     }
   ]
 }
