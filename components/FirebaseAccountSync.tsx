@@ -138,6 +138,9 @@ export function FirebaseAccountSync() {
     setAuthSessionReady(false);
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setAuthSessionReady(false);
+      }
       try {
         if (!user) {
           setAccount(null);
@@ -155,18 +158,31 @@ export function FirebaseAccountSync() {
           const account = cloudAccountFromDoc(raw, user);
           const quota = await readAuthoritativeQuota(user.uid, raw);
           setAccount({ ...account, ...quota });
-          await setDoc(ref, firestorePayloadFromStore(account), { merge: true });
+          try {
+            await setDoc(ref, firestorePayloadFromStore(account), { merge: true });
+          } catch {
+            // Profile is already in memory; a denied merge must not block sign-in.
+          }
         } else {
           const state = useCrochetStore.getState();
           const account = accountFromUser(user, state.account ?? undefined);
           setAccount(account);
-          await setDoc(ref, firestorePayloadFromStore(account, true), { merge: true });
+          try {
+            await setDoc(ref, firestorePayloadFromStore(account, true), { merge: true });
+          } catch {
+            // Same as above — user can use the app with a local profile mirror.
+          }
           reconcilePatternsAfterCloudHydrate();
         }
 
         setTimeout(() => {
           skipRemoteWrite.current = false;
         }, SYNC_DEBOUNCE_MS + 120);
+      } catch {
+        if (user) {
+          setAccount(accountFromUser(user));
+          reconcilePatternsAfterCloudHydrate();
+        }
       } finally {
         setAuthSessionReady(true);
       }

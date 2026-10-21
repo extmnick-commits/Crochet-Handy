@@ -1,22 +1,12 @@
 # Standalone release APK for a physical phone (embedded JS, no Metro, no dev launcher).
 # Uses the debug keystore when MYAPP_UPLOAD_* is not configured (sideload testing only).
 $ErrorActionPreference = "Stop"
-$repoRoot = (Resolve-Path (Split-Path $PSScriptRoot -Parent)).Path
-$root = $repoRoot
-
-# Release CMake paths can exceed MAX_PATH under a deep repo path on Windows.
-if ($env:OS -match 'Windows' -and $repoRoot.Length -gt 24) {
-    $junction = 'C:\ch'
-    if (-not (Test-Path $junction)) {
-        cmd /c "mklink /J `"$junction`" `"$repoRoot`"" | Out-Null
-    }
-    if (Test-Path $junction) {
-        $root = $junction
-        Write-Host "Using short build path: $root (avoids Windows MAX_PATH in native builds)" -ForegroundColor DarkGray
-    }
-}
+$repoRoot = (Get-Item (Join-Path $PSScriptRoot "..")).FullName
+. (Join-Path $repoRoot "scripts\android-build-root.ps1")
+$root = Get-AndroidBuildRoot -RepoRoot $repoRoot
 
 Set-Location $root
+node (Join-Path $repoRoot "scripts\patch-expo-autolinking-win-drive-root.mjs") | Out-Null
 . (Join-Path $repoRoot "scripts\android-env.ps1")
 
 if (-not (Test-Path (Join-Path $root "android\gradlew.bat"))) {
@@ -33,10 +23,7 @@ Start-Sleep -Seconds 3
 
 $env:NODE_ENV = "production"
 
-Set-Location (Join-Path $root "android")
-.\gradlew.bat --stop 2>$null | Out-Null
-Start-Sleep -Seconds 2
-.\gradlew.bat app:assembleRelease -x lint -x test --no-daemon "-PreactNativeArchitectures=arm64-v8a"
+Invoke-AndroidGradle -GradleTask "app:assembleRelease" -AndroidDir (Join-Path $root "android")
 
 $apk = Join-Path $root "android\app\build\outputs\apk\release\app-release.apk"
 $artifactsDir = Join-Path $repoRoot "artifacts"

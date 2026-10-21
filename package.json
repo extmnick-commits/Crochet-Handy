@@ -70,7 +70,8 @@
     "clean-catalog": "npm run prune-non-english-patterns && npm run prune-non-english-thumbnails",
     "sync-eas-env": "node scripts/sync-eas-production-env.mjs",
     "ios:testflight": "powershell -ExecutionPolicy Bypass -File ./scripts/ios-testflight-build.ps1",
-    "check-helper": "node --import tsx scripts/check-crochet-helper.ts"
+    "check-helper": "node --import tsx scripts/check-crochet-helper.ts",
+    "postinstall": "node scripts/patch-expo-autolinking-win-drive-root.mjs"
   },
   "overrides": {
     "react-native-worklets": "0.13.0"

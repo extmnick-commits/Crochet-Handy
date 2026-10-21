@@ -4,8 +4,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path $PSScriptRoot -Parent
+$repoRoot = (Get-Item (Join-Path $PSScriptRoot "..")).FullName
+. (Join-Path $repoRoot "scripts\android-build-root.ps1")
+$root = Get-AndroidBuildRoot -RepoRoot $repoRoot
 Set-Location $root
+node (Join-Path $repoRoot "scripts\patch-expo-autolinking-win-drive-root.mjs") | Out-Null
 . "$PSScriptRoot\android-env.ps1"
 
 function Read-GradleProperties {
@@ -68,12 +71,8 @@ Start-Sleep -Seconds 3
 
 $env:NODE_ENV = "production"
 
-Set-Location (Join-Path $root "android")
-.\gradlew.bat --stop 2>$null | Out-Null
-Start-Sleep -Seconds 2
-
 $gradleTask = if ($Apk) { "app:assembleRelease" } else { "app:bundleRelease" }
-.\gradlew.bat $gradleTask -x lint -x test --no-daemon "-PreactNativeArchitectures=arm64-v8a"
+Invoke-AndroidGradle -GradleTask $gradleTask -AndroidDir (Join-Path $root "android")
 
 $artifactsDir = Join-Path $root "artifacts"
 New-Item -ItemType Directory -Force -Path $artifactsDir | Out-Null
