@@ -91,7 +91,17 @@ $2`,
       }
       contents = contents.replace(
         /(buildTypes\s*\{[\s\S]*?release\s*\{[\s\S]*?)signingConfig signingConfigs\.debug/,
-        '$1signingConfig signingConfigs.release',
+        `$1signingConfig project.hasProperty('MYAPP_UPLOAD_STORE_FILE') ? signingConfigs.release : signingConfigs.debug`,
+      );
+    }
+
+    if (
+      contents.includes('signingConfigs.release') &&
+      !contents.includes("MYAPP_UPLOAD_STORE_FILE') ? signingConfigs.release")
+    ) {
+      contents = contents.replace(
+        /release\s*\{([\s\S]*?)signingConfig signingConfigs\.release(\s*\n)/,
+        `release {$1signingConfig project.hasProperty('MYAPP_UPLOAD_STORE_FILE') ? signingConfigs.release : signingConfigs.debug$2`,
       );
     }
 

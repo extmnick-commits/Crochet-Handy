@@ -6,6 +6,7 @@ import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { GlassContainer } from '@/components/ui/GlassContainer';
 import { Colors, Elevation, FontWeight, Layout, Palette, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 
 export type CollectToastPayload = {
@@ -69,26 +70,28 @@ export function CollectToastHost() {
   return (
     <Animated.View
       pointerEvents="box-none"
-      style={[styles.host, { bottom, opacity, transform: [{ translateY }] }]}
+      style={[styles.host, { bottom, transform: [{ translateY }] }]}
     >
-      <View style={styles.banner}>
-        <SuccessCheckIcon />
-        <Text numberOfLines={1} style={styles.message}>
-          Added to &quot;{toast.folderName}&quot;
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Change collection"
-          onPress={() => {
-            dismiss();
-            toast.onChange();
-          }}
-          hitSlop={Layout.hitSlop}
-          style={({ pressed }) => [styles.change, pressed && styles.pressed, webCursor]}
-        >
-          <Text style={styles.changeText}>Change &gt;</Text>
-        </Pressable>
-      </View>
+      <GlassContainer blurStyle="regular" cornerRadius={Radius.pill} isInteractive style={styles.banner}>
+        <Animated.View style={[styles.bannerRow, { opacity }]}>
+          <SuccessCheckIcon />
+          <Text numberOfLines={1} style={styles.message}>
+            Added to &quot;{toast.folderName}&quot;
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Change collection"
+            onPress={() => {
+              dismiss();
+              toast.onChange();
+            }}
+            hitSlop={Layout.hitSlop}
+            style={({ pressed }) => [styles.change, pressed && styles.pressed, webCursor]}
+          >
+            <Text style={styles.changeText}>Change &gt;</Text>
+          </Pressable>
+        </Animated.View>
+      </GlassContainer>
     </Animated.View>
   );
 }
@@ -120,15 +123,17 @@ const styles = StyleSheet.create({
     ...Elevation.floating,
   },
   banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
     maxWidth: 520,
     width: '100%',
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
     borderRadius: Radius.pill,
-    backgroundColor: Palette.sheetCharcoal,
+    backgroundColor: Colors.transparent,
+  },
+  bannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   message: {
     ...Typography.callout,

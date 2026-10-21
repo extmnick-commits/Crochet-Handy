@@ -52,20 +52,10 @@ if (-not (Test-Path (Join-Path $root "android\gradlew.bat")) -or -not (Test-Path
 }
 
 if (-not (Test-ReleaseSigningConfigured -ProjectRoot $root)) {
-    throw @"
-Release signing is not configured.
-
-1. Get your upload keystore (same one EAS / Play uses):
-     npx eas-cli@latest credentials -p android
-   Download the keystore into android\app\
-
-2. Add MYAPP_UPLOAD_* variables — see:
-     scripts\android-release-signing.example.properties
-
-Recommended: put secrets in %USERPROFILE%\.gradle\gradle.properties (not in git).
-
-Then run this script again.
-"@
+    Write-Host ""
+    Write-Host "Upload keystore not configured — signing release with the debug keystore (sideload testing only)." -ForegroundColor Yellow
+    Write-Host "For Play Store / EAS parity, set MYAPP_UPLOAD_* — see scripts\android-release-signing.example.properties" -ForegroundColor DarkGray
+    Write-Host ""
 }
 
 $coreBuild = Join-Path $root "node_modules\expo\node_modules\expo-modules-core\android\build"

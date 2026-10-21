@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { AuthAccountModal } from '@/components/AuthAccountModal';
+import { useFloatingTabBarInset } from '@/components/navigation/BambuTabBar';
 import { UploadQuotaDevTools } from '@/components/UploadQuotaDevTools';
 import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
@@ -53,6 +54,7 @@ type CollectionSubTab = 'folders' | 'stories';
 export default function MeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const floatingTabInset = useFloatingTabBarInset();
   const { width: windowWidth } = useWindowDimensions();
   const projects = useCrochetStore((state) => state.projects);
   const patterns = useCrochetStore((state) => state.patterns);
@@ -187,7 +189,7 @@ export default function MeScreen() {
     <View style={[styles.screen, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: Spacing.xxxl + floatingTabInset }]}
         contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"

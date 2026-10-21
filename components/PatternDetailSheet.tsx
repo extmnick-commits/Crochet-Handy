@@ -25,6 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { PatternTutorialVideo } from '@/components/media/PatternTutorialVideo';
+import { GlassContainer } from '@/components/ui/GlassContainer';
 import { CrochetHelperHost } from '@/components/helper/CrochetHelperHost';
 import { dismissCrochetHelper } from '@/utils/helper/session';
 import { HeartIcon } from '@/components/HeartIcon';
@@ -307,7 +308,12 @@ export function PatternDetailSheet({
           keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
           testID="pattern-detail-sheet"
         >
-          <View style={[styles.topBar, { paddingTop: insets.top + Spacing.xs }]}>
+          <GlassContainer
+            blurStyle="thin"
+            bordered={false}
+            cornerRadius={0}
+            style={[styles.topBar, { paddingTop: insets.top + Spacing.xs }]}
+          >
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Back"
@@ -349,9 +355,9 @@ export function PatternDetailSheet({
             >
               <ShareIcon color={Colors.textPrimary} />
             </Pressable>
-          </View>
+          </GlassContainer>
 
-          <View style={styles.tabBar}>
+          <GlassContainer blurStyle="thin" bordered={false} cornerRadius={0} style={styles.tabBar}>
             {TABS.map((tab) => {
               const on = activeTab === tab.id;
               return (
@@ -367,7 +373,7 @@ export function PatternDetailSheet({
                 </Pressable>
               );
             })}
-          </View>
+          </GlassContainer>
 
           <ScrollView
             ref={scrollRef}
@@ -667,7 +673,10 @@ export function PatternDetailSheet({
             </View>
           </ScrollView>
 
-          <View
+          <GlassContainer
+            blurStyle="regular"
+            bordered={false}
+            cornerRadius={0}
             style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.sm }]}
             onLayout={(event) => setBottomBarHeight(event.nativeEvent.layout.height)}
           >
@@ -722,7 +731,7 @@ export function PatternDetailSheet({
             >
               <Text style={styles.primaryCtaText}>{previewing ? 'Save and start' : 'Prepare to Crochet'}</Text>
             </Pressable>
-          </View>
+          </GlassContainer>
 
           <CrochetHelperHost
             surface={`pattern-${detailKey}`}
@@ -948,7 +957,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingHorizontal: Layout.screenGutter,
     paddingBottom: Spacing.sm,
-    backgroundColor: Colors.backgroundPrimary,
+    backgroundColor: Colors.transparent,
     borderBottomWidth: Layout.hairline,
     borderBottomColor: Colors.border,
   },
@@ -975,7 +984,7 @@ const styles = StyleSheet.create({
   followTextOn: { color: Colors.accentPrimary },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: Colors.backgroundPrimary,
+    backgroundColor: Colors.transparent,
     borderBottomWidth: Layout.hairline,
     borderBottomColor: Colors.border,
   },
@@ -1265,7 +1274,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingHorizontal: Layout.screenGutter,
     paddingTop: Spacing.sm,
-    backgroundColor: Colors.cardSurface,
+    backgroundColor: Colors.transparent,
     borderTopWidth: Layout.hairline,
     borderTopColor: Colors.border,
   },

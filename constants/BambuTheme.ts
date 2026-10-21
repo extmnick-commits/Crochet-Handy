@@ -76,6 +76,14 @@ export const Colors = {
   itemSpecSurface: Palette.itemSpecSurface,
   itemSpecBorder: Palette.itemSpecBorder,
   itemSpecLabel: Palette.itemSpecLabel,
+
+  /**
+   * Frosted card used when iOS 26 Liquid Glass is unavailable.
+   * Charcoal at 92% so the dark canvas still reads through.
+   */
+  glassSurface: 'rgba(28, 28, 30, 0.92)',
+  /** Hairline highlight along glass pills, sheets, and Android fallback cards. */
+  glassBorder: 'rgba(255, 255, 255, 0.16)',
 } as const;
 
 export type ColorToken = keyof typeof Colors;
@@ -185,6 +193,17 @@ export const Elevation = {
       shadowRadius: 16,
       shadowOffset: { width: 0, height: 8 },
       elevation: 12,
+    },
+  }),
+  /** Soft lift for floating glass pills and HUD cards. */
+  glass: Platform.select<ViewStyle>({
+    web: { boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)' },
+    android: { elevation: 4 },
+    default: {
+      shadowColor: Palette.black,
+      shadowOpacity: 0.28,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 },
     },
   }),
   /** Green halo for the primary floating action (e.g. capture-progress button). */

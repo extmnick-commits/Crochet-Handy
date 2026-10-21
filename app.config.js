@@ -24,6 +24,28 @@ function withLlamaMetalEnabled(config) {
   ]);
 }
 
+const isEasBuild = process.env.EAS_BUILD === 'true';
+const useDevClient =
+  process.env.EXPO_USE_DEV_CLIENT === '1' || process.env.EAS_BUILD_PROFILE === 'development';
+
+function pluginName(entry) {
+  return Array.isArray(entry) ? entry[0] : entry;
+}
+
+/** Standalone phone APKs: no dev launcher, no OTA hijack on first launch. */
+function pluginsForBuild(config) {
+  const filtered = (config.plugins ?? []).filter((entry) => {
+    const name = pluginName(entry);
+    if (name === 'expo-dev-client') return useDevClient;
+    if (name === 'expo-updates') return isEasBuild;
+    return true;
+  });
+  if (isEasBuild && !filtered.some((entry) => pluginName(entry) === 'expo-updates')) {
+    filtered.push('expo-updates');
+  }
+  return filtered;
+}
+
 const llamaRnPlugin = [
   'llama.rn',
   {
@@ -41,7 +63,11 @@ const llamaRnPlugin = [
 
 module.exports = ({ config }) => ({
   ...config,
-  plugins: [...(config.plugins ?? []), llamaRnPlugin, withLlamaMetalEnabled],
+  plugins: [...pluginsForBuild(config), llamaRnPlugin, withLlamaMetalEnabled],
+  updates: {
+    ...(config.updates ?? {}),
+    enabled: isEasBuild,
+  },
   scheme: config.scheme || 'crochethandy',
   ios: {
     ...config.ios,
