@@ -72,6 +72,9 @@
     "ios:testflight": "powershell -ExecutionPolicy Bypass -File ./scripts/ios-testflight-build.ps1",
     "check-helper": "node --import tsx scripts/check-crochet-helper.ts"
   },
+  "overrides": {
+    "react-native-worklets": "0.13.0"
+  },
   "private": true,
   "ts-node": {
     "project": "tsconfig.scripts.json"
