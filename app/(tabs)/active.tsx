@@ -6,7 +6,6 @@
  * screen does not drift it.
  */
 import * as Haptics from 'expo-haptics';
-import { usePathname } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
@@ -24,9 +23,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { PatternTutorialVideo } from '@/components/media/PatternTutorialVideo';
+import { useFloatingTabBarInset } from '@/components/navigation/BambuTabBar';
 import { ProjectIcon } from '@/components/navigation/TabIcons';
 import { PhotoProgressModal } from '@/components/PhotoProgressModal';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { GlassContainer } from '@/components/ui/GlassContainer';
 import { EmptyStateCard } from '@/components/ui/ScreenScaffold';
 import { Colors, Elevation, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useProjectVideoOrientation } from '@/hooks/useProjectVideoOrientation';
@@ -59,19 +60,9 @@ import { patternPosterUri } from '@/utils/youtube';
 
 export default function ActiveProjectScreen() {
   const insets = useSafeAreaInsets();
-  const pathname = usePathname();
-  const activeProjectId = useCrochetStore((state) => state.activeProjectId);
+  const floatingTabInset = useFloatingTabBarInset();
+  const project = useCrochetStore(selectActiveProject);
   const projects = useCrochetStore((state) => state.projects);
-  const [focusEpoch, setFocusEpoch] = useState(0);
-  useEffect(() => {
-    if (!pathname.endsWith('/active')) return;
-    // Re-render when this tab is shown so store updates from Patterns apply (iOS tab stack).
-    setFocusEpoch((epoch) => epoch + 1);
-  }, [pathname, activeProjectId, projects.length]);
-  const project = useMemo(() => {
-    if (!activeProjectId) return null;
-    return projects.find((item) => item.id === activeProjectId) ?? null;
-  }, [activeProjectId, projects, focusEpoch]);
   const pattern = useCrochetStore((state) => {
     const current = selectActiveProject(state);
     if (!current?.patternId) return null;
@@ -175,7 +166,7 @@ export default function ActiveProjectScreen() {
     <View style={[styles.screen, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: Spacing.xxxl + floatingTabInset }]}
         contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -712,7 +703,7 @@ function ProgressCard({
   };
 
   return (
-    <View style={styles.progressCard}>
+    <GlassContainer blurStyle="regular" cornerRadius={Radius.lg} elevated isInteractive style={styles.progressCard}>
       <View style={styles.progressHead}>
         {poster ? (
           <Image accessible={false} source={{ uri: poster }} style={styles.thumb} />
@@ -807,7 +798,7 @@ function ProgressCard({
           </Text>
         </Pressable>
       )}
-    </View>
+    </GlassContainer>
   );
 }
 
@@ -1143,7 +1134,7 @@ function ProjectTimerCard() {
   };
 
   return (
-    <View style={styles.bentoHalf}>
+    <GlassContainer blurStyle="regular" cornerRadius={Radius.lg} elevated isInteractive style={styles.bentoHalf}>
       <Text style={styles.cardKicker}>Project Timer</Text>
       <Text testID="project-timer" style={styles.timerReadout}>
         {timer.label}
@@ -1190,7 +1181,7 @@ function ProjectTimerCard() {
           <Text style={[styles.timerButtonLabel, armed && styles.timerButtonLabelArmed]}>{armed ? 'Sure?' : 'Reset'}</Text>
         </Pressable>
       </View>
-    </View>
+    </GlassContainer>
   );
 }
 
@@ -1661,10 +1652,10 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   progressCard: {
-    backgroundColor: Colors.cardSurface,
     borderRadius: Radius.lg,
     padding: Spacing.lg,
     gap: Spacing.sm,
+    backgroundColor: Colors.transparent,
   },
   progressHead: {
     flexDirection: 'row',

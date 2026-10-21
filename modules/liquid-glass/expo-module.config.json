@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["LiquidGlassModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.liquidglass.LiquidGlassModule"]
+  }
+}

@@ -24,11 +24,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { AddPatternModal } from '@/components/AddPatternModal';
+import { useFloatingTabBarInset } from '@/components/navigation/BambuTabBar';
 import { PatternFeedCard } from '@/components/PatternFeedCard';
 import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useCrochetStore, YARN_WEIGHTS, type CrochetPattern, type YarnWeight } from '@/store/useCrochetStore';
-import { openActiveProjectTab } from '@/utils/openActiveProjectTab';
 import {
   formatHookSize,
   matchesPatternCategory,
@@ -47,6 +47,7 @@ import { isEnglishFeedPattern } from '@/utils/patternEnglishFilter';
 
 export default function PatternsScreen() {
   const insets = useSafeAreaInsets();
+  const floatingTabInset = useFloatingTabBarInset();
   const router = useRouter();
   const routeParams = useLocalSearchParams<{ tag?: string }>();
   const patterns = useCrochetStore((state) => state.patterns);
@@ -245,7 +246,11 @@ export default function PatternsScreen() {
 
       <ScrollView
         style={styles.feedScroll}
-        contentContainerStyle={[styles.feed, visiblePatterns.length === 0 && styles.feedEmpty]}
+        contentContainerStyle={[
+          styles.feed,
+          { paddingBottom: Spacing.xxxl + floatingTabInset },
+          visiblePatterns.length === 0 && styles.feedEmpty,
+        ]}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -308,7 +313,7 @@ export default function PatternsScreen() {
           const pattern = patterns.find((item) => item.id === patternId);
           if (!pattern) return;
           createProject({ name: pattern.title, patternId: pattern.id });
-          openActiveProjectTab();
+          router.navigate('/active');
         }}
       />
 

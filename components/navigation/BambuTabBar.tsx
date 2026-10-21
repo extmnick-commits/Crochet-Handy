@@ -13,8 +13,10 @@ import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand/BrandMark';
+import { GlassContainer } from '@/components/ui/GlassContainer';
 import { Colors, Layout, Motion, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useResponsiveLayout, type LayoutMode } from '@/hooks/useResponsiveLayout';
 
@@ -29,6 +31,17 @@ type TabItemModel = {
 };
 
 const IS_WEB = Platform.OS === 'web';
+
+/**
+ * Extra scroll padding so the last pattern card can clear the floating tab pill.
+ * Zero when navigation is a side rail.
+ */
+export function useFloatingTabBarInset(): number {
+  const { mode } = useResponsiveLayout();
+  const insets = useSafeAreaInsets();
+  if (mode !== 'compact') return 0;
+  return Layout.tabBarHeight + Spacing.sm + Math.max(insets.bottom, Spacing.sm);
+}
 
 export function BambuTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
   const { mode } = useResponsiveLayout();
@@ -65,19 +78,28 @@ export function BambuTabBar({ state, descriptors, navigation, insets }: BottomTa
   if (mode === 'compact') {
     return (
       <View
+        pointerEvents="box-none"
         role="tablist"
         style={[
-          styles.bottomBar,
+          styles.bottomBarFloat,
           {
-            paddingBottom: Math.max(insets.bottom, Spacing.xs),
-            paddingLeft: insets.left,
-            paddingRight: insets.right,
+            paddingBottom: Math.max(insets.bottom, Spacing.sm),
+            paddingLeft: insets.left + Spacing.lg,
+            paddingRight: insets.right + Spacing.lg,
           },
         ]}
       >
-        {items.map((item) => (
-          <TabButton key={item.key} item={item} variant="compact" />
-        ))}
+        <GlassContainer
+          blurStyle="regular"
+          cornerRadius={Radius.pill}
+          elevated
+          isInteractive
+          style={styles.bottomBarPill}
+        >
+          {items.map((item) => (
+            <TabButton key={item.key} item={item} variant="compact" />
+          ))}
+        </GlassContainer>
       </View>
     );
   }
@@ -205,12 +227,16 @@ function IconPop({ focused, children }: { focused: boolean; children: ReactNode 
 /* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
-  /* compact — bottom bar */
-  bottomBar: {
+  /* compact — floating pill over the scene */
+  bottomBarFloat: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.transparent,
+  },
+  bottomBarPill: {
     flexDirection: 'row',
-    backgroundColor: Colors.cardSurface,
-    borderTopWidth: Layout.hairline,
-    borderTopColor: Colors.border,
   },
   compactItem: {
     flex: 1,

@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomSheetScrollProvider } from '@/components/ui/BottomSheetScrollContext';
+import { GlassContainer } from '@/components/ui/GlassContainer';
 import { Colors, Radius, Spacing } from '@/constants/BambuTheme';
 import { useKeyboardInset } from '@/hooks/useKeyboardInset';
 
@@ -85,7 +86,12 @@ export function BottomSheet({
         keyboardVerticalOffset={keyboardOffset}
       >
         <Pressable accessibilityLabel="Close sheet" style={styles.scrim} onPress={onClose} />
-        <View style={[styles.sheet, { maxHeight, paddingBottom: bottomPad }, sheetStyle]}>
+        <GlassContainer
+          blurStyle="regular"
+          bordered={false}
+          cornerRadius={Radius.xl}
+          style={[styles.sheet, { maxHeight, paddingBottom: bottomPad }, sheetStyle]}
+        >
           <View style={[styles.handle, handleStyle]} />
           {header}
           <BottomSheetScrollProvider scrollRef={scrollRef}>
@@ -117,7 +123,7 @@ export function BottomSheet({
             </ScrollView>
           </BottomSheetScrollProvider>
           {footer}
-        </View>
+        </GlassContainer>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -135,7 +141,7 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     zIndex: 1,
-    backgroundColor: Colors.cardSurface,
+    backgroundColor: Colors.transparent,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     overflow: 'hidden',
