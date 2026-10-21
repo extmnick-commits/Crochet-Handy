@@ -7,6 +7,7 @@
  */
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { FlashList } from '@shopify/flash-list';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -32,9 +33,12 @@ import { useCrochetStore, YARN_WEIGHTS, type CrochetPattern, type YarnWeight } f
 import {
   formatHookSize,
   matchesPatternCategory,
+  estimateMasonryRowHeight,
+  masonryRowsFromColumns,
   packMasonryColumns,
   MASONRY_TEXT_BLOCK,
   matchesPatternQuery,
+  type MasonryRow,
   matchesPatternTagFilter,
   normalizePatternTag,
   patternFeedCategories,
@@ -101,8 +105,46 @@ export default function PatternsScreen() {
 
   const innerWidth = Math.max(0, contentWidth - insets.left - insets.right);
   const columnWidth = Math.floor((innerWidth - Layout.screenGutter * 2 - Layout.cardGap) / 2);
-  const columns =
-    columnWidth > 0 ? packMasonryColumns(visiblePatterns, columnWidth, MASONRY_TEXT_BLOCK, Spacing.md) : [[], []];
+  const masonryRows = useMemo(() => {
+    if (columnWidth <= 0) return [];
+    const columns = packMasonryColumns(visiblePatterns, columnWidth, MASONRY_TEXT_BLOCK, Spacing.md);
+    return masonryRowsFromColumns(columns);
+  }, [visiblePatterns, columnWidth]);
+  const estimatedRowHeight = useMemo(
+    () => estimateMasonryRowHeight(columnWidth, MASONRY_TEXT_BLOCK, Spacing.md),
+    [columnWidth],
+  );
+
+  const onPatternPress = useCallback((patternId: string) => {
+    tick();
+    setSelectedId(patternId);
+  }, []);
+
+  const renderMasonryRow = useCallback(
+    ({ item }: { item: MasonryRow }) => (
+      <View style={styles.masonryRow}>
+        <View style={[styles.masonryCell, { width: columnWidth }]}>
+          {item.left ? (
+            <PatternFeedCard
+              pattern={item.left.pattern}
+              imageHeight={item.left.imageHeight}
+              onPress={() => onPatternPress(item.left!.pattern.id)}
+            />
+          ) : null}
+        </View>
+        <View style={[styles.masonryCell, { width: columnWidth }]}>
+          {item.right ? (
+            <PatternFeedCard
+              pattern={item.right.pattern}
+              imageHeight={item.right.imageHeight}
+              onPress={() => onPatternPress(item.right!.pattern.id)}
+            />
+          ) : null}
+        </View>
+      </View>
+    ),
+    [columnWidth, onPatternPress],
+  );
 
   const onSelectCategory = (next: PatternCategoryId) => {
     if (next !== category) tick();
@@ -244,12 +286,16 @@ export default function PatternsScreen() {
         </View>
       ) : null}
 
-      <ScrollView
+      <FlashList
+        data={masonryRows}
+        renderItem={renderMasonryRow}
+        keyExtractor={(item) => item.id}
+        estimatedItemSize={estimatedRowHeight}
         style={styles.feedScroll}
         contentContainerStyle={[
           styles.feed,
           { paddingBottom: Spacing.xxxl + floatingTabInset },
-          visiblePatterns.length === 0 && styles.feedEmpty,
+          masonryRows.length === 0 && styles.feedEmpty,
         ]}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
@@ -263,29 +309,10 @@ export default function PatternsScreen() {
             progressBackgroundColor={Colors.backgroundPrimary}
           />
         }
-      >
-        {visiblePatterns.length === 0 ? (
+        ListEmptyComponent={
           <EmptyFeed category={category} query={query} tagFilter={tagFilter} filtering={filtersActive} />
-        ) : (
-          <View style={styles.masonry}>
-            {columns.map((column, columnIndex) => (
-              <View key={columnIndex} style={[styles.column, { width: columnWidth }]}>
-                {column.map(({ pattern, imageHeight }) => (
-                  <PatternFeedCard
-                    key={pattern.id}
-                    pattern={pattern}
-                    imageHeight={imageHeight}
-                    onPress={() => {
-                      tick();
-                      setSelectedId(pattern.id);
-                    }}
-                  />
-                ))}
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
+        }
+      />
 
       <FilterDrawer
         visible={filtersOpen}
@@ -722,13 +749,15 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
-  masonry: {
+  masonryRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Layout.cardGap,
+    marginBottom: Layout.cardGap,
   },
-  column: {
-    gap: Layout.cardGap,
+  masonryCell: {
+    flexGrow: 0,
+    flexShrink: 0,
   },
   card: {
     backgroundColor: Colors.cardSurface,

@@ -1,6 +1,6 @@
 /**
- * Starts the on-device text model download as soon as the installed app opens.
- * Web and Expo Go skip it. A later helper question joins this download if it is still running.
+ * Optional mount helper — model download is deferred until the user opens Helper
+ * (see CrochetHelperHost). Kept for tests or future opt-in warmup.
  */
 import { useEffect } from 'react';
 

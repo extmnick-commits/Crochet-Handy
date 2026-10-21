@@ -44,11 +44,16 @@
         {
           "ios": {
             "enableSceneSupport": true
+          },
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           }
         }
       ],
       "./plugins/withAndroidGradleFixes.js",
       "expo-updates",
+      "expo-image",
       "expo-router",
       [
         "expo-status-bar",

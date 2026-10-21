@@ -74,6 +74,35 @@ export const MASONRY_IMAGE_RATIOS = [1.12, 1.38, 0.92, 1.22, 1.48, 0.98] as cons
 /** Title + footer block height used when balancing masonry columns. */
 export const MASONRY_TEXT_BLOCK = 86;
 
+export type MasonryCell = { pattern: CrochetPattern; imageHeight: number };
+
+export type MasonryRow = {
+  id: string;
+  left: MasonryCell | null;
+  right: MasonryCell | null;
+};
+
+/** Pairs left/right masonry columns into virtualized list rows. */
+export function masonryRowsFromColumns(columns: MasonryCell[][]): MasonryRow[] {
+  const left = columns[0] ?? [];
+  const right = columns[1] ?? [];
+  const len = Math.max(left.length, right.length);
+  return Array.from({ length: len }, (_, index) => ({
+    id: `${left[index]?.pattern.id ?? '∅'}-${right[index]?.pattern.id ?? '∅'}-${index}`,
+    left: left[index] ?? null,
+    right: right[index] ?? null,
+  }));
+}
+
+export function estimateMasonryRowHeight(
+  columnWidth: number,
+  textBlock = MASONRY_TEXT_BLOCK,
+  columnGap = 12,
+): number {
+  const ratio = 1.05;
+  return Math.round(columnWidth * ratio) + textBlock + columnGap;
+}
+
 export function packMasonryColumns(
   patterns: CrochetPattern[],
   columnWidth: number,

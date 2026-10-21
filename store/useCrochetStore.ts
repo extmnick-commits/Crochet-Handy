@@ -7,6 +7,7 @@
  * moved backwards while the app was closed) is rebased before it is shown.
  */
 import { useEffect, useState } from 'react';
+import { InteractionManager } from 'react-native';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
@@ -271,14 +272,16 @@ export const useCrochetStore = create<CrochetStore>()(
         const reconciled = applyReconcileTimers(withCatalog, Date.now());
         set(reconciled ? { ...reconciled, hydrated: true } : { ...withCatalog, hydrated: true });
 
-        void syncRemotePatternCatalog(
-          () => readData(get()),
-          (next) => {
-            const synced = applyReconcileTimers(next, Date.now());
-            set((state) => ({ ...state, ...(synced ?? next) }));
-          },
-          bundled,
-        );
+        InteractionManager.runAfterInteractions(() => {
+          void syncRemotePatternCatalog(
+            () => readData(get()),
+            (next) => {
+              const synced = applyReconcileTimers(next, Date.now());
+              set((state) => ({ ...state, ...(synced ?? next) }));
+            },
+            bundled,
+          );
+        });
       };
 
       return {

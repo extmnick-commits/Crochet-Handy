@@ -19,6 +19,7 @@ import {
 import { contextKey, contextLabel, getStarters, HELPER_GREETING, type HelperAction, type HelperContext, type HelperMessage } from '@/utils/helper/context';
 import { answerHelper } from '@/utils/helper/service';
 import { helperInference } from '@/utils/helper/inference';
+import { prefetchHelperModel } from '@/utils/helper/model';
 import { helperSession } from '@/utils/helper/session';
 
 type Props = {
@@ -67,6 +68,10 @@ export function CrochetHelperHost({
   const key = contextKey(context);
   const activeContextPattern = project?.patternId ? patterns.find((p) => p.id === project.patternId) ?? null : null;
   const open = state.surface === surface && state.owner === uid && uid !== null;
+
+  useEffect(() => {
+    if (open) prefetchHelperModel();
+  }, [open]);
   const catalog = useMemo(() => {
     const byId = new Map(loadRepoPatternCatalog().map((p) => [p.id, p]));
     for (const p of patterns) byId.set(p.id, p);
@@ -197,7 +202,11 @@ export function CrochetHelperHost({
         <Pressable
           accessibilityRole="button" accessibilityLabel={inline ? 'Ask Crochet Handy Helper about this pattern' : 'Open Crochet Handy Helper'}
           testID={inline ? 'pattern-ask-helper' : 'crochet-helper-launcher'}
-          onPress={() => { if (inline) helperSession.patch({ contextChoice: 'auto' }); helperSession.open(surface); }}
+          onPress={() => {
+            prefetchHelperModel();
+            if (inline) helperSession.patch({ contextChoice: 'auto' });
+            helperSession.open(surface);
+          }}
           style={({ pressed }) => [
             inline
               ? [styles.inlineLauncher, { bottom: launcherBottomInset + Spacing.sm }]

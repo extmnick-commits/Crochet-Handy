@@ -7,7 +7,6 @@ import { Platform } from 'react-native';
 import { AppLaunchGate } from '@/components/AppLaunchGate';
 import { AuthRouteSync } from '@/components/AuthRouteSync';
 import { FirebaseAccountSync } from '@/components/FirebaseAccountSync';
-import { VisionModelPrefetch } from '@/components/VisionModelPrefetch';
 import { YouTubeBookmarkSync } from '@/components/YouTubeBookmarkSync';
 import { Colors } from '@/constants/BambuTheme';
 import { useAppLaunchSplashDone } from '@/hooks/useAppLaunchSplash';
@@ -65,7 +64,6 @@ export default function RootLayout() {
       <StatusBar style="light" />
       {Platform.OS === 'android' && <NavigationBar style="light" />}
       <AppLaunchGate>
-        <VisionModelPrefetch />
         <YouTubeBookmarkSync />
         <FirebaseAccountSync />
         <AuthRouteSync />

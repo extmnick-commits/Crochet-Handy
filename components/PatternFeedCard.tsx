@@ -2,7 +2,8 @@
  * Masonry feed card shared by Patterns and Me library grids.
  */
 import * as Haptics from 'expo-haptics';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useState } from 'react';
 import Svg, { Path } from 'react-native-svg';
@@ -49,6 +50,10 @@ export function PatternFeedCard({ pattern, imageHeight, onPress, forceLikedVisua
               accessible={false}
               source={{ uri: patternPosterUri(pattern.videoId, 'hq') ?? '' }}
               style={styles.cardImage}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              recyclingKey={pattern.id}
+              transition={150}
             />
           ) : (
             <View style={styles.cardImage} />
