@@ -2,6 +2,7 @@
  * Keeps Firebase Auth and the user's Firestore document in sync with Zustand.
  */
 import { useEffect, useRef } from 'react';
+import { InteractionManager } from 'react-native';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -19,6 +20,7 @@ import { pullPatternCatalogUpdates } from '@/utils/syncPatternCatalog';
 import { readAuthoritativeQuota } from '@/utils/uploadQuota';
 
 const SYNC_DEBOUNCE_MS = 800;
+const FIRESTORE_READ_TIMEOUT_MS = 9_000;
 
 function readCrochetDataFromStore(): CrochetData {
   const state = useCrochetStore.getState();
@@ -62,15 +64,16 @@ function firestorePayloadFromStore(account?: UserAccount | null, initializeQuota
   };
 }
 
-/** Drops stale feed entries saved in Firestore before catalog rules tightened. */
 function reconcilePatternsAfterCloudHydrate(): void {
-  void pullPatternCatalogUpdates(
-    readCrochetDataFromStore,
-    (next) => {
-      useCrochetStore.setState((state) => ({ ...state, patterns: next.patterns }));
-    },
-    createSeedData().patterns,
-  );
+  InteractionManager.runAfterInteractions(() => {
+    void pullPatternCatalogUpdates(
+      readCrochetDataFromStore,
+      (next) => {
+        useCrochetStore.setState((state) => ({ ...state, patterns: next.patterns }));
+      },
+      createSeedData().patterns,
+    );
+  });
 }
 
 function accountFromUser(user: User, profile?: Partial<UserAccount>, quotaSources: readonly unknown[] = []): UserAccount {
@@ -118,6 +121,15 @@ function cloudAccountFromDoc(raw: Record<string, unknown>, user: User): UserAcco
   );
 }
 
+async function getDocWithTimeout(ref: ReturnType<typeof doc>) {
+  return Promise.race([
+    getDoc(ref),
+    new Promise<Awaited<ReturnType<typeof getDoc>>>((_, reject) => {
+      setTimeout(() => reject(new Error('firestore-timeout')), FIRESTORE_READ_TIMEOUT_MS);
+    }),
+  ]);
+}
+
 export function FirebaseAccountSync() {
   const hydrated = useCrochetHydrated();
   const hydrateFromCloud = useCrochetStore((state) => state.hydrateFromCloud);
@@ -135,41 +147,49 @@ export function FirebaseAccountSync() {
     }
 
     const firestore = db;
-    setAuthSessionReady(false);
+    setAuthSessionReady(true);
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      try {
-        if (!user) {
-          setAccount(null);
-          return;
-        }
-
-        const ref = doc(firestore, 'users', user.uid);
-        const snap = await getDoc(ref);
-        skipRemoteWrite.current = true;
-
-        if (snap.exists()) {
-          const raw = snap.data() as Record<string, unknown>;
-          hydrateFromCloud(withoutNestedQuota(raw));
-          reconcilePatternsAfterCloudHydrate();
-          const account = cloudAccountFromDoc(raw, user);
-          const quota = await readAuthoritativeQuota(user.uid, raw);
-          setAccount({ ...account, ...quota });
-          await setDoc(ref, firestorePayloadFromStore(account), { merge: true });
-        } else {
-          const state = useCrochetStore.getState();
-          const account = accountFromUser(user, state.account ?? undefined);
-          setAccount(account);
-          await setDoc(ref, firestorePayloadFromStore(account, true), { merge: true });
-          reconcilePatternsAfterCloudHydrate();
-        }
-
-        setTimeout(() => {
-          skipRemoteWrite.current = false;
-        }, SYNC_DEBOUNCE_MS + 120);
-      } finally {
-        setAuthSessionReady(true);
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setAccount(null);
+        return;
       }
+
+      skipRemoteWrite.current = true;
+      const optimistic = accountFromUser(user, useCrochetStore.getState().account ?? undefined);
+      setAccount(optimistic);
+
+      void (async () => {
+        try {
+          const ref = doc(firestore, 'users', user.uid);
+          const snap = await getDocWithTimeout(ref);
+
+          if (snap.exists()) {
+            const raw = snap.data() as Record<string, unknown>;
+            InteractionManager.runAfterInteractions(() => {
+              hydrateFromCloud(withoutNestedQuota(raw));
+              reconcilePatternsAfterCloudHydrate();
+            });
+            const account = cloudAccountFromDoc(raw, user);
+            const quota = await readAuthoritativeQuota(user.uid, raw);
+            setAccount({ ...account, ...quota });
+            await setDoc(ref, firestorePayloadFromStore(account), { merge: true });
+          } else {
+            const state = useCrochetStore.getState();
+            const account = accountFromUser(user, state.account ?? undefined);
+            setAccount(account);
+            await setDoc(ref, firestorePayloadFromStore(account, true), { merge: true });
+            reconcilePatternsAfterCloudHydrate();
+          }
+        } catch {
+          // Keep optimistic account; cloud merge retries on next auth event or user action.
+        } finally {
+          setTimeout(() => {
+            skipRemoteWrite.current = false;
+          }, SYNC_DEBOUNCE_MS + 120);
+          setAuthSessionReady(true);
+        }
+      })();
     });
 
     const unsubscribeStore = useCrochetStore.subscribe((state) => {

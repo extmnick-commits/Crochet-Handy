@@ -17,6 +17,7 @@ type YarnInstantColorProbeProps = {
 
 export function YarnInstantColorProbe({ imageUri, photoGeneration, onColors }: YarnInstantColorProbeProps) {
   const [probeUri, setProbeUri] = useState<string | null>(null);
+  const [loadedFor, setLoadedFor] = useState('');
   const onColorsRef = useRef(onColors);
   useEffect(() => {
     onColorsRef.current = onColors;
@@ -24,7 +25,7 @@ export function YarnInstantColorProbe({ imageUri, photoGeneration, onColors }: Y
 
   useEffect(() => {
     let cancelled = false;
-    setProbeUri(null);
+    const token = `${imageUri}:${photoGeneration}`;
     void (async () => {
       if (Platform.OS === 'web') {
         const colors = await detectYarnColors(imageUri);
@@ -32,14 +33,18 @@ export function YarnInstantColorProbe({ imageUri, photoGeneration, onColors }: Y
         return;
       }
       const uri = await prepareYarnColorProbeUri(imageUri);
-      if (!cancelled) setProbeUri(uri);
+      if (!cancelled) {
+        setProbeUri(uri);
+        setLoadedFor(token);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [imageUri, photoGeneration]);
 
-  if (Platform.OS === 'web' || !probeUri) return null;
+  const probeReady = loadedFor === `${imageUri}:${photoGeneration}` && probeUri != null;
+  if (Platform.OS === 'web' || !probeReady) return null;
 
   return (
     <View pointerEvents="none" style={styles.hidden}>

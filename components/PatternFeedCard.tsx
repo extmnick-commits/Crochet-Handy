@@ -2,9 +2,10 @@
  * Masonry feed card shared by Patterns and Me library grids.
  */
 import * as Haptics from 'expo-haptics';
-import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import Svg, { Path } from 'react-native-svg';
 
 import { HeartIcon } from '@/components/HeartIcon';
@@ -28,7 +29,7 @@ type PatternFeedCardProps = {
   forceLikedVisual?: boolean;
 };
 
-export function PatternFeedCard({ pattern, imageHeight, onPress, forceLikedVisual }: PatternFeedCardProps) {
+function PatternFeedCardInner({ pattern, imageHeight, onPress, forceLikedVisual }: PatternFeedCardProps) {
   const liked = useCrochetStore((state) => selectIsPatternLiked(state, pattern.id));
   const collected = useCrochetStore((state) => selectIsPatternCollected(state, pattern.id));
   const toggleLikePattern = useCrochetStore((state) => state.toggleLikePattern);
@@ -47,8 +48,11 @@ export function PatternFeedCard({ pattern, imageHeight, onPress, forceLikedVisua
           {patternPosterUri(pattern.videoId, 'hq') ? (
             <Image
               accessible={false}
-              source={{ uri: patternPosterUri(pattern.videoId, 'hq') ?? '' }}
+              source={patternPosterUri(pattern.videoId, 'hq') ?? ''}
               style={styles.cardImage}
+              recyclingKey={pattern.id}
+              cachePolicy="memory-disk"
+              transition={Platform.OS === 'android' ? 0 : 200}
             />
           ) : (
             <View style={styles.cardImage} />
@@ -212,3 +216,12 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
 });
+
+export const PatternFeedCard = memo(
+  PatternFeedCardInner,
+  (prev, next) =>
+    prev.pattern.id === next.pattern.id &&
+    prev.imageHeight === next.imageHeight &&
+    prev.forceLikedVisual === next.forceLikedVisual &&
+    prev.pattern === next.pattern,
+);

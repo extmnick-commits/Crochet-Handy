@@ -63,7 +63,7 @@ export default function TabLayout() {
         name="active"
         options={{
           title: 'Active Project',
-          lazy: false,
+          lazy: true,
           tabBarIcon: ({ focused, color, size }) => <ProjectIcon focused={focused} color={color} size={size} />,
         }}
       />

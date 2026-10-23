@@ -10,7 +10,7 @@ export type HelperMessage = {
   id: string; role: 'user' | 'assistant'; text: string; contextKey: string; contextLabel: string;
   patterns?: CrochetPattern[]; calculator?: Calculation; calculated?: boolean; actions?: HelperAction[]; failed?: boolean;
 };
-export const HELPER_GREETING = 'Hi! I’m the Crochet Handy Helper. I can explain a pattern, help with stitch counts, calculate yarn amounts, or find your next project.';
+export const HELPER_GREETING = 'Ask about a stitch, yarn amount, or the pattern you have open. Calculators give checked math even before AI is ready.';
 export function contextKey(context: HelperContext): string {
   return `${context.pattern?.id ?? 'general'}|${context.project?.id ?? 'none'}`;
 }

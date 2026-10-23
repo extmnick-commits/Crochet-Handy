@@ -7,7 +7,7 @@
  */
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useState, useDeferredValue } from 'react';
 import {
   Modal,
   Platform,
@@ -19,6 +19,8 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -45,6 +47,9 @@ import {
 import { holidayEmptyState, isHolidayTopicId } from '@/utils/holidayTopics';
 import { isEnglishFeedPattern } from '@/utils/patternEnglishFilter';
 
+/** First paint + each scroll chunk — keeps ~50+ Image views off the tree at launch. */
+const FEED_CHUNK = 16;
+
 export default function PatternsScreen() {
   const insets = useSafeAreaInsets();
   const floatingTabInset = useFloatingTabBarInset();
@@ -63,6 +68,8 @@ export default function PatternsScreen() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [feedLimit, setFeedLimit] = useState(FEED_CHUNK);
+  const deferredQuery = useDeferredValue(query);
 
   const filtersActive = yarnFilters.length > 0 || hookFilters.length > 0 || tagFilter != null;
 
@@ -70,19 +77,20 @@ export default function PatternsScreen() {
     const raw = routeParams.tag;
     const next = typeof raw === 'string' ? normalizePatternTag(raw) : '';
     if (!next) return;
-    setTagFilter(next);
-    setCategory('for-you');
-    setSelectedId(null);
+    startTransition(() => {
+      setTagFilter(next);
+      setCategory('for-you');
+      setSelectedId(null);
+    });
     router.setParams({ tag: undefined });
   }, [routeParams.tag, router]);
 
   const categories = useMemo(() => patternFeedCategories(), []);
 
-  useEffect(() => {
-    if (!categories.some((item) => item.id === category)) {
-      setCategory('for-you');
-    }
-  }, [categories, category]);
+  const feedCategory = useMemo(
+    () => (categories.some((item) => item.id === category) ? category : 'for-you'),
+    [categories, category],
+  );
 
   const visiblePatterns = useMemo(() => {
     const matched = patterns.filter(
@@ -91,18 +99,40 @@ export default function PatternsScreen() {
           title: pattern.title,
           creator: pattern.creator,
         }) &&
-        matchesPatternCategory(pattern, category) &&
-        matchesPatternQuery(pattern, query) &&
+        matchesPatternCategory(pattern, feedCategory) &&
+        matchesPatternQuery(pattern, deferredQuery) &&
         matchesPatternTagFilter(pattern, tagFilter) &&
         matchesFacets(pattern, yarnFilters, hookFilters),
     );
-    return sortPatternsForCategory(matched, category);
-  }, [patterns, category, query, tagFilter, yarnFilters, hookFilters]);
+    return sortPatternsForCategory(matched, feedCategory);
+  }, [patterns, feedCategory, deferredQuery, tagFilter, yarnFilters, hookFilters]);
+
+  useEffect(() => {
+    setFeedLimit(FEED_CHUNK);
+  }, [feedCategory, deferredQuery, tagFilter, yarnFilters, hookFilters]);
+
+  const feedPatterns = useMemo(
+    () => visiblePatterns.slice(0, feedLimit),
+    [visiblePatterns, feedLimit],
+  );
 
   const innerWidth = Math.max(0, contentWidth - insets.left - insets.right);
   const columnWidth = Math.floor((innerWidth - Layout.screenGutter * 2 - Layout.cardGap) / 2);
   const columns =
-    columnWidth > 0 ? packMasonryColumns(visiblePatterns, columnWidth, MASONRY_TEXT_BLOCK, Spacing.md) : [[], []];
+    columnWidth > 0 ? packMasonryColumns(feedPatterns, columnWidth, MASONRY_TEXT_BLOCK, Spacing.md) : [[], []];
+
+  const onFeedScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+      const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+      if (distanceFromBottom > 720) return;
+      setFeedLimit((current) => {
+        if (current >= visiblePatterns.length) return current;
+        return Math.min(visiblePatterns.length, current + FEED_CHUNK);
+      });
+    },
+    [visiblePatterns.length],
+  );
 
   const onSelectCategory = (next: PatternCategoryId) => {
     if (next !== category) tick();
@@ -205,7 +235,7 @@ export default function PatternsScreen() {
         contentContainerStyle={styles.categoryContent}
       >
         {categories.map((item) => {
-          const selected = item.id === category;
+          const selected = item.id === feedCategory;
           return (
             <Pressable
               key={item.id}
@@ -254,6 +284,9 @@ export default function PatternsScreen() {
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews={Platform.OS === 'android'}
+        scrollEventThrottle={32}
+        onScroll={onFeedScroll}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -265,7 +298,7 @@ export default function PatternsScreen() {
         }
       >
         {visiblePatterns.length === 0 ? (
-          <EmptyFeed category={category} query={query} tagFilter={tagFilter} filtering={filtersActive} />
+          <EmptyFeed category={feedCategory} query={query} tagFilter={tagFilter} filtering={filtersActive} />
         ) : (
           <View style={styles.masonry}>
             {columns.map((column, columnIndex) => (
@@ -545,6 +578,12 @@ function emptyCopy(
   }
   if (category === 'blankets') {
     return { title: 'No blankets yet', body: 'Afghans, throws, and granny-square blankets show up here.' };
+  }
+  if (category === 'granny-squares') {
+    return {
+      title: 'No granny squares yet',
+      body: 'Classic squares, motifs, and granny-square projects from tutorials show up here.',
+    };
   }
   if (category === 'beanies') {
     return { title: 'No beanies yet', body: 'Hats and beanies from tutorials tagged or titled here show up in this feed.' };

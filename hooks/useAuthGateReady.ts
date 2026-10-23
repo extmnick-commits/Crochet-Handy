@@ -1,8 +1,6 @@
-import { useCrochetHydrated, useCrochetStore } from '@/store/useCrochetStore';
+import { useCrochetHydrated } from '@/store/useCrochetStore';
 
-/** True when local storage and the first Firebase auth pass are both finished. */
+/** True once persisted local state has been read — Firebase sync must not block the UI. */
 export function useAuthGateReady(): boolean {
-  const hydrated = useCrochetHydrated();
-  const authSessionReady = useCrochetStore((state) => state.authSessionReady);
-  return hydrated && authSessionReady;
+  return useCrochetHydrated();
 }

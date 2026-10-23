@@ -162,6 +162,8 @@ type CrochetActions = {
   addPatternFromYouTube: (input: NewPatternInput, id?: string) => string | null;
   /** Replace a pattern's bookmarks when YouTube chapters are found. */
   setPatternBookmarks: (patternId: string, bookmarks: VideoBookmark[]) => void;
+  /** One persist write when many chapter lookups finish together. */
+  batchSetPatternBookmarks: (updates: ReadonlyArray<{ patternId: string; bookmarks: VideoBookmark[] }>) => void;
   removePattern: (patternId: string) => void;
   addStashItem: (input: NewYarnInput, id?: string) => string | null;
   updateStashItem: (stashItemId: string, patch: YarnStashPatch) => void;
@@ -263,29 +265,39 @@ export const useCrochetStore = create<CrochetStore>()(
 
       markHydrated = () => {
         enablePersistWrites();
-        const data = readData(get());
-        const bundled = createSeedData().patterns;
-        const retain = collectReferencedPatternIds(data);
-        const patterns = reconcilePatternCatalog(data.patterns, bundled, [], retain);
-        const withCatalog = { ...data, patterns };
-        const reconciled = applyReconcileTimers(withCatalog, Date.now());
-        set(reconciled ? { ...reconciled, hydrated: true } : { ...withCatalog, hydrated: true });
+        set((state) => ({ ...state, hydrated: true }));
 
-        void syncRemotePatternCatalog(
-          () => readData(get()),
-          (next) => {
-            const synced = applyReconcileTimers(next, Date.now());
-            set((state) => ({ ...state, ...(synced ?? next) }));
-          },
-          bundled,
-        );
+        setTimeout(() => {
+          const data = readData(get());
+          const bundled = createSeedData().patterns;
+          const retain = collectReferencedPatternIds(data);
+          const patterns = reconcilePatternCatalog(data.patterns, bundled, [], retain);
+          const withCatalog = { ...data, patterns };
+          const reconciled = applyReconcileTimers(withCatalog, Date.now());
+          set((state) => ({
+            ...state,
+            ...(reconciled ?? withCatalog),
+            hydrated: true,
+          }));
+
+          setTimeout(() => {
+            void syncRemotePatternCatalog(
+              () => readData(get()),
+              (next) => {
+                const synced = applyReconcileTimers(next, Date.now());
+                set((state) => ({ ...state, ...(synced ?? next) }));
+              },
+              bundled,
+            );
+          }, 6_000);
+        }, 0);
       };
 
       return {
         ...createSeedData(),
         tapHistory: {},
         hydrated: false,
-        authSessionReady: !isFirebaseConfigured(),
+        authSessionReady: true,
         setAuthSessionReady: (ready) => set({ authSessionReady: ready }),
 
         incrementStitch: (autoAdvance) => commit((data, now) => applyIncrementStitch(data, now, autoAdvance)),
@@ -325,6 +337,19 @@ export const useCrochetStore = create<CrochetStore>()(
 
         setPatternBookmarks: (patternId, bookmarks) =>
           commit((data) => applySetPatternBookmarks(data, patternId, bookmarks)),
+        batchSetPatternBookmarks: (updates) =>
+          commit((data) => {
+            let next = data;
+            let changed = false;
+            for (const { patternId, bookmarks } of updates) {
+              const applied = applySetPatternBookmarks(next, patternId, bookmarks);
+              if (applied) {
+                next = applied;
+                changed = true;
+              }
+            }
+            return changed ? next : null;
+          }),
         addPatternFromYouTube: (input, preferredId) => {
           const id = preferredId ?? createId('pattern');
           const next = applyAddPattern(readData(get()), id, input);
@@ -457,12 +482,9 @@ export const useCrochetStore = create<CrochetStore>()(
       merge: (persisted, current) => {
         const repaired = repairPersisted(persisted, Date.now());
         if (!repaired) return current;
-        const retain = collectReferencedPatternIds(repaired);
-        const patterns = reconcilePatternCatalog(repaired.patterns, current.patterns, [], retain);
         return {
           ...current,
           ...repaired,
-          patterns,
           tapHistory: {},
           hydrated: current.hydrated,
           authSessionReady: current.authSessionReady,

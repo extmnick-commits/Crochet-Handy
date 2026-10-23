@@ -1,6 +1,6 @@
 import * as SplashScreen from 'expo-splash-screen';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import LogoLaunch from '@/components/LogoLaunch';
 import { Colors } from '@/constants/BambuTheme';
@@ -9,7 +9,7 @@ import { AppLaunchSplashContext } from '@/hooks/useAppLaunchSplash';
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /** Never block the app if the animation stalls on device. */
-const SPLASH_MAX_MS = 3200;
+const SPLASH_MAX_MS = Platform.OS === 'android' ? 900 : 2200;
 
 type Props = { children: ReactNode };
 
@@ -23,6 +23,10 @@ export function AppLaunchGate({ children }: Props) {
   const isSplashDone = phase === 'done';
 
   useEffect(() => {
+    if (Platform.OS === 'android') {
+      setPhase('done');
+      return undefined;
+    }
     const maxSplash = setTimeout(() => setPhase('done'), SPLASH_MAX_MS);
     return () => clearTimeout(maxSplash);
   }, []);
@@ -41,7 +45,7 @@ export function AppLaunchGate({ children }: Props) {
     <AppLaunchSplashContext.Provider value={isSplashDone}>
       <View style={styles.root} onLayout={onLayout}>
         {children}
-        {phase !== 'done' && (
+        {phase !== 'done' && Platform.OS !== 'android' && (
           <View style={styles.splashLayer} pointerEvents="auto">
             <LogoLaunch active onFinished={onAnimFinished} />
           </View>
