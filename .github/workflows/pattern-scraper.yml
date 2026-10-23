@@ -16,8 +16,8 @@ name: Pattern catalog
 
 on:
   schedule:
-    # Weekly: scrape new patterns, then prune catalog (cron has no workflow inputs).
-    - cron: '0 0 * * 0'
+    # Daily at 10:17 UTC (03:17 PDT / 02:17 PST). Full cleanup stays weekly.
+    - cron: '17 10 * * *'
   push:
     branches: [main]
     paths:
@@ -55,6 +55,7 @@ on:
           - amigurumi
           - wearables
           - blankets
+          - granny-squares
           - beanies
           - socks
           - coasters
@@ -74,6 +75,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: pattern-catalog-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   catalog:
     runs-on: ubuntu-latest
@@ -86,6 +91,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -101,11 +108,23 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           INPUT_ACTION: ${{ inputs.action }}
+          INPUT_TOPIC: ${{ inputs.topic }}
         run: |
-          if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "push" ]; then
+          if [ "$EVENT" = "schedule" ]; then
+            # Screen all new candidates daily; recheck the entire catalog on Sundays.
+            if [ "$(date -u +%u)" = "7" ]; then
+              echo "action=scrape-and-prune" >> "$GITHUB_OUTPUT"
+              echo "topic=trending" >> "$GITHUB_OUTPUT"
+            else
+              echo "action=scrape-only" >> "$GITHUB_OUTPUT"
+              echo "topic=variety" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$EVENT" = "push" ]; then
             echo "action=scrape-and-prune" >> "$GITHUB_OUTPUT"
+            echo "topic=trending" >> "$GITHUB_OUTPUT"
           else
             echo "action=${INPUT_ACTION:-scrape-and-prune}" >> "$GITHUB_OUTPUT"
+            echo "topic=${INPUT_TOPIC:-trending}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify YouTube API secret (scrape)
@@ -134,10 +153,10 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
-          SEARCH_TOPIC: ${{ inputs.topic || 'trending' }}
+          SEARCH_TOPIC: ${{ steps.plan.outputs.topic }}
           SCRAPE_COUNT: ${{ inputs.count || '10' }}
-          # Paginate past videos already in seed/catalog so weekly runs still fill the batch.
-          SCRAPE_SEARCH_MAX_PAGES: '20'
+          # Per topic: cap daily variety search at 6 x 10 pages; skip known videos.
+          SCRAPE_SEARCH_MAX_PAGES: '10'
           SCRAPE_LOOKBACK_DAYS: '30'
           SCRAPE_SKIP_THUMBNAIL_CHECK: ${{ inputs.skip_thumbnail_check && '1' || '' }}
         run: npm run update-patterns
@@ -178,4 +197,6 @@ jobs:
             *) MSG="chore: pattern catalog update" ;;
           esac
           git commit -m "$MSG"
+          # Keep unrelated commits made while scraping. Conflicts fail without overwriting.
+          git pull --rebase origin "$GITHUB_REF_NAME"
           git push

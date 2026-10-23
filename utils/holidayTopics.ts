@@ -224,6 +224,10 @@ export function scrapeCategoryKeywords(): Record<string, readonly string[]> {
       'dress',
     ],
     blankets: ['blanket', 'blankets', 'afghan', 'throw'],
+    'granny-squares': [
+      'granny square', 'granny squares', 'granny-square', 'granny-squares',
+      'granny_square', 'granny_squares', 'grannysquare', 'grannysquares',
+    ],
     bags: ['bag', 'bags', 'tote', 'purse', 'pouch', 'market bag'],
     beanies: ['beanie', 'beanies', 'slouchy hat', 'bucket hat', 'beret'],
     socks: ['sock', 'socks', 'slipper', 'slippers', 'boot cuff', 'leg warmer'],
@@ -246,6 +250,7 @@ export const EVERGREEN_SCRAPE_CATEGORY_IDS = [
   'amigurumi',
   'wearables',
   'blankets',
+  'granny-squares',
   'beanies',
   'socks',
   'coasters',
@@ -261,13 +266,14 @@ export function isEvergreenScrapeCategory(value: string): value is EvergreenScra
   return EVERGREEN_SCRAPE_CATEGORY_SET.has(value.trim().toLowerCase());
 }
 
-/** One scrape run: mix beanies, socks, coasters, bags, and home decor (even split). */
+/** One scrape run: mix small projects, home decor, and granny squares (even split). */
 export const VARIETY_SCRAPE_TOPIC_IDS: readonly EvergreenScrapeCategoryId[] = [
   'beanies',
   'socks',
   'coasters',
   'bags',
   'home-decor',
+  'granny-squares',
 ];
 
 export function isVarietyScrapeTopic(topic: string): boolean {
@@ -376,6 +382,9 @@ export function searchQueryForScrapeTopic(topic: string): string {
   }
   if (topic === 'blankets' || topic === 'blanket') {
     return '("crochet blanket" | "crochet granny square") ("tutorial" | "pattern") -shorts';
+  }
+  if (topic === 'granny-squares') {
+    return '("crochet granny square" | "crochet granny squares") ("tutorial" | "pattern") -shorts';
   }
   if (topic === 'beanies') {
     return '("crochet beanie" | "crochet hat" | "crochet beret") ("tutorial" | "pattern") -shorts';

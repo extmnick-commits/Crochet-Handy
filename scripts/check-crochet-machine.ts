@@ -28,6 +28,8 @@ import {
   WORKFLOW_SCRAPE_TOPIC_OPTIONS,
 } from '../utils/holidayTopics';
 import { matchesPatternCategory, patternFeedCategories } from '../utils/patternDisplay';
+import { selectFreshestCatalog } from '../utils/catalogFreshness';
+import { selectVarietyCandidates } from '../utils/scrapeSelection';
 import { acceptsCrochetExtraction, mapExtractedPattern } from '../utils/patternExtraction';
 import {
   isEnglishFeedPattern,
@@ -1224,6 +1226,37 @@ assert(parseCommunityDocument('projects/demo/databases/(default)/documents/commu
 }) == null, 'firestore parser rejects a title-less submission');
 
 const genericTrendingQuery = searchQueryForScrapeTopic('trending');
+equal(
+  selectFreshestCatalog([
+    { generatedAt: '2026-10-20T10:00:00Z', patterns: ['old', 'removed'] },
+    { generatedAt: '2026-10-21T10:00:00Z', patterns: ['new'] },
+  ]).join(','),
+  'new',
+  'latest catalog wins even when pruning makes it smaller',
+);
+equal(
+  selectFreshestCatalog([
+    { generatedAt: 'invalid', patterns: ['undated'] },
+    { generatedAt: '2026-10-21T10:00:00Z', patterns: ['current'] },
+    { generatedAt: '2026-10-22T10:00:00Z', patterns: [] },
+  ]).join(','),
+  'current',
+  'ignore invalid dates and empty snapshots when a usable dated catalog exists',
+);
+equal(selectFreshestCatalog([{ patterns: ['offline-fallback'] }])[0], 'offline-fallback', 'undated catalog remains usable');
+equal(selectFreshestCatalog([]).length, 0, 'failed fetches return an empty remote catalog for bundled fallback');
+const varietyCandidates = [{ id: 'hat-1' }, { id: 'hat-2' }, { id: 'hat-3' }, { id: 'square-1' }];
+const varietyTopics = new Map([
+  ['hat-1', 'beanies'], ['hat-2', 'beanies'], ['hat-3', 'beanies'], ['square-1', 'granny-squares'],
+]);
+equal(
+  selectVarietyCandidates(varietyCandidates, varietyTopics, 2).map((item) => item.id).join(','),
+  'hat-1,square-1',
+  'screened granny squares get a slot even when another bucket has longer descriptions',
+);
+equal(selectVarietyCandidates(varietyCandidates, varietyTopics, 10).length, 4, 'sparse variety batches use available candidates without duplicates');
+equal(selectVarietyCandidates([], varietyTopics, 10).length, 0, 'empty variety search terminates');
+assert(VARIETY_SCRAPE_TOPIC_IDS.includes('granny-squares'), 'daily variety includes granny squares');
 for (const topic of WORKFLOW_SCRAPE_TOPIC_OPTIONS) {
   if (topic === 'trending' || topic === 'seasonal' || topic === 'variety') continue;
   const resolved = resolveScrapeTopic(topic, new Date('2026-07-01T12:00:00'));
@@ -1282,6 +1315,17 @@ assert(
 assert(
   matchesPatternCategory(categoryFeedPattern('Granny throw', ['blankets']), 'blankets'),
   'scrape topic tag blankets matches the blankets chip',
+);
+for (const title of ['Classic Granny Square', 'Sunburst Granny Squares', 'Granny-Square Bag']) {
+  assert(matchesPatternCategory(categoryFeedPattern(title, []), 'granny-squares'), `granny category recognizes ${title}`);
+}
+for (const tag of ['granny-squares', 'granny-square', 'granny square', 'grannysquare']) {
+  assert(matchesPatternCategory(categoryFeedPattern('Flower motif', [tag]), 'granny-squares'), `granny category recognizes legacy tag ${tag}`);
+}
+assert(!matchesPatternCategory(categoryFeedPattern('Ribbed baby blanket', ['blankets']), 'granny-squares'), 'ordinary blankets stay out of granny squares');
+assert(
+  patternFeedCategories(new Date('2026-07-01T12:00:00')).some((item) => item.id === 'granny-squares' && item.label === 'Granny Squares'),
+  'granny squares chip is available year-round',
 );
 assert(
   matchesPatternCategory(categoryFeedPattern('Mug rug set', ['coasters']), 'coasters'),

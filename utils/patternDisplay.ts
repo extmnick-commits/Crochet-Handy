@@ -36,6 +36,7 @@ const EVERGREEN_CHIP_LABELS: Record<EvergreenScrapeCategoryId, string> = {
   amigurumi: 'Amigurumi',
   wearables: 'Wearables',
   blankets: 'Blankets',
+  'granny-squares': 'Granny Squares',
   beanies: 'Beanies',
   socks: 'Socks',
   coasters: 'Coasters',

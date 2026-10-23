@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 
 import { parseCatalogPatterns, type CrochetPattern } from '@/store/machine';
 import { loadRepoPatternCatalog } from '@/utils/scrapCatalogSource';
+import { selectFreshestCatalog } from '@/utils/catalogFreshness';
 
 export { loadRepoPatternCatalog, scrapCatalogSuggestions, patternsForScrapProjects } from '@/utils/scrapCatalogSource';
 export type { ScrapCatalogSuggestion } from '@/utils/scrapCatalogSource';
@@ -45,7 +46,7 @@ function catalogFetchUrl(url: string, bustCache: boolean): string {
 async function fetchPatternCatalogFromUrl(
   url: string,
   bustCache: boolean,
-): Promise<CrochetPattern[]> {
+): Promise<{ generatedAt?: string; patterns: CrochetPattern[] }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -54,9 +55,12 @@ async function fetchPatternCatalogFromUrl(
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
-    if (!response.ok) return [];
+    if (!response.ok) return { patterns: [] };
     const payload = (await response.json()) as PatternCatalogFile;
-    return parseCatalogPatterns(payload.patterns);
+    return {
+      generatedAt: typeof payload.generatedAt === 'string' ? payload.generatedAt : undefined,
+      patterns: parseCatalogPatterns(payload.patterns),
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -81,18 +85,15 @@ export async function fetchRemotePatternCatalog(
 
   const bustCache = options?.bustCache ?? true;
   const candidates = catalogFetchCandidates(url);
-  let best: CrochetPattern[] = [];
+  const snapshots: { generatedAt?: string; patterns: CrochetPattern[] }[] = [];
   for (const candidate of candidates) {
     try {
-      const patterns = await fetchPatternCatalogFromUrl(candidate, bustCache);
-      if (patterns.length > best.length) {
-        best = patterns;
-      }
+      snapshots.push(await fetchPatternCatalogFromUrl(candidate, bustCache));
     } catch (error) {
       if (__DEV__) {
         console.warn('[patternCatalog] fetch failed', candidate, error);
       }
     }
   }
-  return best;
+  return selectFreshestCatalog(snapshots);
 }

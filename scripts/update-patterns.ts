@@ -8,7 +8,7 @@
  *
  * Batch size: SCRAPE_COUNT or --count (default 10)
  * Topic: SEARCH_TOPIC or --topic (trending | seasonal | variety | evergreen scrape ids | holiday ids)
- * Variety: one run searches beanies, socks, coasters, bags, and home-decor in parallel and tags each video with its bucket.
+ * Variety: one run searches beanies, socks, coasters, bags, home-decor, and granny-squares and tags each video with its bucket.
  * Seasonal: trending/seasonal auto-target the active holiday window (e.g. halloween in October). Set SCRAPE_SEASONAL=0 to disable.
  * Thumbnail vision: cloud Gemini pass drops foreign on-image text and yarn-only thumbnails. Set SCRAPE_SKIP_THUMBNAIL_CHECK=1 to skip.
  * Dedup: skips any YouTube video id already in store/seed.ts (and catalog/pattern-catalog.json). Paginates search until enough new candidates or SCRAPE_SEARCH_MAX_PAGES.
@@ -36,6 +36,7 @@ import { isValidEnglishYoutubeSnippet } from '../utils/patternEnglishFilter';
 import { parseBatchPatternsResponse } from '../utils/batchPatternJsonParse';
 import { batchExtractionSystemPrompt, mapExtractedPattern } from '../utils/patternExtraction';
 import { derivePatternSummary } from '../utils/patternSummary';
+import { selectVarietyCandidates } from '../utils/scrapeSelection';
 import { filterVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
 import { fetchWatchEnrichmentForVideoIds } from '../utils/youtubeTranscript';
 
@@ -840,7 +841,9 @@ export async function main(): Promise<void> {
     }
     const screened = await applyThumbnailLanguageFilter(candidatePool, client, model, isLocal);
     const batchSize = Number.isFinite(BATCH_SIZE) && BATCH_SIZE > 0 ? BATCH_SIZE : 10;
-    const videos = screened.slice(0, batchSize);
+    const videos = isVarietyScrapeTopic(SEARCH_TOPIC)
+      ? selectVarietyCandidates(screened, topicByVideoId, batchSize)
+      : screened.slice(0, batchSize);
     if (videos.length === 0) {
       logTimestamp(
         `Added 0 new patterns after filters. Catalog now has total of ${existingIds.size} patterns.`,
