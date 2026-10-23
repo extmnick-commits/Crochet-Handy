@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-20T23:10:58.967Z",
+  "generatedAt": "2026-10-23T07:55:46.599Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -6323,6 +6323,736 @@
       ],
       "bookmarks": [],
       "summary": "Create a gorgeous blanket using an easy one-row textured stitch pattern."
+    },
+    {
+      "id": "pattern-want-a-neat-granny-square-join-mattress-stitch-t",
+      "title": "Want a Neat Granny Square Join? | Mattress Stitch Tutorial",
+      "creator": "Makingpolly",
+      "youtubeUrl": "https://www.youtube.com/watch?v=6GW3cJ5Xe3o",
+      "videoId": "6GW3cJ5Xe3o",
+      "thumbnailUrl": "https://i.ytimg.com/vi/6GW3cJ5Xe3o/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "none",
+      "totalRows": 1,
+      "stitchesPerRow": 10,
+      "tags": [
+        "granny-squares",
+        "granny square",
+        "crochet tips",
+        "invisible seam",
+        "mattress stitch",
+        "home decor",
+        "valentines",
+        "wearables"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-introduction",
+          "label": "Introduction",
+          "seconds": 0
+        },
+        {
+          "id": "bm-40-what-you-will-need",
+          "label": "What you will need",
+          "seconds": 40
+        },
+        {
+          "id": "bm-55-pattern-notes",
+          "label": "Pattern Notes",
+          "seconds": 55
+        },
+        {
+          "id": "bm-90-joining-instructions-sta",
+          "label": "Joining Instructions, Start of Top & Middle Rows",
+          "seconds": 90
+        },
+        {
+          "id": "bm-116-mattress-stitch-instruct",
+          "label": "Mattress Stitch Instructions",
+          "seconds": 116
+        },
+        {
+          "id": "bm-205-mattress-stitch-closing-",
+          "label": "Mattress Stitch Closing Seam",
+          "seconds": 205
+        },
+        {
+          "id": "bm-220-joining-instructions-2-n",
+          "label": "Joining Instructions, 2 new adjoining squares 4",
+          "seconds": 220
+        },
+        {
+          "id": "bm-274-bring-4-corners-neatly-t",
+          "label": "Bring 4 corners neatly together, all 4 adjoining",
+          "seconds": 274
+        },
+        {
+          "id": "bm-345-joining-continue-top-mid",
+          "label": "Joining Continue, Top & Middle Rows to second co",
+          "seconds": 345
+        },
+        {
+          "id": "bm-382-joining-continue-top-mid",
+          "label": "Joining Continue, Top & Middle Rows to end of ro",
+          "seconds": 382
+        },
+        {
+          "id": "bm-408-joining-instructions-sta",
+          "label": "Joining Instructions Start of Middle & Bottom Ro",
+          "seconds": 408
+        },
+        {
+          "id": "bm-420-joining-instructions-sta",
+          "label": "Joining Instructions Start of Vertical Joining",
+          "seconds": 420
+        },
+        {
+          "id": "bm-439-joining-instructions-fir",
+          "label": "Joining Instructions First Corner where 4 square",
+          "seconds": 439
+        },
+        {
+          "id": "bm-537-joining-continue-vertica",
+          "label": "Joining Continue, Vertical Joining to second cor",
+          "seconds": 537
+        },
+        {
+          "id": "bm-565-joining-continue-vertica",
+          "label": "Joining Continue, Vertical Joining to end of row",
+          "seconds": 565
+        },
+        {
+          "id": "bm-574-joining-instructions-sta",
+          "label": "Joining Instructions Start of Second Vertical Jo",
+          "seconds": 574
+        },
+        {
+          "id": "bm-589-sewing-in-ends",
+          "label": "Sewing in Ends",
+          "seconds": 589
+        },
+        {
+          "id": "bm-618-finishing-notes-and-than",
+          "label": "Finishing Notes and thank you",
+          "seconds": 618
+        }
+      ],
+      "summary": "Master the invisible mattress stitch to seamlessly join your granny squares together for blankets and home decor."
+    },
+    {
+      "id": "pattern-a-unique-crochet-granny-square-you-can-make-in-a",
+      "title": "✨️A Unique crochet Granny Square You Can Make in Any Size | Step-by-Step Crochet Tutorial",
+      "creator": "knitting whit Love",
+      "youtubeUrl": "https://www.youtube.com/watch?v=6lMjlMZuEFs",
+      "videoId": "6lMjlMZuEFs",
+      "thumbnailUrl": "https://i.ytimg.com/vi/6lMjlMZuEFs/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4.5mm",
+      "totalRows": 5,
+      "stitchesPerRow": 20,
+      "tags": [
+        "granny-squares",
+        "granny square",
+        "crochet motif",
+        "blanket",
+        "bag",
+        "geometric",
+        "winter",
+        "valentines"
+      ],
+      "bookmarks": [],
+      "summary": "Crochet a unique geometric granny square with a blend of solid stitches and openwork from the center out."
+    },
+    {
+      "id": "pattern-easy-crochet-granny-square-tutorial-30-days-of-g",
+      "title": "Easy Crochet Granny Square Tutorial | 30 Days of Granny Squares - Day 19",
+      "creator": "Knotty Threadz",
+      "youtubeUrl": "https://www.youtube.com/watch?v=UqIvrKrJs9M",
+      "videoId": "UqIvrKrJs9M",
+      "thumbnailUrl": "https://i.ytimg.com/vi/UqIvrKrJs9M/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny square",
+        "scrap yarn",
+        "blanket",
+        "beginner friendly",
+        "cardigan",
+        "wearables",
+        "blankets",
+        "granny-squares"
+      ],
+      "bookmarks": [],
+      "summary": "Expand your granny square collection with Day 19 of the 30 Days of Granny Squares challenge."
+    },
+    {
+      "id": "pattern-beautiful-sunflower-crochet-granny-square-patter",
+      "title": "🌻 Beautiful Sunflower Crochet Granny Square Pattern | Easy Crochet Tutorial #crochet",
+      "creator": "Crochet Patterns",
+      "youtubeUrl": "https://www.youtube.com/watch?v=qpaxO5lB-Cs",
+      "videoId": "qpaxO5lB-Cs",
+      "thumbnailUrl": "https://i.ytimg.com/vi/qpaxO5lB-Cs/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 5,
+      "stitchesPerRow": 20,
+      "tags": [
+        "granny square",
+        "sunflower",
+        "crochet flower",
+        "flower motif",
+        "blanket",
+        "valentines",
+        "wearables",
+        "granny-squares"
+      ],
+      "bookmarks": [],
+      "summary": "Stitch a gorgeous sunflower granny square featuring raised petals and classic textures."
+    },
+    {
+      "id": "pattern-crochet-granny-square-keychain-easy-step-by-step",
+      "title": "Crochet Granny Square Keychain 🧶 | Easy Step-by-Step Tutorial | Part 1 | #crochet #keychain",
+      "creator": "my art world",
+      "youtubeUrl": "https://www.youtube.com/watch?v=OjqJC6KAkGI",
+      "videoId": "OjqJC6KAkGI",
+      "thumbnailUrl": "https://i.ytimg.com/vi/OjqJC6KAkGI/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "sport",
+      "hookSize": "3.5mm",
+      "totalRows": 3,
+      "stitchesPerRow": 12,
+      "tags": [
+        "granny square",
+        "keychain",
+        "diy",
+        "handmade gifts",
+        "scrap yarn",
+        "valentines",
+        "granny-squares",
+        "ch"
+      ],
+      "bookmarks": [],
+      "summary": "Create a miniature colorful granny square keychain in Part 1 of this fun DIY craft tutorial."
+    },
+    {
+      "id": "pattern-crochet-granny-square-coffee-cup-cozy",
+      "title": "Crochet Granny Square Coffee Cup Cozy",
+      "creator": "Canadian Yarn Hoard",
+      "youtubeUrl": "https://www.youtube.com/watch?v=4aCV8gGTjiQ",
+      "videoId": "4aCV8gGTjiQ",
+      "thumbnailUrl": "https://i.ytimg.com/vi/4aCV8gGTjiQ/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 18,
+      "tags": [
+        "granny square",
+        "cup cozy",
+        "home decor",
+        "kitchen",
+        "cotton yarn",
+        "winter",
+        "granny-squares",
+        "ch"
+      ],
+      "bookmarks": [],
+      "summary": "Keep your coffee warm with a handmade granny square coffee cup cozy project."
+    },
+    {
+      "id": "pattern-day-22-easy-crochet-granny-square-tutorial-30-da",
+      "title": "Day 22: Easy Crochet Granny Square Tutorial | 30 Days of Granny Squares - Day 22",
+      "creator": "Knotty Threadz",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Wi-5jN0SU10",
+      "videoId": "Wi-5jN0SU10",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Wi-5jN0SU10/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny-squares",
+        "granny square",
+        "cardigan",
+        "blanket",
+        "bag",
+        "crochet tutorial",
+        "valentines",
+        "wearables"
+      ],
+      "bookmarks": [],
+      "summary": "Explore Day 22 of the 30 Days of Granny Squares series with an easy, versatile crochet square motif."
+    },
+    {
+      "id": "pattern-v4W0WW2kFxM",
+      "title": "Easy Crochet Granny Square Tutorial | 30 Days of Granny Squares - Day 18",
+      "creator": "Knotty Threadz",
+      "youtubeUrl": "https://www.youtube.com/watch?v=v4W0WW2kFxM",
+      "videoId": "v4W0WW2kFxM",
+      "thumbnailUrl": "https://i.ytimg.com/vi/v4W0WW2kFxM/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny square",
+        "beginner",
+        "blanket",
+        "home decor",
+        "crochet tutorial",
+        "wearables",
+        "blankets",
+        "granny-squares"
+      ],
+      "bookmarks": [],
+      "summary": "Build your collection with Day 18's beginner-friendly granny square design."
+    },
+    {
+      "id": "pattern-left-handed-crochet-granny-square-tutorial-easy-",
+      "title": "Left-Handed Crochet Granny Square Tutorial | Easy Beginner Pattern 🧶✨",
+      "creator": "Crochet By Gillian",
+      "youtubeUrl": "https://www.youtube.com/watch?v=MQMrTmYwlNE",
+      "videoId": "MQMrTmYwlNE",
+      "thumbnailUrl": "https://i.ytimg.com/vi/MQMrTmYwlNE/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 8,
+      "stitchesPerRow": 24,
+      "tags": [
+        "granny square",
+        "left handed",
+        "beginner friendly",
+        "blanket",
+        "tutorial",
+        "valentines",
+        "wearables",
+        "granny-squares"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-stitch-intro",
+          "label": "stitch intro",
+          "seconds": 0
+        },
+        {
+          "id": "bm-9-rnd-1",
+          "label": "Rnd 1",
+          "seconds": 9
+        },
+        {
+          "id": "bm-135-rnd-2",
+          "label": "Rnd 2",
+          "seconds": 135
+        },
+        {
+          "id": "bm-238-rnd-3",
+          "label": "Rnd 3",
+          "seconds": 238
+        },
+        {
+          "id": "bm-351-rnd-4",
+          "label": "Rnd 4",
+          "seconds": 351
+        },
+        {
+          "id": "bm-441-rnd-5",
+          "label": "Rnd 5",
+          "seconds": 441
+        },
+        {
+          "id": "bm-621-rnd-6",
+          "label": "Rnd 6",
+          "seconds": 621
+        },
+        {
+          "id": "bm-791-rnd-7",
+          "label": "Rnd 7",
+          "seconds": 791
+        },
+        {
+          "id": "bm-892-rnd-8",
+          "label": "Rnd 8",
+          "seconds": 892
+        }
+      ],
+      "summary": "Follow along left-handed to create an 8-round classic granny square using #4 weight yarn."
+    },
+    {
+      "id": "pattern-WioTQ3KY0lc",
+      "title": "Easy Granny Square Crochet Tutorial | 30 Days of Granny Squares - Day 16",
+      "creator": "Knotty Threadz",
+      "youtubeUrl": "https://www.youtube.com/watch?v=WioTQ3KY0lc",
+      "videoId": "WioTQ3KY0lc",
+      "thumbnailUrl": "https://i.ytimg.com/vi/WioTQ3KY0lc/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny square",
+        "blanket",
+        "bag",
+        "cushion",
+        "beginner",
+        "wearables",
+        "blankets",
+        "granny-squares"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-introduction-and-base",
+          "label": "Introduction and base",
+          "seconds": 0
+        },
+        {
+          "id": "bm-190-working-the-puff-stitche",
+          "label": "Working the puff stitches",
+          "seconds": 190
+        },
+        {
+          "id": "bm-420-adding-the-solid-border",
+          "label": "Adding the solid border",
+          "seconds": 420
+        },
+        {
+          "id": "bm-635-v-stitch-pattern-round",
+          "label": "V-stitch pattern round",
+          "seconds": 635
+        },
+        {
+          "id": "bm-785-adding-secondary-puff-ro",
+          "label": "Adding secondary puff row",
+          "seconds": 785
+        },
+        {
+          "id": "bm-998-final-rounds-and-finishi",
+          "label": "Final rounds and finishing",
+          "seconds": 998
+        }
+      ],
+      "summary": "Day 16 brings another quick and easy granny square design for your handmade projects."
+    },
+    {
+      "id": "pattern-left-handed-crochet-granny-square-easier-than-yo",
+      "title": "Left-Handed Crochet Granny Square | Easier Than You Think! 🧶",
+      "creator": "Crochet By Gillian",
+      "youtubeUrl": "https://www.youtube.com/watch?v=LHuZaZnLkr0",
+      "videoId": "LHuZaZnLkr0",
+      "thumbnailUrl": "https://i.ytimg.com/vi/LHuZaZnLkr0/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 6,
+      "stitchesPerRow": 20,
+      "tags": [
+        "granny square",
+        "left handed",
+        "crochet tutorial",
+        "blanket",
+        "easy crochet",
+        "valentines",
+        "wearables",
+        "granny-squares"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-stitch-intro",
+          "label": "stitch intro",
+          "seconds": 0
+        },
+        {
+          "id": "bm-13-rnd-1",
+          "label": "Rnd 1",
+          "seconds": 13
+        },
+        {
+          "id": "bm-99-rnd-2",
+          "label": "Rnd 2",
+          "seconds": 99
+        },
+        {
+          "id": "bm-208-rnd-3",
+          "label": "Rnd 3",
+          "seconds": 208
+        },
+        {
+          "id": "bm-334-rnd-4",
+          "label": "Rnd 4",
+          "seconds": 334
+        },
+        {
+          "id": "bm-538-rnd-5",
+          "label": "Rnd 5",
+          "seconds": 538
+        },
+        {
+          "id": "bm-738-rnd-6",
+          "label": "Rnd 6",
+          "seconds": 738
+        }
+      ],
+      "summary": "Learn a 6-round left-handed granny square pattern that is easier than you think."
+    },
+    {
+      "id": "pattern-hindi-me-make-this-beautiful-crochet-granny-squa",
+      "title": "Hindi me /Make this beautiful crochet granny square for making Thalpos / Thalpos/ Thaliposh/ cover",
+      "creator": "Pinky Woolen craft",
+      "youtubeUrl": "https://www.youtube.com/watch?v=CNs3-vCBy6M",
+      "videoId": "CNs3-vCBy6M",
+      "thumbnailUrl": "https://i.ytimg.com/vi/CNs3-vCBy6M/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "sport",
+      "hookSize": "3.5mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny square",
+        "thalposh",
+        "table cover",
+        "flower motif",
+        "home decor",
+        "granny-squares",
+        "home-decor",
+        "ch"
+      ],
+      "bookmarks": [],
+      "summary": "Crochet a decorative floral square motif perfect for thalposh, table covers, and placemats."
+    },
+    {
+      "id": "pattern-crochet-granny-square-tutorial-for-beginners",
+      "title": "Crochet Granny Square | Tutorial For Beginners",
+      "creator": "Lushhooks",
+      "youtubeUrl": "https://www.youtube.com/watch?v=ZJRRwuuSC9M",
+      "videoId": "ZJRRwuuSC9M",
+      "thumbnailUrl": "https://i.ytimg.com/vi/ZJRRwuuSC9M/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny-squares",
+        "granny square",
+        "beginner",
+        "crochet tutorial",
+        "blanket",
+        "bag",
+        "valentines",
+        "wearables"
+      ],
+      "bookmarks": [],
+      "summary": "Learn the fundamentals of making a classic granny square in this beginner-friendly tutorial."
+    },
+    {
+      "id": "pattern-crochet-granny-square-for-beginners-simple-beaut",
+      "title": "Crochet Granny Square for Beginners 🧶 | Simple & Beautiful Crochet Pattern",
+      "creator": "Crochet Loops - Granny Squares",
+      "youtubeUrl": "https://www.youtube.com/watch?v=BZuFGpWk09o",
+      "videoId": "BZuFGpWk09o",
+      "thumbnailUrl": "https://i.ytimg.com/vi/BZuFGpWk09o/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny square",
+        "beginner",
+        "crochet blanket",
+        "bag",
+        "easy crochet",
+        "blankets",
+        "granny-squares",
+        "bags"
+      ],
+      "bookmarks": [],
+      "summary": "Create a simple yet stunning granny square designed specifically for absolute beginners."
+    },
+    {
+      "id": "pattern-1efY212k7nY",
+      "title": "Crochet Granny Square for Beginners 🧶 |Simple & Beautiful Crochet Pattern",
+      "creator": "Crochet Loops - Granny Squares",
+      "youtubeUrl": "https://www.youtube.com/watch?v=1efY212k7nY",
+      "videoId": "1efY212k7nY",
+      "thumbnailUrl": "https://i.ytimg.com/vi/1efY212k7nY/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny square",
+        "beginner",
+        "crochet blanket",
+        "bag",
+        "easy crochet",
+        "blankets",
+        "granny-squares",
+        "bags"
+      ],
+      "bookmarks": [],
+      "summary": "Master a simple and beautiful granny square pattern tailored for beginner crocheters."
+    },
+    {
+      "id": "pattern-crochet-granny-square-for-beginners-beautiful-ha",
+      "title": "Crochet Granny Square for Beginners 🧶 |Beautiful Handmade Star Pattern ✨",
+      "creator": "Crochet Loops - Granny Squares",
+      "youtubeUrl": "https://www.youtube.com/watch?v=I1gTJGvY8xY",
+      "videoId": "I1gTJGvY8xY",
+      "thumbnailUrl": "https://i.ytimg.com/vi/I1gTJGvY8xY/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny square",
+        "star pattern",
+        "beginner",
+        "blanket",
+        "bag",
+        "blankets",
+        "granny-squares",
+        "bags"
+      ],
+      "bookmarks": [],
+      "summary": "Stitch a charming star pattern into the center of a beginner-friendly granny square motif."
+    },
+    {
+      "id": "pattern-crochet-granny-square-for-beginners-simple-sunfl",
+      "title": "Crochet Granny Square for Beginners | Simple & sunflower 🌻 Crochet Pattern",
+      "creator": "Crochet Loops - Granny Squares",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Rs5LxPDevFs",
+      "videoId": "Rs5LxPDevFs",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Rs5LxPDevFs/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 18,
+      "tags": [
+        "granny square",
+        "sunflower",
+        "beginner",
+        "blanket",
+        "bag",
+        "blankets",
+        "granny-squares",
+        "bags"
+      ],
+      "bookmarks": [],
+      "summary": "Combine simple stitches with a lovely sunflower center in this easy granny square pattern."
+    },
+    {
+      "id": "pattern-beautiful-handmade-crochet-granny-square-pattern",
+      "title": "Beautiful Handmade Crochet Granny Square Pattern 🧶 | Easy Tutorial",
+      "creator": "Crochet Loops - Granny Squares",
+      "youtubeUrl": "https://www.youtube.com/watch?v=xkZ2gHDGLFE",
+      "videoId": "xkZ2gHDGLFE",
+      "thumbnailUrl": "https://i.ytimg.com/vi/xkZ2gHDGLFE/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 4,
+      "stitchesPerRow": 16,
+      "tags": [
+        "granny square",
+        "beginner",
+        "blanket",
+        "bag",
+        "easy crochet",
+        "blankets",
+        "granny-squares",
+        "bags"
+      ],
+      "bookmarks": [],
+      "summary": "Crochet a gorgeous handmade granny square pattern with this simple, easy-to-follow tutorial."
+    },
+    {
+      "id": "pattern-this-flower-granny-square-is-so-beautiful-croche",
+      "title": "This Flower Granny Square Is So Beautiful! 🌼 | Crochet Granny Square Tutorial",
+      "creator": "Shab creative world 🌎",
+      "youtubeUrl": "https://www.youtube.com/watch?v=mnR8cBr5NC4",
+      "videoId": "mnR8cBr5NC4",
+      "thumbnailUrl": "https://i.ytimg.com/vi/mnR8cBr5NC4/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 5,
+      "stitchesPerRow": 20,
+      "tags": [
+        "granny-squares",
+        "granny square",
+        "flower motif",
+        "bag",
+        "sweater",
+        "home decor",
+        "valentines",
+        "stpatricks"
+      ],
+      "bookmarks": [],
+      "summary": "Create a vibrant flower granny square with yellow petals, green leaves, and a clean white border."
+    },
+    {
+      "id": "pattern-how-to-add-row-3-to-a-crochet-granny-square-for-",
+      "title": "How to Add Row #3 to a Crochet Granny Square for Left Handers",
+      "creator": "Becky Goldsmith",
+      "youtubeUrl": "https://www.youtube.com/watch?v=m53WWwjmZx0",
+      "videoId": "m53WWwjmZx0",
+      "thumbnailUrl": "https://i.ytimg.com/vi/m53WWwjmZx0/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4mm",
+      "totalRows": 1,
+      "stitchesPerRow": 20,
+      "tags": [
+        "granny square",
+        "left handed",
+        "beginner",
+        "crochet tutorial",
+        "take along project",
+        "thanksgiving",
+        "wearables",
+        "granny-squares"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-starting-the-granny-squa",
+          "label": "Starting the granny square",
+          "seconds": 0
+        },
+        {
+          "id": "bm-144-working-the-pattern-rows",
+          "label": "Working the pattern rows",
+          "seconds": 144
+        },
+        {
+          "id": "bm-240-troubleshooting-and-tips",
+          "label": "Troubleshooting and tips",
+          "seconds": 240
+        },
+        {
+          "id": "bm-315-project-ideas-and-inspir",
+          "label": "Project ideas and inspiration",
+          "seconds": 315
+        },
+        {
+          "id": "bm-409-final-thoughts-and-closi",
+          "label": "Final thoughts and closing",
+          "seconds": 409
+        }
+      ],
+      "summary": "Master Row 3 and beyond on a classic granny square with this helpful left-handed tutorial."
     }
   ]
 }
