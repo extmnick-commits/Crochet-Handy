@@ -16,7 +16,7 @@ name: Pattern catalog
 
 on:
   schedule:
-    # Daily at 10:17 UTC (03:17 PDT / 02:17 PST). Full cleanup stays weekly.
+    # Daily at 10:17 UTC (03:17 PDT / 02:17 PST); text cleanup runs weekly.
     - cron: '17 10 * * *'
   push:
     branches: [main]
@@ -88,6 +88,8 @@ jobs:
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
       FIREBASE_ACCESS_TOKEN: ${{ secrets.FIREBASE_ACCESS_TOKEN }}
+      # Leave headroom under the free tier's 15 requests/minute for other usage.
+      SCRAPE_GEMINI_MIN_INTERVAL_MS: '8000'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -111,9 +113,9 @@ jobs:
           INPUT_TOPIC: ${{ inputs.topic }}
         run: |
           if [ "$EVENT" = "schedule" ]; then
-            # Screen all new candidates daily; recheck the entire catalog on Sundays.
+            # Screen new candidates daily; run free text-only cleanup on Sundays.
             if [ "$(date -u +%u)" = "7" ]; then
-              echo "action=scrape-and-prune" >> "$GITHUB_OUTPUT"
+              echo "action=scrape-and-prune-text" >> "$GITHUB_OUTPUT"
               echo "topic=variety" >> "$GITHUB_OUTPUT"
             else
               echo "action=scrape-only" >> "$GITHUB_OUTPUT"
@@ -128,7 +130,7 @@ jobs:
           fi
 
       - name: Verify YouTube API secret (scrape)
-        if: contains(fromJSON('["scrape-only","scrape-and-prune"]'), steps.plan.outputs.action)
+        if: contains(fromJSON('["scrape-only","scrape-and-prune","scrape-and-prune-text"]'), steps.plan.outputs.action)
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
@@ -138,7 +140,7 @@ jobs:
           fi
 
       - name: Verify Gemini API secret (scrape / thumbnail prune)
-        if: contains(fromJSON('["scrape-only","scrape-and-prune","prune-all-only","prune-thumbnails-only"]'), steps.plan.outputs.action)
+        if: contains(fromJSON('["scrape-only","scrape-and-prune","scrape-and-prune-text","prune-all-only","prune-thumbnails-only"]'), steps.plan.outputs.action)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
@@ -148,13 +150,13 @@ jobs:
           fi
 
       - name: Scrape and enrich patterns
-        if: contains(fromJSON('["scrape-only","scrape-and-prune"]'), steps.plan.outputs.action)
+        if: contains(fromJSON('["scrape-only","scrape-and-prune","scrape-and-prune-text"]'), steps.plan.outputs.action)
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          GEMINI_MODEL: ${{ github.event_name == 'schedule' && 'gemini-3.5-flash-lite' || secrets.GEMINI_MODEL }}
           SEARCH_TOPIC: ${{ steps.plan.outputs.topic }}
-          SCRAPE_COUNT: ${{ inputs.count || '10' }}
+          SCRAPE_COUNT: ${{ github.event_name == 'schedule' && '7' || inputs.count || '10' }}
           # Nine categories x six pages maximum: cap YouTube search quota use.
           SCRAPE_SEARCH_MAX_PAGES: '6'
           SCRAPE_LOOKBACK_DAYS: '30'
@@ -162,7 +164,7 @@ jobs:
         run: npm run update-patterns
 
       - name: Prune non-English text rules
-        if: contains(fromJSON('["scrape-and-prune","prune-all-only","prune-text-only"]'), steps.plan.outputs.action)
+        if: contains(fromJSON('["scrape-and-prune","scrape-and-prune-text","prune-all-only","prune-text-only"]'), steps.plan.outputs.action)
         run: npm run prune-non-english-patterns
 
       - name: Prune thumbnail feed rules (Gemini vision)
@@ -190,6 +192,7 @@ jobs:
           case "$ACTION" in
             scrape-only) MSG="chore: pattern catalog scrape" ;;
             scrape-and-prune) MSG="chore: pattern catalog scrape and prune" ;;
+            scrape-and-prune-text) MSG="chore: pattern catalog scrape and text cleanup" ;;
             prune-all-only) MSG="chore: pattern catalog prune (text + thumbnails)" ;;
             prune-text-only) MSG="chore: pattern catalog prune (text)" ;;
             prune-thumbnails-only) MSG="chore: pattern catalog prune (thumbnails)" ;;

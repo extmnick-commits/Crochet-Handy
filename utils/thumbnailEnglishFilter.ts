@@ -1,4 +1,5 @@
 import type OpenAI from 'openai';
+import { isGeminiRateLimitError, waitForGeminiRequest } from './geminiRequestPacing';
 
 /** Max thumbnails per vision request (`gemini-flash-lite` rejects large batches). */
 export const THUMBNAIL_VISION_CHUNK_SIZE = 4;
@@ -82,6 +83,7 @@ async function screenThumbnailChunk<T extends { id?: string }>(
     });
   }
 
+  await waitForGeminiRequest();
   const completion = await client.chat.completions.create(
     {
       model,
@@ -119,6 +121,7 @@ async function collectRejectedThumbnailIndices<T extends { id?: string }>(
         rejectedGlobal.add(baseIndex + localIndex);
       }
     } catch (error) {
+      if (isGeminiRateLimitError(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       console.warn(
         `[thumbnailEnglishFilter] chunk ${chunkOffset + 1}/${chunks.length} failed (${message}); retrying one-by-one`,
@@ -132,6 +135,7 @@ async function collectRejectedThumbnailIndices<T extends { id?: string }>(
             rejectedGlobal.add(baseIndex + localIndex);
           }
         } catch (singleError) {
+          if (isGeminiRateLimitError(singleError)) throw singleError;
           const singleMessage =
             singleError instanceof Error ? singleError.message : String(singleError);
           console.warn(

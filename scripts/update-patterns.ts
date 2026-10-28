@@ -38,6 +38,7 @@ import { batchExtractionSystemPrompt, mapExtractedPattern } from '../utils/patte
 import { derivePatternSummary } from '../utils/patternSummary';
 import { selectVarietyCandidates } from '../utils/scrapeSelection';
 import { filterVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
+import { waitForGeminiRequest } from '../utils/geminiRequestPacing';
 import { fetchWatchEnrichmentForVideoIds } from '../utils/youtubeTranscript';
 
 type PatternDifficulty = 'beginner' | 'easy' | 'intermediate' | 'advanced';
@@ -95,7 +96,7 @@ const YOUTUBE_VIDEO_CATEGORY_HOWTO = '26';
 const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
 const YOUTUBE_VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
-const GEMINI_CLOUD_DEFAULT_MODEL = 'gemini-2.0-flash';
+const GEMINI_CLOUD_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const LM_STUDIO_BASE_URL = 'http://127.0.0.1:1234/v1';
 const LM_STUDIO_MODEL = 'local-model';
 
@@ -496,7 +497,8 @@ export function buildAiClient(isLocal: boolean): AiClientConfig {
       apiKey,
       baseURL: GEMINI_BASE_URL,
       timeout: 30_000,
-      maxRetries: 1,
+      // Workflow pacing applies to every explicit request; disable hidden SDK retries.
+      maxRetries: process.env.SCRAPE_GEMINI_MIN_INTERVAL_MS ? 0 : 1,
     }),
     model,
   };
@@ -533,6 +535,7 @@ export async function extractBatchPatterns(
             },
           ];
 
+    await waitForGeminiRequest();
     const completion = await client.chat.completions.create({
       model,
       response_format: { type: 'json_object' },
