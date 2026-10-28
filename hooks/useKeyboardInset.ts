@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { Dimensions, Keyboard, Platform, type View } from 'react-native';
+import { androidKeyboardFrame } from 'scrap-file-hash';
 
 export type KeyboardFrame = {
   /** Keyboard height in px (0 when hidden). */
@@ -88,30 +89,47 @@ export function useKeyboardOverlap(
   duration: number;
 } {
   const frame = useKeyboardFrame();
+  const [androidFrame, setAndroidFrame] = useState<KeyboardFrame | null>(null);
   const [overlap, setOverlap] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !enabled) return;
+    let active = true;
+    const read = async () => {
+      try {
+        const next = await androidKeyboardFrame();
+        if (active && next) setAndroidFrame((previous) => previous?.height === next.height && previous.screenY === next.screenY
+          ? previous : { ...next, duration: 0 });
+      } catch { /* Older installed binaries continue using React Native keyboard events. */ }
+    };
+    void read();
+    const timer = setInterval(() => { void read(); }, 200);
+    return () => { active = false; clearInterval(timer); };
+  }, [enabled]);
+  const effectiveFrame = (enabled && androidFrame) || frame;
 
   const measure = useCallback(() => {
     void layoutKey;
-    if (!enabled || frame.height <= 0) {
+    if (!enabled || effectiveFrame.height <= 0) {
       setOverlap(0);
       return;
     }
     const node = targetRef.current;
     if (!node || typeof node.measureInWindow !== 'function') {
-      setOverlap(frame.height);
+      setOverlap(effectiveFrame.height);
       return;
     }
     node.measureInWindow((_x, y, _w, h) => {
       if (!h) return;
-      const keyboardTop = frame.screenY > 0 ? frame.screenY : y + h - frame.height;
+      const keyboardTop = effectiveFrame.screenY > 0 ? effectiveFrame.screenY : y + h - effectiveFrame.height;
       setOverlap(Math.max(0, Math.round(y + h - keyboardTop)));
     });
-  }, [enabled, frame.height, frame.screenY, layoutKey, targetRef]);
+  }, [enabled, effectiveFrame.height, effectiveFrame.screenY, layoutKey, targetRef]);
 
   useEffect(() => {
     const id = requestAnimationFrame(measure);
     return () => cancelAnimationFrame(id);
   }, [measure]);
 
-  return { overlap, height: frame.height, duration: frame.duration };
+  return { overlap, height: effectiveFrame.height, duration: effectiveFrame.duration };
 }

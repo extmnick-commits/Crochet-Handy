@@ -1,7 +1,7 @@
 /** Native boundary. Calculators, row decoding, and catalog lookup work without a language model. */
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import type { CrochetPattern, YarnStashItem } from '@/store/machine';
+import type { CrochetPattern, CrochetProject, YarnStashItem } from '@/store/machine';
 import { scrapEngineLockKind } from '@/utils/scrapModelTransfer';
 import { buildHelperMessages, type HelperContext, type HelperMessage } from './context';
 import { installedHelperModelPath } from './model';
@@ -12,6 +12,8 @@ export { type HelperReply } from './replies';
 export async function answerHelper(input: {
   question: string; context: HelperContext; history: HelperMessage[]; catalog: CrochetPattern[];
   yarns?: readonly YarnStashItem[];
+  projects?: readonly CrochetProject[];
+  activeProjectId?: string | null;
   signal: AbortSignal; onPhase: (phase: string) => void; onText?: (text: string) => void;
 }): Promise<HelperReply> {
   if (input.signal.aborted) return { text: '', failed: true };

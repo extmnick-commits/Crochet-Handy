@@ -15,9 +15,14 @@ type ScrapFileHashEvents = {
 declare class ScrapFileHashNativeModule extends NativeModule<ScrapFileHashEvents> {
   hashFileSha256(requestId: string, uri: string): Promise<string>;
   cancelHash(requestId: string): void;
+  keyboardFrame?(enabled: boolean): Promise<{ height: number; screenY: number } | null>;
 }
 
 const native = requireOptionalNativeModule<ScrapFileHashNativeModule>('ScrapFileHash');
+
+export async function androidKeyboardFrame(): Promise<{ height: number; screenY: number } | null> {
+  return native?.keyboardFrame ? native.keyboardFrame(true) : null;
+}
 
 let nextRequestId = 0;
 let warnedMissing = false;

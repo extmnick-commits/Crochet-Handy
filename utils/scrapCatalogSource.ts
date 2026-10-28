@@ -22,8 +22,9 @@ export function scrapCatalogSuggestions(options?: {
   yarnWeight?: YarnWeight;
   availableYards?: number;
   limit?: number;
+  patterns?: readonly CrochetPattern[];
 }): ScrapCatalogSuggestion[] {
-  const patterns = loadRepoPatternCatalog();
+  const patterns = options?.patterns ?? loadRepoPatternCatalog();
   const ranked = rankScrapCatalog(
     patterns.map((pattern) => toRankInput(pattern)),
     options ?? {},

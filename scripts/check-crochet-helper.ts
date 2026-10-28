@@ -68,6 +68,10 @@ async function main() {
   const candidates = searchHelperPatterns('find beginner coaster patterns', [p, p, pattern('real-2', 'Coaster pair')]);
   assert.equal(candidates.length, 2);
   const general = { pattern: null, project: null };
+  assert.match(quickHelperReply('How do I make a single crochet stitch?', general, [])!.text, /two loops on the hook/i);
+  assert.match(quickHelperReply('How many loops are on the hook before finishing a single crochet?', general, [])!.text, /two loops/i);
+  assert.equal(quickHelperReply('How do I make a single crochet decrease?', general, []), null);
+  assert.match(quickHelperReply('find beginner elephant patterns', general, [p])!.text, /couldn’t find/i);
   assert.match(quickHelperReply('What can you do', general, [])!.text, /calculate yarn/);
   assert.match(quickHelperReply('Explain this pattern', general, [])!.text, /Open a pattern/);
   assert.equal(quickHelperReply('Explain this pattern', context, [])!.patterns![0].id, p.id);
@@ -101,10 +105,10 @@ async function main() {
   assert.match(quickHelperReply('UK terms: Rnd 1: 6 dc (6)', general, [])!.text, /UK/);
   const stashYarn: YarnStashItem = { id: 'yarn-1', hexColor: '#C6A36E', brand: 'Paintbox', colorName: 'Soft Fudge', yarnWeight: 'worsted', hookSize: '5 mm', skeinCount: 2 };
   assert.match(quickHelperReply('What can I make with my stash?', general, [], [])!.text, /empty/);
-  const matched = quickHelperReply('What can I make with my stash?', general, [], [stashYarn])!;
+  const matched = quickHelperReply('What can I make with my stash?', general, [p], [stashYarn])!;
   assert.match(matched.text, /worsted/);
   assert.ok(matched.patterns && matched.patterns.length > 0, 'stash matching returns catalog cards');
-  const forThis = quickHelperReply('Do I have stash yarn for this?', context, [], [stashYarn])!;
+  const forThis = quickHelperReply('Do I have stash yarn for this?', context, [p], [stashYarn])!;
   assert.match(forThis.text, /worsted/);
   assert.ok(forThis.patterns && forThis.patterns.length > 0);
   const activeProject: CrochetProject = {
@@ -148,6 +152,12 @@ async function main() {
   assert.equal(cleanHelperAnswer('<|im_start|>assistant\nUse a stitch marker.'), 'Use a stitch marker.');
   const messages = buildHelperMessages({ question: 'What is the hook?', context, history: [message, { ...message, text: 'SECRET OTHER PATTERN', contextKey: 'other' }] });
   assert.ok(!JSON.stringify(messages).includes('SECRET OTHER PATTERN'));
+  const appEvidence = buildHelperMessages({ question: 'Tell me about my yarn stash and my projects', context: general, history: [], yarns: [stashYarn], projects: [activeProject] });
+  assert.match(JSON.stringify(appEvidence), /Paintbox/);
+  assert.match(JSON.stringify(appEvidence), /Swatch/);
+  assert.ok(!JSON.stringify(buildHelperMessages({ question: 'Why is my circle curling?', context: general, history: [], yarns: [stashYarn], projects: [activeProject] })).includes('Paintbox'));
+  const catalogEvidence = buildHelperMessages({ question: 'Tell me about coaster patterns', context: general, history: [], catalog: [p] });
+  assert.match(JSON.stringify(catalogEvidence), /Simple coaster/);
   assert.ok(JSON.stringify(messages).includes('not a verified complete transcript'));
   assert.ok(!messages[0].content.includes('JSON schema'));
   s.stream(active, 'stale text'); assert.equal(s.snapshot().partial, '');

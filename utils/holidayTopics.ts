@@ -266,15 +266,8 @@ export function isEvergreenScrapeCategory(value: string): value is EvergreenScra
   return EVERGREEN_SCRAPE_CATEGORY_SET.has(value.trim().toLowerCase());
 }
 
-/** One scrape run: mix small projects, home decor, and granny squares (even split). */
-export const VARIETY_SCRAPE_TOPIC_IDS: readonly EvergreenScrapeCategoryId[] = [
-  'beanies',
-  'socks',
-  'coasters',
-  'bags',
-  'home-decor',
-  'granny-squares',
-];
+/** Search every year-round category; screened candidates are selected round-robin. */
+export const VARIETY_SCRAPE_TOPIC_IDS: readonly EvergreenScrapeCategoryId[] = EVERGREEN_SCRAPE_CATEGORY_IDS;
 
 export function isVarietyScrapeTopic(topic: string): boolean {
   return topic.trim().toLowerCase() === 'variety';

@@ -1,6 +1,8 @@
 package expo.modules.scrapfilehash
 
 import android.net.Uri
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
@@ -30,6 +32,22 @@ class ScrapFileHashModule : Module() {
 
     Function("cancelHash") { requestId: String ->
       cancelledIds.add(requestId)
+    }
+
+    // RN's keyboard event may not fire for edge-to-edge windows on Android.
+    // Query the actual IME inset while the helper is open instead of guessing its height.
+    AsyncFunction("keyboardFrame") Coroutine { _: Boolean ->
+      withContext(Dispatchers.Main) {
+        val activity = appContext.currentActivity ?: return@withContext null
+        val view = activity.window.decorView
+        val insets = ViewCompat.getRootWindowInsets(view) ?: return@withContext null
+        val visible = insets.isVisible(WindowInsetsCompat.Type.ime())
+        val ime = if (visible) insets.getInsets(WindowInsetsCompat.Type.ime()).bottom else 0
+        val density = activity.resources.displayMetrics.density
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        mapOf("height" to ime / density, "screenY" to (location[1] + view.height - ime) / density)
+      }
     }
 
     AsyncFunction("hashFileSha256") Coroutine { requestId: String, uri: String ->

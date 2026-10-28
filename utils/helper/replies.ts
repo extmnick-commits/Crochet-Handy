@@ -48,6 +48,16 @@ export function quickHelperReply(
   yarns: readonly YarnStashItem[] = [],
 ): HelperReply | null {
   const q = question.toLowerCase().trim().replace(/[?!.,]+$/, '');
+  // These fundamentals are easy for a small model to confuse. Keep answers
+  // narrowly scoped so a more complex pattern question is not silently replaced.
+  if (/\b(?:single crochet|\bsc\b)\b/.test(q) && !/\b(?:decrease|increase|together|blo|back loop|front loop|foundation|comparison|compare)\b/.test(q)) {
+    if (/\b(?:how many loops|loops? (?:are|remain|on))\b/.test(q)) {
+      return { text: 'For a standard US single crochet, after you insert the hook, yarn over and pull up a loop, there are two loops on the hook. Yarn over and pull through both. US single crochet is called double crochet in UK terms.' };
+    }
+    if (/^(?:please )?(?:how (?:do|can) i|how to|teach me to|show me how to|explain how to) (?:make|do|work|crochet) (?:a |an )?(?:single crochet(?: stitch)?|sc)$/.test(q)) {
+      return { text: 'US single crochet: insert your hook into the next stitch, yarn over and pull up a loop (two loops on the hook). Yarn over again and pull through both loops. This stitch is called double crochet in UK terms.' };
+    }
+  }
   if (/^(hi|hello|hey|thanks|thank you)$/.test(q)) return { text: /thank/.test(q) ? 'You’re welcome! What would you like to work on next?' : 'Hi! I’m Crochet Handy Helper. Paste a crochet instruction, ask about a technique, find a pattern, or open Calculators.' };
   if (/^(?:what can you (?:do|help(?: me)? with)|what do you do|how can you help(?: me)?|help|what are your (?:features|capabilities))$/.test(q)) return { text: CAPABILITIES };
   if (/^(?:explain|help me (?:with|understand)) (?:this|the|my) pattern$/.test(q)) {
@@ -82,7 +92,7 @@ export function quickHelperReply(
   }
   const decoded = decodePatternLine(question);
   if (decoded) return decoded;
-  const stash = matchStash(q, context, yarns);
+  const stash = matchStash(q, context, yarns, catalog);
   if (stash) return stash;
   const shaped = naturalShaping(q);
   if (shaped) return shaped;
@@ -125,12 +135,13 @@ function asksForCatalogSuggestions(q: string): boolean {
 function suggestFromCatalog(question: string, catalog: readonly CrochetPattern[]): HelperReply | null {
   if (!asksForCatalogSuggestions(question.toLowerCase())) return null;
   let patterns = searchHelperPatterns(question, catalog, 3);
-  if (!patterns.length) {
+  const generic = /^(?:what (?:can|should) i (?:make|crochet)|(?:find|show|suggest|recommend)(?: me)? (?:some )?(?:(?:beginner|easy) )?(?:patterns?|ideas?|projects?))\s*[?.!]*$/i.test(question.trim());
+  if (!patterns.length && generic) {
     patterns = [...catalog]
       .sort((a, b) => Number(b.difficulty === 'beginner') - Number(a.difficulty === 'beginner') || a.title.localeCompare(b.title))
       .slice(0, 3);
   }
-  if (!patterns.length) return { text: 'The catalog is empty right now. Refresh the Patterns tab, then ask again.' };
+  if (!patterns.length) return { text: catalog.length ? 'I couldn’t find a matching pattern in the current catalog. Try another keyword or browse Patterns.' : 'The catalog is empty right now. Refresh the Patterns tab, then ask again.' };
   return { text: 'Here are matching patterns from the local catalog. Open a card to preview it, and check the tutorial’s materials and gauge before starting.', patterns };
 }
 
@@ -257,7 +268,7 @@ function parseStitchGroup(source: string, glossary: Record<string, StitchFact>):
   return made > 0 ? { parts, made } : null;
 }
 
-function matchStash(q: string, context: HelperContext, yarns: readonly YarnStashItem[]): HelperReply | null {
+function matchStash(q: string, context: HelperContext, yarns: readonly YarnStashItem[], catalog: readonly CrochetPattern[]): HelperReply | null {
   const asking = /\b(?:what can i make with my stash|match patterns to my yarn stash|do i have (?:stash )?yarn|yarn for this|stash yarn)\b/.test(q);
   if (!asking) return null;
   if (yarns.length === 0) return { text: 'Your yarn stash is empty. Add skeins on the Me tab, then ask again.' };
@@ -266,17 +277,18 @@ function matchStash(q: string, context: HelperContext, yarns: readonly YarnStash
     const weight = context.pattern.yarnWeight;
     const close = groups.filter((group) => Math.abs(WEIGHTS.indexOf(group.weight) - WEIGHTS.indexOf(weight)) <= 1);
     const yards = close.reduce((sum, group) => sum + group.yards, 0);
-    const suggestions = scrapCatalogSuggestions({ yarnWeight: weight, availableYards: yards || undefined, limit: 3 });
-    const summary = close.length
-      ? `about ${yards} yd of ${close.map((group) => group.weight).join(' and ')} (estimated from skein counts)`
-      : `no ${weight} or neighboring weight`;
+    if (close.length === 0) {
+      return { text: `Your stash has no recorded ${weight} or neighboring yarn weight for “${context.pattern.title}”. Check the tutorial's materials and gauge before substituting.`, patterns: [context.pattern] };
+    }
+    const suggestions = scrapCatalogSuggestions({ yarnWeight: weight, availableYards: yards || undefined, limit: 3, patterns: catalog });
+    const summary = `about ${yards} yd of ${close.map((group) => group.weight).join(' and ')} (estimated from skein counts)`;
     const fit = suggestions.some((item) => item.pattern.id === context.pattern?.id);
     const text = fit
       ? `“${context.pattern.title}” fits ${summary}. These catalog cards are in that range. Check the tutorial materials before you start.`
       : `You have ${summary}. “${context.pattern.title}” is ${weight}. These smaller catalog matches stay within the estimate. Confirm yardage in the original tutorial.`;
     return { text, patterns: suggestions.map((item) => item.pattern) };
   }
-  const cards = groups.flatMap((group) => scrapCatalogSuggestions({ yarnWeight: group.weight, availableYards: group.yards, limit: 3 }));
+  const cards = groups.flatMap((group) => scrapCatalogSuggestions({ yarnWeight: group.weight, availableYards: group.yards, limit: 3, patterns: catalog }));
   const seen = new Set<string>();
   const patterns = cards.flatMap((card) => {
     if (seen.has(card.pattern.id)) return [];

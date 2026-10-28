@@ -10,7 +10,6 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { Colors, Elevation, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useKeyboardOverlap } from '@/hooks/useKeyboardInset';
 import { selectActiveProject, useCrochetStore, type CrochetPattern } from '@/store/useCrochetStore';
-import { loadRepoPatternCatalog } from '@/utils/patternCatalog';
 import { patternThumbnailUriCandidates } from '@/utils/catalogPreview';
 import {
   CALCULATIONS, CALCULATOR_FIELDS, CALCULATOR_NAMES, CONVERSION_PAIRS,
@@ -101,9 +100,7 @@ export function CrochetHelperHost({
   const keyboardOpen = keyboardHeight > 0;
   const compact = open && keyboardOpen;
   const buildCatalog = useCallback(() => {
-    const byId = new Map(loadRepoPatternCatalog().map((p) => [p.id, p]));
-    for (const p of useCrochetStore.getState().patterns) byId.set(p.id, p);
-    return [...byId.values()];
+    return useCrochetStore.getState().patterns;
   }, []);
 
   useEffect(() => {
@@ -181,7 +178,8 @@ export function CrochetHelperHost({
     const generation = helperSession.begin(message, () => controller.abort());
     if (generation === null) return;
     try {
-      const reply = await answerHelper({ question: text, context, history, catalog: buildCatalog(), yarns, signal: controller.signal,
+      const appState = useCrochetStore.getState();
+      const reply = await answerHelper({ question: text, context, history, catalog: buildCatalog(), yarns, projects: appState.projects, activeProjectId: appState.activeProjectId, signal: controller.signal,
         onPhase: (phase) => { if (helperSession.current(generation)) helperSession.patch({ phase }); },
         onText: (partial) => helperSession.stream(generation, partial) });
       if (!reply.text) return;

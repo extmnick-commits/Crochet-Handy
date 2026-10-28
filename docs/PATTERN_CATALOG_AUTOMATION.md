@@ -2,10 +2,10 @@
 
 The Pattern catalog workflow runs daily at **10:17 UTC** (3:17 a.m. Pacific daylight time / 2:17 a.m. Pacific standard time). GitHub can delay scheduled runs. The schedule becomes active only after the workflow is on the default branch and GitHub Actions is enabled.
 
-- Monday–Saturday: `scrape-only`, `variety`, target 10 new tutorials. Searches beanies, socks, coasters, bags, home decor, and granny squares. Screened candidates are selected round-robin so one category cannot take the whole batch.
-- Sunday: `scrape-and-prune`, `trending`, target 10 new tutorials. Trending follows the existing active holiday window. Rechecks the catalog with text and thumbnail rules once a week.
+- Monday–Saturday: `scrape-only`, `variety`, target 10 new tutorials. Searches amigurumi, wearables, blankets, granny squares, beanies, socks, coasters, bags, and home decor. Screened candidates are selected round-robin so one category cannot take the whole batch.
+- Sunday: `scrape-and-prune`, `variety`, target 10 new tutorials across the same categories. Rechecks the catalog with text and thumbnail rules once a week. Seasonal topics remain available for manual runs.
 - Daily scraping still checks new candidates for duplicates, English text, and thumbnail suitability. Ten is a target, not a guarantee: sources, quality filters, API quotas, or errors can reduce the count.
-- Search is limited to 10 pages per topic, and overlapping catalog jobs on the same branch are serialized. Publishing rebases over unrelated commits; a conflict fails instead of overwriting changes.
+- Search is limited to six pages per topic (at most 54 search calls in a nine-category run), and overlapping catalog jobs on the same branch are serialized. Publishing rebases over unrelated commits; a conflict fails instead of overwriting changes.
 
 The existing GitHub Environment `.env` must contain `YOUTUBE_API_KEY` and `GEMINI_API_KEY`; `GEMINI_MODEL` is optional. Environment approvals and branch protection must permit unattended runs and catalog commits. Check **Actions → Pattern catalog** for failures; this code change does not verify production secrets or API availability.
 
