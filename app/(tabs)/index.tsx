@@ -2,8 +2,8 @@
  * Patterns — the Bambu Handy "Models" tab, retargeted at crochet.
  *
  * Search, category chips, and the filter drawer all narrow the same local
- * library. For You reverses library order so a pattern you just saved lands
- * at the top; Trending sorts by a stable like count.
+ * library. Following shows patterns from followed creators; For You shows the
+ * full library in reverse order, and Trending sorts by a stable like count.
  */
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -32,6 +32,7 @@ import { PatternDetailSheet } from '@/components/PatternDetailSheet';
 import { Colors, FontFamily, FontWeight, Layout, Radius, Spacing, Typography } from '@/constants/BambuTheme';
 import { useCrochetStore, YARN_WEIGHTS, type CrochetPattern, type YarnWeight } from '@/store/useCrochetStore';
 import {
+  filterFollowedPatterns,
   formatHookSize,
   matchesPatternCategory,
   packMasonryColumns,
@@ -56,6 +57,7 @@ export default function PatternsScreen() {
   const router = useRouter();
   const routeParams = useLocalSearchParams<{ tag?: string }>();
   const patterns = useCrochetStore((state) => state.patterns);
+  const followedCreators = useCrochetStore((state) => state.followedCreators);
   const refreshPatternCatalog = useCrochetStore((state) => state.refreshPatternCatalog);
 
   const [contentWidth, setContentWidth] = useState(0);
@@ -104,8 +106,9 @@ export default function PatternsScreen() {
         matchesPatternTagFilter(pattern, tagFilter) &&
         matchesFacets(pattern, yarnFilters, hookFilters),
     );
-    return sortPatternsForCategory(matched, feedCategory);
-  }, [patterns, feedCategory, deferredQuery, tagFilter, yarnFilters, hookFilters]);
+    const feed = feedCategory === 'following' ? filterFollowedPatterns(matched, followedCreators) : matched;
+    return sortPatternsForCategory(feed, feedCategory);
+  }, [patterns, followedCreators, feedCategory, deferredQuery, tagFilter, yarnFilters, hookFilters]);
 
   useEffect(() => {
     setFeedLimit(FEED_CHUNK);
@@ -298,7 +301,7 @@ export default function PatternsScreen() {
         }
       >
         {visiblePatterns.length === 0 ? (
-          <EmptyFeed category={feedCategory} query={query} tagFilter={tagFilter} filtering={filtersActive} />
+          <EmptyFeed category={feedCategory} query={query} tagFilter={tagFilter} filtering={filtersActive} hasFollows={followedCreators.length > 0} />
         ) : (
           <View style={styles.masonry}>
             {columns.map((column, columnIndex) => (
@@ -365,13 +368,15 @@ function EmptyFeed({
   query,
   tagFilter,
   filtering,
+  hasFollows,
 }: {
   category: PatternCategoryId;
   query: string;
   tagFilter: string | null;
   filtering: boolean;
+  hasFollows: boolean;
 }) {
-  const copy = emptyCopy(category, query, tagFilter, filtering);
+  const copy = emptyCopy(category, query, tagFilter, filtering, hasFollows);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>{copy.title}</Text>
@@ -557,6 +562,7 @@ function emptyCopy(
   query: string,
   tagFilter: string | null,
   filtering: boolean,
+  hasFollows: boolean,
 ): { title: string; body: string } {
   const trimmed = query.trim();
   if (trimmed) return { title: 'No matches', body: `Nothing in your library matches “${trimmed}”.` };
@@ -567,6 +573,11 @@ function emptyCopy(
     };
   }
   if (filtering) return { title: 'No matches', body: 'Try clearing the yarn, hook, or topic filters.' };
+  if (category === 'following') {
+    return hasFollows
+      ? { title: 'No patterns yet', body: 'Patterns from creators you follow will appear here when available.' }
+      : { title: 'Find creators to follow', body: 'Open a pattern in For You and follow its creator to see their patterns here.' };
+  }
   if (isHolidayTopicId(category)) {
     return holidayEmptyState(category);
   }

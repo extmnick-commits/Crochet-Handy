@@ -27,7 +27,7 @@ import {
   varietyScrapeQuotas,
   WORKFLOW_SCRAPE_TOPIC_OPTIONS,
 } from '../utils/holidayTopics';
-import { matchesPatternCategory, patternFeedCategories } from '../utils/patternDisplay';
+import { filterFollowedPatterns, matchesPatternCategory, patternFeedCategories, sortPatternsForCategory } from '../utils/patternDisplay';
 import { selectFreshestCatalog } from '../utils/catalogFreshness';
 import { selectVarietyCandidates } from '../utils/scrapeSelection';
 import { acceptsCrochetExtraction, mapExtractedPattern } from '../utils/patternExtraction';
@@ -975,6 +975,20 @@ const followed = applyToggleFollowCreator(dataFrom(seed), creator);
 assert(followed?.followedCreators.includes(creator), 'follow creator');
 const unfollowed = applyToggleFollowCreator(followed!, creator);
 assert(unfollowed && !unfollowed.followedCreators.includes(creator), 'unfollow creator');
+const variedFollow = applyToggleFollowCreator(dataFrom(seed), '  Example   Creator  ');
+const creatorPatterns = [
+  { ...seed.patterns[0], id: 'creator-one', creator: 'example creator' },
+  { ...seed.patterns[0], id: 'other', creator: 'Another Creator' },
+  { ...seed.patterns[0], id: 'creator-two', creator: 'Example Creator' },
+];
+assert(filterFollowedPatterns(creatorPatterns, []).length === 0, 'following is empty without follows');
+const followedFeed = filterFollowedPatterns(creatorPatterns, variedFollow!.followedCreators);
+assert(followedFeed.map((pattern) => pattern.id).join(',') === 'creator-one,creator-two', 'following includes only matching creator patterns');
+assert(sortPatternsForCategory(followedFeed, 'following')[0].id === 'creator-two', 'following uses feed order');
+assert(sortPatternsForCategory(creatorPatterns, 'for-you').length === 3, 'for you retains all creators');
+const variedUnfollow = applyToggleFollowCreator(variedFollow!, 'EXAMPLE creator');
+assert(variedUnfollow?.followedCreators.length === 0, 'unfollow matches case and spacing');
+assert(filterFollowedPatterns(creatorPatterns, variedUnfollow!.followedCreators).length === 0, 'unfollow removes creator patterns');
 
 const removedWithComments = applyRemovePattern(
   applyAddPatternComment(dataFrom(seed), 'comment-temp', { patternId, authorName: 'A', rating: 4, body: 'temp' }, t0)!,

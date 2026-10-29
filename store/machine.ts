@@ -940,12 +940,18 @@ export function applyRemovePatternComment(data: CrochetData, commentId: string):
   return { ...data, patternComments: data.patternComments.filter((comment) => comment.id !== commentId) };
 }
 
+export function creatorKey(creator: string): string {
+  return creator.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 export function applyToggleFollowCreator(data: CrochetData, creator: string): CrochetData | null {
-  const name = sanitizeText(creator, 60);
+  const name = sanitizeText(creator, 80);
   if (!name) return null;
-  const followed = data.followedCreators.includes(name);
+  const key = creatorKey(name);
+  if (!key) return null;
+  const followed = data.followedCreators.some((item) => creatorKey(item) === key);
   const followedCreators = followed
-    ? data.followedCreators.filter((item) => item !== name)
+    ? data.followedCreators.filter((item) => creatorKey(item) !== key)
     : [...data.followedCreators, name];
   return { ...data, followedCreators };
 }
@@ -2409,9 +2415,11 @@ function repairFollowedCreators(input: unknown): string[] {
   const result: string[] = [];
   for (const entry of input) {
     if (typeof entry !== 'string') continue;
-    const name = sanitizeText(entry, 60);
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
+    const name = sanitizeText(entry, 80);
+    if (!name) continue;
+    const key = creatorKey(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
     result.push(name);
   }
   return result;

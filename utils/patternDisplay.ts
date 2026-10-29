@@ -6,6 +6,7 @@
  */
 import {
   MAX_COUNT,
+  creatorKey,
   type CrochetPattern,
   type PatternComment,
   type PatternDifficulty,
@@ -386,8 +387,13 @@ export function matchesPatternCategory(pattern: CrochetPattern, category: Patter
   return true;
 }
 
+export function filterFollowedPatterns(patterns: readonly CrochetPattern[], followedCreators: readonly string[]): CrochetPattern[] {
+  const followed = new Set(followedCreators.map(creatorKey).filter(Boolean));
+  return patterns.filter((pattern) => followed.has(creatorKey(pattern.creator)));
+}
+
 export function sortPatternsForCategory(patterns: readonly CrochetPattern[], category: PatternCategoryId): CrochetPattern[] {
-  if (category === 'for-you') return [...patterns].reverse();
+  if (category === 'for-you' || category === 'following') return [...patterns].reverse();
   if (category === 'trending') {
     return [...patterns].sort((a, b) => displayLikeCount(b.id) - displayLikeCount(a.id) || a.title.localeCompare(b.title));
   }

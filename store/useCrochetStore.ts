@@ -57,6 +57,7 @@ import {
   applyAddPatternComment,
   applyRemovePatternComment,
   applyToggleFollowCreator,
+  creatorKey,
   applyToggleLikePattern,
   applyTogglePatternInFolder,
   applySetPatternInFolders,
@@ -538,7 +539,8 @@ export function selectIsPatternCollected(state: CrochetStore, patternId: string)
 }
 
 export function selectIsCreatorFollowed(state: CrochetStore, creator: string): boolean {
-  return state.followedCreators.includes(creator);
+  const key = creatorKey(creator);
+  return !!key && state.followedCreators.some((name) => creatorKey(name) === key);
 }
 
 export function selectPatternComments(state: CrochetStore, patternId: string): PatternComment[] {
