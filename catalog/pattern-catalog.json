@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-01T16:51:27.674Z",
+  "generatedAt": "2026-11-02T20:24:31.394Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -10631,6 +10631,81 @@
         }
       ],
       "summary": "Get inspired by creative crochet wall hanging design ideas and tips to decorate your home with handmade art."
+    },
+    {
+      "id": "pattern-super-easy-to-follow-crochet-pattern-new-crochet",
+      "title": "SUPER EASY-TO-FOLLOW Crochet Pattern! ⭐️ NEW Crochet Stitch for Baby Blanket, Bag and Scarf",
+      "creator": "Massive Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=8g4An6MYJCY",
+      "videoId": "8g4An6MYJCY",
+      "thumbnailUrl": "https://i.ytimg.com/vi/8g4An6MYJCY/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "dk",
+      "hookSize": "4mm",
+      "totalRows": 50,
+      "stitchesPerRow": 40,
+      "tags": [
+        "blankets",
+        "blanket",
+        "bag",
+        "scarf",
+        "crochetstitch",
+        "easy",
+        "tutorial",
+        "valentines"
+      ],
+      "bookmarks": [],
+      "summary": "Discover a unique, stress-free crochet stitch perfect for gorgeous baby blankets, stylish bags, and elegant scarves."
+    },
+    {
+      "id": "pattern-christmas-cat-crochet-tutorial-cute-cat-holding-",
+      "title": "Christmas Cat Crochet Tutorial 🎄🐱 | Cute Cat Holding a Christmas Ornament",
+      "creator": "Yarnivaco | Tiny Amigurumi",
+      "youtubeUrl": "https://www.youtube.com/watch?v=2FgeeT_QoZo",
+      "videoId": "2FgeeT_QoZo",
+      "thumbnailUrl": "https://i.ytimg.com/vi/2FgeeT_QoZo/maxresdefault.jpg",
+      "difficulty": "intermediate",
+      "yarnWeight": "aran",
+      "hookSize": "3.5mm",
+      "totalRows": 30,
+      "stitchesPerRow": 12,
+      "tags": [
+        "amigurumi",
+        "christmas",
+        "cat",
+        "holiday",
+        "ornament",
+        "toy",
+        "valentines",
+        "wearables"
+      ],
+      "bookmarks": [],
+      "summary": "Create an adorable amigurumi Christmas cat holding an ornament and wearing a festive Santa hat."
+    },
+    {
+      "id": "pattern-crochet-mini-basket-tutorial-easy-cute-crochet-b",
+      "title": "🧺 Crochet Mini Basket Tutorial | Easy & Cute Crochet Basket for Beginners",
+      "creator": "Knot Too Lit",
+      "youtubeUrl": "https://www.youtube.com/watch?v=LQ3sSHipERc",
+      "videoId": "LQ3sSHipERc",
+      "thumbnailUrl": "https://i.ytimg.com/vi/LQ3sSHipERc/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "fingering",
+      "hookSize": "4mm",
+      "totalRows": 15,
+      "stitchesPerRow": 24,
+      "tags": [
+        "basket",
+        "storage",
+        "beginner",
+        "easy",
+        "home-decor",
+        "magic ring",
+        "sc",
+        "slip stitch"
+      ],
+      "bookmarks": [],
+      "summary": "Make a cute and useful crochet mini basket, perfect for storing hooks, clips, and jewellery."
     }
   ]
 }
