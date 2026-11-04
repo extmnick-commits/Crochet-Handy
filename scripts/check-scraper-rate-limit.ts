@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type OpenAI from 'openai';
 import { partitionVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
-import { isGeminiRateLimitError } from '../utils/geminiRequestPacing';
+import { isGeminiRateLimitError, isRetryableGeminiTransportError } from '../utils/geminiRequestPacing';
 
 async function main() {
   let calls = 0;
@@ -9,6 +9,9 @@ async function main() {
   const client = { chat: { completions: { create: async () => { calls++; throw limit; } } } } as unknown as OpenAI;
   assert.equal(isGeminiRateLimitError(limit), true);
   assert.equal(isGeminiRateLimitError(new Error('network')), false);
+  assert.equal(isRetryableGeminiTransportError(new Error('Request timed out.')), true);
+  assert.equal(isRetryableGeminiTransportError(Object.assign(new Error('unavailable'), { status: 503 })), true);
+  assert.equal(isRetryableGeminiTransportError(limit), false);
   await assert.rejects(partitionVideosByEnglishThumbnailText(client, 'test', [{ id: 'one' }, { id: 'two' }]), (error) => error === limit);
   assert.equal(calls, 1, 'a rate limit stops rather than retries or approving unchecked thumbnails');
   process.env.SCRAPE_GEMINI_MIN_INTERVAL_MS = '30';

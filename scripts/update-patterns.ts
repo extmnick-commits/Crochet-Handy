@@ -38,7 +38,11 @@ import { batchExtractionSystemPrompt, mapExtractedPattern } from '../utils/patte
 import { derivePatternSummary } from '../utils/patternSummary';
 import { selectVarietyCandidates } from '../utils/scrapeSelection';
 import { filterVideosByEnglishThumbnailText } from '../utils/thumbnailEnglishFilter';
-import { waitForGeminiRequest } from '../utils/geminiRequestPacing';
+import {
+  isGeminiRateLimitError,
+  isRetryableGeminiTransportError,
+  waitForGeminiRequest,
+} from '../utils/geminiRequestPacing';
 import { fetchWatchEnrichmentForVideoIds } from '../utils/youtubeTranscript';
 
 type PatternDifficulty = 'beginner' | 'easy' | 'intermediate' | 'advanced';
@@ -97,6 +101,11 @@ const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
 const YOUTUBE_VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
 const GEMINI_CLOUD_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+/** Default OpenAI client timeout for cloud Gemini (thumbnail vision overrides per request). */
+const GEMINI_CLOUD_CLIENT_TIMEOUT_MS = 90_000;
+/** Batch pattern extraction sends large JSON prompts; allow longer than thumbnail checks. */
+const GEMINI_BATCH_EXTRACTION_TIMEOUT_MS = 120_000;
+const GEMINI_BATCH_TRANSPORT_RETRIES = 3;
 const LM_STUDIO_BASE_URL = 'http://127.0.0.1:1234/v1';
 const LM_STUDIO_MODEL = 'local-model';
 
@@ -492,11 +501,16 @@ export function buildAiClient(isLocal: boolean): AiClientConfig {
 
   const apiKey = requireEnv('GEMINI_API_KEY');
   const model = process.env.GEMINI_MODEL?.trim() || GEMINI_CLOUD_DEFAULT_MODEL;
+  const configuredTimeout = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS ?? GEMINI_CLOUD_CLIENT_TIMEOUT_MS);
+  const clientTimeout = Number.isFinite(configuredTimeout)
+    ? Math.max(30_000, configuredTimeout)
+    : GEMINI_CLOUD_CLIENT_TIMEOUT_MS;
+
   return {
     client: new OpenAI({
       apiKey,
       baseURL: GEMINI_BASE_URL,
-      timeout: 30_000,
+      timeout: clientTimeout,
       // Workflow pacing applies to every explicit request; disable hidden SDK retries.
       maxRetries: process.env.SCRAPE_GEMINI_MIN_INTERVAL_MS ? 0 : 1,
     }),
@@ -504,11 +518,49 @@ export function buildAiClient(isLocal: boolean): AiClientConfig {
   };
 }
 
-export async function extractBatchPatterns(
+function batchExtractionRequestTimeoutMs(): number {
+  const configured = Number(process.env.GEMINI_BATCH_TIMEOUT_MS ?? GEMINI_BATCH_EXTRACTION_TIMEOUT_MS);
+  return Number.isFinite(configured) ? Math.max(60_000, configured) : GEMINI_BATCH_EXTRACTION_TIMEOUT_MS;
+}
+
+async function createBatchExtractionCompletion(
+  client: OpenAI,
+  model: string,
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  const requestTimeoutMs = batchExtractionRequestTimeoutMs();
+  let lastError: unknown;
+  for (let attempt = 0; attempt < GEMINI_BATCH_TRANSPORT_RETRIES; attempt += 1) {
+    try {
+      await waitForGeminiRequest();
+      return await client.chat.completions.create(
+        {
+          model,
+          response_format: { type: 'json_object' },
+          messages,
+        },
+        { timeout: requestTimeoutMs },
+      );
+    } catch (error) {
+      lastError = error;
+      if (isGeminiRateLimitError(error)) throw error;
+      const canRetry =
+        attempt < GEMINI_BATCH_TRANSPORT_RETRIES - 1 && isRetryableGeminiTransportError(error);
+      if (!canRetry) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      logTimestamp(
+        `AI batch request failed (${message}); retrying (${attempt + 2}/${GEMINI_BATCH_TRANSPORT_RETRIES})…`,
+      );
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('AI batch request failed');
+}
+
+async function extractBatchPatternsForVideos(
   client: OpenAI,
   model: string,
   videos: YouTubeVideoItem[],
-  transcripts: ReadonlyMap<string, string> = new Map(),
+  transcripts: ReadonlyMap<string, string>,
 ): Promise<AiBatchPatternPayload[]> {
   const baseMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
@@ -535,12 +587,7 @@ export async function extractBatchPatterns(
             },
           ];
 
-    await waitForGeminiRequest();
-    const completion = await client.chat.completions.create({
-      model,
-      response_format: { type: 'json_object' },
-      messages,
-    });
+    const completion = await createBatchExtractionCompletion(client, model, messages);
 
     const raw = completion.choices[0]?.message?.content;
     if (!raw) {
@@ -560,6 +607,42 @@ export async function extractBatchPatterns(
 
   if (lastParseError instanceof Error) throw lastParseError;
   throw new SyntaxError('Invalid batch patterns JSON');
+}
+
+export async function extractBatchPatterns(
+  client: OpenAI,
+  model: string,
+  videos: YouTubeVideoItem[],
+  transcripts: ReadonlyMap<string, string> = new Map(),
+): Promise<AiBatchPatternPayload[]> {
+  try {
+    return await extractBatchPatternsForVideos(client, model, videos, transcripts);
+  } catch (error) {
+    if (videos.length <= 1 || !isRetryableGeminiTransportError(error)) throw error;
+    logTimestamp('AI batch extraction failed; retrying one video at a time…');
+    const merged: AiBatchPatternPayload[] = [];
+    for (let index = 0; index < videos.length; index += 1) {
+      const video = videos[index];
+      if (!video) continue;
+      const videoId = video.id ?? '';
+      const scopedTranscripts = new Map<string, string>();
+      if (videoId && transcripts.has(videoId)) {
+        scopedTranscripts.set(videoId, transcripts.get(videoId)!);
+      }
+      try {
+        const slice = await extractBatchPatternsForVideos(client, model, [video], scopedTranscripts);
+        for (const pattern of slice) {
+          merged.push({ ...pattern, videoIndex: index });
+        }
+      } catch (singleError) {
+        if (isGeminiRateLimitError(singleError)) throw singleError;
+        const message = singleError instanceof Error ? singleError.message : String(singleError);
+        logTimestamp(`AI extraction skipped video ${videoId || '?'} after error: ${message}`);
+      }
+    }
+    if (merged.length === 0) throw error;
+    return merged;
+  }
 }
 
 export function mapBatchPatternsToSeed(
