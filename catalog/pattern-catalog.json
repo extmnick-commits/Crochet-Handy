@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-06T17:32:10.005Z",
+  "generatedAt": "2026-11-07T16:28:40.420Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -11155,6 +11155,142 @@
       ],
       "bookmarks": [],
       "summary": "Stitch a charming 3D snowball flower, perfect for floral embellishments, keychains, and handmade gifts."
+    },
+    {
+      "id": "pattern-this-crochet-flower-is-so-beautiful-easy-crochet",
+      "title": "This Crochet Flower Is So Beautiful! 🌸 Easy Crochet Bag Tutorial",
+      "creator": "Crochet Magic Studio",
+      "youtubeUrl": "https://www.youtube.com/watch?v=hw-ZOMZJZ2M",
+      "videoId": "hw-ZOMZJZ2M",
+      "thumbnailUrl": "https://i.ytimg.com/vi/hw-ZOMZJZ2M/maxresdefault.jpg",
+      "difficulty": "intermediate",
+      "yarnWeight": "worsted",
+      "hookSize": "4.0 mm",
+      "totalRows": 25,
+      "stitchesPerRow": 40,
+      "tags": [
+        "bags",
+        "bag",
+        "crochet flower",
+        "handbag",
+        "textured stitches",
+        "intermediate",
+        "valentines",
+        "stpatricks"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-beautiful-pink-flower-ba",
+          "label": "Beautiful Pink Flower Bag Preview 🌸",
+          "seconds": 0
+        },
+        {
+          "id": "bm-20-yarn-and-materials",
+          "label": "Yarn and Materials",
+          "seconds": 20
+        },
+        {
+          "id": "bm-45-starting-the-crochet-flo",
+          "label": "Starting the Crochet Flower Motif",
+          "seconds": 45
+        },
+        {
+          "id": "bm-95-creating-the-flower-cent",
+          "label": "Creating the Flower Center",
+          "seconds": 95
+        },
+        {
+          "id": "bm-145-working-the-raised-petal",
+          "label": "Working the Raised Petals",
+          "seconds": 145
+        },
+        {
+          "id": "bm-195-completing-the-flower-mo",
+          "label": "Completing the Flower Motif",
+          "seconds": 195
+        },
+        {
+          "id": "bm-245-repeating-the-crochet-pa",
+          "label": "Repeating the Crochet Pattern",
+          "seconds": 245
+        },
+        {
+          "id": "bm-295-joining-the-flower-motif",
+          "label": "Joining the Flower Motifs",
+          "seconds": 295
+        },
+        {
+          "id": "bm-345-building-the-crochet-bag",
+          "label": "Building the Crochet Bag",
+          "seconds": 345
+        },
+        {
+          "id": "bm-395-adding-handles-and-detai",
+          "label": "Adding Handles and Details",
+          "seconds": 395
+        },
+        {
+          "id": "bm-445-finishing-touches",
+          "label": "Finishing Touches",
+          "seconds": 445
+        },
+        {
+          "id": "bm-490-finished-pink-crochet-ba",
+          "label": "Finished Pink Crochet Bag Reveal 💗",
+          "seconds": 490
+        }
+      ],
+      "summary": "Create a stunning pink crochet bag featuring raised flower motifs, textured stitches, matching handles, and a decorative tassel."
+    },
+    {
+      "id": "pattern-how-to-crochet-a-jellyfish-plushie-easy-crochet-",
+      "title": "How to Crochet a Jellyfish Plushie | Easy Crochet Amigurumi Tutorial",
+      "creator": "Petite Crocheter",
+      "youtubeUrl": "https://www.youtube.com/watch?v=GlNrrnoMDTs",
+      "videoId": "GlNrrnoMDTs",
+      "thumbnailUrl": "https://i.ytimg.com/vi/GlNrrnoMDTs/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "bulky",
+      "hookSize": "4.5 mm",
+      "totalRows": 15,
+      "stitchesPerRow": 24,
+      "tags": [
+        "amigurumi",
+        "ocean-inspired",
+        "plushie",
+        "beginner-friendly",
+        "cute",
+        "valentines",
+        "wearables",
+        "granny-squares"
+      ],
+      "bookmarks": [],
+      "summary": "Crochet your own adorable jellyfish plushie with this step-by-step amigurumi tutorial, complete with cute tentacles."
+    },
+    {
+      "id": "pattern-this-beautiful-crochet-pillow-cover-stitch-is-go",
+      "title": "This Beautiful Crochet Pillow Cover Stitch is Going Viral! 😍 Easy #crochet",
+      "creator": "Crochet Tutorial",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Y8bXaRmsBWg",
+      "videoId": "Y8bXaRmsBWg",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Y8bXaRmsBWg/maxresdefault.jpg",
+      "difficulty": "intermediate",
+      "yarnWeight": "worsted",
+      "hookSize": "5.0 mm",
+      "totalRows": 40,
+      "stitchesPerRow": 50,
+      "tags": [
+        "home-decor",
+        "pillow",
+        "home decor",
+        "textured stitches",
+        "cushion",
+        "intermediate",
+        "winter",
+        "valentines"
+      ],
+      "bookmarks": [],
+      "summary": "Master a gorgeous textured raised stitch pattern in green and white to create a viral, cozy crochet pillow cover."
     }
   ]
 }
