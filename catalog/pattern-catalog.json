@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-08T16:42:35.742Z",
+  "generatedAt": "2026-11-09T20:46:20.769Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -11407,6 +11407,102 @@
         }
       ],
       "summary": "Explore over 150 gorgeous and luxury crochet home decor inspiration ideas, runners, mats, and laces."
+    },
+    {
+      "id": "pattern-ctL68f7ul4M",
+      "title": "✧ Quick & Most Beautiful Crochet Stitch! 🤍 Perfect Lacy Pattern For Summer Tops 🌸",
+      "creator": "WooL Work",
+      "youtubeUrl": "https://www.youtube.com/watch?v=ctL68f7ul4M",
+      "videoId": "ctL68f7ul4M",
+      "thumbnailUrl": "https://i.ytimg.com/vi/ctL68f7ul4M/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "sport",
+      "hookSize": "4 mm",
+      "totalRows": 20,
+      "stitchesPerRow": 45,
+      "tags": [
+        "wearables",
+        "summer crochet",
+        "lacy crochet",
+        "cardigan",
+        "top",
+        "beginner friendly",
+        "openwork",
+        "valentines"
+      ],
+      "bookmarks": [],
+      "summary": "Create a stunning multi-color lacy crochet stitch pattern, perfect for breathable summer tops, cardigans, and lightweight shawls."
+    },
+    {
+      "id": "pattern-the-crochet-border-that-hides-all-those-ends",
+      "title": "The Crochet Border That Hides ALL Those Ends! 🤩",
+      "creator": "Play Hooky with Me",
+      "youtubeUrl": "https://www.youtube.com/watch?v=LTEqAjCCB0g",
+      "videoId": "LTEqAjCCB0g",
+      "thumbnailUrl": "https://i.ytimg.com/vi/LTEqAjCCB0g/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "5 mm",
+      "totalRows": 3,
+      "stitchesPerRow": 50,
+      "tags": [
+        "blankets",
+        "blanket",
+        "border",
+        "finishing technique",
+        "hiding ends",
+        "envelope border",
+        "beginner",
+        "easy"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-intro",
+          "label": "Intro",
+          "seconds": 0
+        },
+        {
+          "id": "bm-18-methods-explained",
+          "label": "Methods Explained",
+          "seconds": 18
+        },
+        {
+          "id": "bm-114-hook-yarn-stitch-markers",
+          "label": "Hook, Yarn, Stitch Markers",
+          "seconds": 114
+        },
+        {
+          "id": "bm-150-preparing-ends",
+          "label": "Preparing Ends",
+          "seconds": 150
+        },
+        {
+          "id": "bm-162-step-1",
+          "label": "Step 1",
+          "seconds": 162
+        },
+        {
+          "id": "bm-540-step-2",
+          "label": "Step 2",
+          "seconds": 540
+        },
+        {
+          "id": "bm-757-step-3",
+          "label": "Step 3",
+          "seconds": 757
+        },
+        {
+          "id": "bm-912-quick-guide",
+          "label": "Quick Guide",
+          "seconds": 912
+        },
+        {
+          "id": "bm-928-tiggy-biscuit-leroy-snoo",
+          "label": "Tiggy, Biscuit, Leroy, Snoopy",
+          "seconds": 928
+        }
+      ],
+      "summary": "Learn an easy 3-step envelope crochet border that completely hides all your pesky yarn ends without tedious weaving in."
     }
   ]
 }
