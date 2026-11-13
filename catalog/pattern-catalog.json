@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-09T20:46:20.769Z",
+  "generatedAt": "2026-11-13T17:47:36.918Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -11503,6 +11503,107 @@
         }
       ],
       "summary": "Learn an easy 3-step envelope crochet border that completely hides all your pesky yarn ends without tedious weaving in."
+    },
+    {
+      "id": "pattern-15-free-christmas-amigurumi-plushie-crochet-patt",
+      "title": "15 FREE Christmas Amigurumi & Plushie Crochet Patterns! 🎄",
+      "creator": "Sara's Strings N Things",
+      "youtubeUrl": "https://www.youtube.com/watch?v=AccOSPkFah0",
+      "videoId": "AccOSPkFah0",
+      "thumbnailUrl": "https://i.ytimg.com/vi/AccOSPkFah0/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "4.0 mm",
+      "totalRows": 40,
+      "stitchesPerRow": 20,
+      "tags": [
+        "amigurumi",
+        "christmas",
+        "holiday",
+        "plushie",
+        "single crochet",
+        "beginner",
+        "winter",
+        "valentines"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-introduction",
+          "label": "Introduction",
+          "seconds": 0
+        },
+        {
+          "id": "bm-39-gingerbread-crochet-patt",
+          "label": "Gingerbread crochet pattern",
+          "seconds": 39
+        },
+        {
+          "id": "bm-55-holiday-turtle-designs",
+          "label": "Holiday turtle designs",
+          "seconds": 55
+        },
+        {
+          "id": "bm-78-abominable-snowman-desig",
+          "label": "Abominable snowman design",
+          "seconds": 78
+        },
+        {
+          "id": "bm-102-patrick-santa-pattern",
+          "label": "Patrick Santa pattern",
+          "seconds": 102
+        },
+        {
+          "id": "bm-136-chubby-winter-animal-plu",
+          "label": "Chubby winter animal plushies",
+          "seconds": 136
+        },
+        {
+          "id": "bm-179-four-in-one-doll-set",
+          "label": "Four-in-one doll set",
+          "seconds": 179
+        },
+        {
+          "id": "bm-228-snow-cone-snowman-creati",
+          "label": "Snow cone snowman creation",
+          "seconds": 228
+        },
+        {
+          "id": "bm-260-decorations-and-future-p",
+          "label": "Decorations and future projects",
+          "seconds": 260
+        },
+        {
+          "id": "bm-325-conclusion",
+          "label": "Conclusion",
+          "seconds": 325
+        }
+      ],
+      "summary": "Discover 15 adorable free Christmas amigurumi and plushie crochet patterns, perfect for holiday gifts and decor!"
+    },
+    {
+      "id": "pattern-crochet-christmas-coaster-easy-holiday-tutorial-",
+      "title": "Crochet Christmas Coaster 🎄 | Easy Holiday Tutorial for Beginners",
+      "creator": "Crochet Everyday",
+      "youtubeUrl": "https://www.youtube.com/watch?v=KF_SNUuBy-A",
+      "videoId": "KF_SNUuBy-A",
+      "thumbnailUrl": "https://i.ytimg.com/vi/KF_SNUuBy-A/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4.5 mm",
+      "totalRows": 6,
+      "stitchesPerRow": 30,
+      "tags": [
+        "coasters",
+        "christmas",
+        "coaster",
+        "holiday",
+        "beginner",
+        "home decor",
+        "single crochet",
+        "stpatricks"
+      ],
+      "bookmarks": [],
+      "summary": "Learn how to crochet a cute Christmas coaster with a festive Santa hat detail in this easy holiday tutorial."
     }
   ]
 }
