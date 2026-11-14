@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-13T17:47:36.918Z",
+  "generatedAt": "2026-11-14T16:39:30.812Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -11604,6 +11604,92 @@
       ],
       "bookmarks": [],
       "summary": "Learn how to crochet a cute Christmas coaster with a festive Santa hat detail in this easy holiday tutorial."
+    },
+    {
+      "id": "pattern-h2f8CjFNymE",
+      "title": "✧ MOST BEAUTIFUL Lacy Crochet Stitch! ✦ Stunning Pattern For Cardigan & Shawl 🌸",
+      "creator": "WooL Work",
+      "youtubeUrl": "https://www.youtube.com/watch?v=h2f8CjFNymE",
+      "videoId": "h2f8CjFNymE",
+      "thumbnailUrl": "https://i.ytimg.com/vi/h2f8CjFNymE/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "dk",
+      "hookSize": "4.5 mm",
+      "totalRows": 50,
+      "stitchesPerRow": 120,
+      "tags": [
+        "cardigan",
+        "shawl",
+        "blanket",
+        "shell stitch",
+        "lacy",
+        "wearables",
+        "winter",
+        "valentines"
+      ],
+      "bookmarks": [],
+      "summary": "Stunning lacy fan and filet stitch pattern, perfect for elegant cardigans, shawls, and baby blankets."
+    },
+    {
+      "id": "pattern-crochet-wavy-coaster-easy-crochet-coaster-tutori",
+      "title": "Crochet Wavy Coaster | Easy Crochet Coaster Tutorial",
+      "creator": "VivCrochets",
+      "youtubeUrl": "https://www.youtube.com/watch?v=MCH3ycbIX_s",
+      "videoId": "MCH3ycbIX_s",
+      "thumbnailUrl": "https://i.ytimg.com/vi/MCH3ycbIX_s/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "worsted",
+      "hookSize": "4.0 mm",
+      "totalRows": 4,
+      "stitchesPerRow": 40,
+      "tags": [
+        "coaster",
+        "home decor",
+        "beginner",
+        "quick project",
+        "stash buster",
+        "mothers-day",
+        "coasters",
+        "chain"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-intro-materials",
+          "label": "Intro & Materials",
+          "seconds": 0
+        },
+        {
+          "id": "bm-39-round-1",
+          "label": "Round 1",
+          "seconds": 39
+        },
+        {
+          "id": "bm-259-round-2",
+          "label": "Round 2",
+          "seconds": 259
+        },
+        {
+          "id": "bm-402-round-3",
+          "label": "Round 3",
+          "seconds": 402
+        },
+        {
+          "id": "bm-501-sizing",
+          "label": "Sizing",
+          "seconds": 501
+        },
+        {
+          "id": "bm-559-round-4",
+          "label": "Round 4",
+          "seconds": 559
+        },
+        {
+          "id": "bm-737-weaving-in-loose-ends",
+          "label": "Weaving in Loose Ends",
+          "seconds": 737
+        }
+      ],
+      "summary": "Quick and easy wavy coaster that works up in under 30 minutes, protecting your desk in style."
     }
   ]
 }
