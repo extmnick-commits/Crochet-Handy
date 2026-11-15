@@ -12939,6 +12939,46 @@ export const SEED_PATTERNS: SeedPattern[] = [
       { id: 'bm-737-weaving-in-loose-ends', label: 'Weaving in Loose Ends', seconds: 737 },
     ],
   },
+  {
+    id: 'pattern-diy-christmas-wreath-crochet-coaster-easy-croche',
+    videoId: 't_qHAEK2NWM',
+    youtubeUrl: 'https://www.youtube.com/watch?v=t_qHAEK2NWM',
+    thumbnailUrl: 'https://i.ytimg.com/vi/t_qHAEK2NWM/maxresdefault.jpg',
+    title: 'DIY Christmas Wreath Crochet Coaster 🎄 | Easy Crochet Tutorial | Christmas Decor Ideas',
+    author: 'happyloops&yarn',
+    difficulty: 'easy',
+    estimatedTimeMinutes: 45,
+    description: 'Add a little handmade Christmas magic to your home with this adorable Christmas Wreath Inspired Crochet Coaster! In this easy crochet tutorial, we make a cute festive coaster inspired by a traditional Christmas wreath, complete with beautiful green details, a red bow, and snowy white accents. It is a beginner-friendly project perfect for holiday gifts and table decorations.',
+    summary: 'Create an adorable Christmas wreath crochet coaster with festive red bows and snowy accents for your holiday home decor.',
+    materials: [
+      { name: 'Green yarn for wreath base', weight: 'worsted', yardage: '30' },
+      { name: 'Red yarn for bow', weight: 'worsted', yardage: '10' },
+      { name: 'White yarn for snowy accents', weight: 'worsted', yardage: '5' },
+    ],
+    tools: [
+      { type: 'crochet hook', size: 'H/8 or 5.0 mm' },
+    ],
+    keyStitches: [
+      'single crochet',
+      'slip stitch',
+      'chain',
+    ],
+    yarnWeight: 'worsted',
+    hookSize: 'H/8 or 5.0 mm',
+    totalRows: 4,
+    stitchesPerRow: 30,
+    tags: [
+      'coasters',
+      'christmas',
+      'coaster',
+      'home decor',
+      'holiday',
+      'beginner',
+      'crochet',
+      'diy',
+    ],
+    bookmarks: [],
+  },
 ];
 // <seed-patterns-end>
 
