@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-16T20:31:29.880Z",
+  "generatedAt": "2026-11-17T19:13:34.522Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -11942,6 +11942,148 @@
       ],
       "bookmarks": [],
       "summary": "Create a gorgeous and simple crochet coaster design perfect for absolute beginners."
+    },
+    {
+      "id": "pattern-the-crochet-coaster-you-ll-want-in-every-colour-",
+      "title": "The Crochet Coaster You'll Want in Every Colour | Crochet for beginners",
+      "creator": "The Crochet Chemistry",
+      "youtubeUrl": "https://www.youtube.com/watch?v=BCRkNTS7364",
+      "videoId": "BCRkNTS7364",
+      "thumbnailUrl": "https://i.ytimg.com/vi/BCRkNTS7364/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "dk",
+      "hookSize": "4.00mm",
+      "totalRows": 4,
+      "stitchesPerRow": 12,
+      "tags": [
+        "coasters",
+        "crochet coaster",
+        "double crochet",
+        "beginner crochet",
+        "home decor",
+        "easy crochet",
+        "valentines",
+        "stpatricks"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-the-finished-coasters",
+          "label": "The finished coasters",
+          "seconds": 0
+        },
+        {
+          "id": "bm-10-materials-you-need",
+          "label": "Materials you need",
+          "seconds": 10
+        },
+        {
+          "id": "bm-14-start-with-a-slip-knot",
+          "label": "Start with a slip knot",
+          "seconds": 14
+        },
+        {
+          "id": "bm-20-chain-6",
+          "label": "Chain 6",
+          "seconds": 20
+        },
+        {
+          "id": "bm-45-round-1",
+          "label": "Round 1",
+          "seconds": 45
+        },
+        {
+          "id": "bm-209-round-2",
+          "label": "Round 2",
+          "seconds": 209
+        },
+        {
+          "id": "bm-345-round-3",
+          "label": "Round 3",
+          "seconds": 345
+        },
+        {
+          "id": "bm-473-round-4",
+          "label": "Round 4",
+          "seconds": 473
+        },
+        {
+          "id": "bm-684-sew-the-loose-tail-end",
+          "label": "Sew the loose tail end",
+          "seconds": 684
+        },
+        {
+          "id": "bm-698-finished-coasters",
+          "label": "Finished coasters",
+          "seconds": 698
+        }
+      ],
+      "summary": "Brighten your coffee table with this quick, beginner-friendly crochet coaster made using double crochet and slip stitches."
+    },
+    {
+      "id": "pattern-easy-crochet-coaster-tutorial-for-beginners-left",
+      "title": "Easy Crochet Coaster Tutorial for Beginners | Left-Handed Crochet | Simple Crochet Coaster",
+      "creator": "HiruHandmade Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=2DW3pDZ0OHw",
+      "videoId": "2DW3pDZ0OHw",
+      "thumbnailUrl": "https://i.ytimg.com/vi/2DW3pDZ0OHw/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "sport",
+      "hookSize": "2.5 mm",
+      "totalRows": 4,
+      "stitchesPerRow": 10,
+      "tags": [
+        "left-handed crochet",
+        "crochet coaster",
+        "beginner crochet",
+        "easy crochet",
+        "home decor",
+        "valentines",
+        "coasters",
+        "chain"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-introduction",
+          "label": "Introduction",
+          "seconds": 0
+        },
+        {
+          "id": "bm-13-materials-used",
+          "label": "Materials used",
+          "seconds": 13
+        },
+        {
+          "id": "bm-52-foundation",
+          "label": "Foundation",
+          "seconds": 52
+        },
+        {
+          "id": "bm-134-round-1",
+          "label": "Round 1",
+          "seconds": 134
+        },
+        {
+          "id": "bm-244-round-2",
+          "label": "Round 2",
+          "seconds": 244
+        },
+        {
+          "id": "bm-374-round-3",
+          "label": "Round 3",
+          "seconds": 374
+        },
+        {
+          "id": "bm-538-round-4",
+          "label": "Round 4",
+          "seconds": 538
+        },
+        {
+          "id": "bm-733-finishing",
+          "label": "Finishing",
+          "seconds": 733
+        }
+      ],
+      "summary": "Master a simple and lovely little crochet coaster specially demonstrated for left-handed crocheters."
     }
   ]
 }
