@@ -13264,6 +13264,47 @@ export const SEED_PATTERNS: SeedPattern[] = [
       { id: 'bm-733-finishing', label: 'Finishing', seconds: 733 },
     ],
   },
+  {
+    id: 'pattern-crochet-a-floral-coaster-only-3-rounds-quick-and',
+    videoId: 'hT2SwgzQ8Yk',
+    youtubeUrl: 'https://www.youtube.com/watch?v=hT2SwgzQ8Yk',
+    thumbnailUrl: 'https://i.ytimg.com/vi/hT2SwgzQ8Yk/maxresdefault.jpg',
+    title: 'Crochet a Floral Coaster: Only 3 Rounds | Quick and Easy Crochet Tutorial for Beginners',
+    author: 'emcrafts',
+    difficulty: 'beginner',
+    estimatedTimeMinutes: 30,
+    description: 'Learn how to make a small floral crochet coaster in just three rounds. This simple, quick, and easy project is ideal for beginner crocheters looking to practice basic stitches like the magic ring, double crochet, and slip stitch while creating a functional home decor piece.',
+    summary: 'Quickly crochet a charming 3-round floral coaster. Perfect for beginners and stash-busting!',
+    materials: [
+      { name: 'Weight 3 Yarn', weight: 'dk', yardage: '20' },
+    ],
+    tools: [
+      { type: 'Crochet Hook', size: '4.5mm' },
+      { type: 'Scissors', size: '' },
+      { type: 'Darning Needle', size: '' },
+    ],
+    keyStitches: [
+      'magic ring',
+      'chain',
+      'double crochet',
+      'slip stitch',
+    ],
+    yarnWeight: 'dk',
+    hookSize: '4.5mm',
+    totalRows: 3,
+    stitchesPerRow: 12,
+    tags: [
+      'coasters',
+      'home decor',
+      'floral',
+      'beginner',
+      'quick project',
+      'double crochet',
+      'magic ring',
+      'chain',
+    ],
+    bookmarks: [],
+  },
 ];
 // <seed-patterns-end>
 
