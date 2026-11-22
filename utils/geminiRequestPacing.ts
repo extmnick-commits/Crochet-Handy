@@ -18,3 +18,14 @@ export async function waitForGeminiRequest(): Promise<void> {
 export function isGeminiRateLimitError(error: unknown): boolean {
   return !!error && typeof error === 'object' && 'status' in error && error.status === 429;
 }
+
+/** Timeouts and transient Gemini/OpenAI transport failures (safe to retry). */
+export function isRetryableGeminiTransportError(error: unknown): boolean {
+  if (isGeminiRateLimitError(error)) return false;
+  if (error instanceof Error && /timed out/i.test(error.message)) return true;
+  if (error && typeof error === 'object' && 'status' in error) {
+    const status = Number((error as { status: unknown }).status);
+    if (status === 500 || status === 502 || status === 503 || status === 504) return true;
+  }
+  return false;
+}
