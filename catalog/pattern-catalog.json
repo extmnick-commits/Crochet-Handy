@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-26T19:39:25.761Z",
+  "generatedAt": "2026-11-27T19:30:14.733Z",
   "patterns": [
     {
       "id": "pattern-you-won-t-believe-how-easy-this-elegant-crochet-",
@@ -12833,6 +12833,128 @@
       ],
       "bookmarks": [],
       "summary": "Craft a stylish yellow crochet blouse using floral granny squares for the holidays."
+    },
+    {
+      "id": "pattern-christmas-poinsettia-flower-crochet-coaster-easy",
+      "title": "Christmas Poinsettia Flower Crochet Coaster! Easy Crochet Tutorial Just In Time For Christmas",
+      "creator": "Crochet Musings",
+      "youtubeUrl": "https://www.youtube.com/watch?v=rpnJE0vNal0",
+      "videoId": "rpnJE0vNal0",
+      "thumbnailUrl": "https://i.ytimg.com/vi/rpnJE0vNal0/maxresdefault.jpg",
+      "difficulty": "easy",
+      "yarnWeight": "worsted",
+      "hookSize": "3mm",
+      "totalRows": 6,
+      "stitchesPerRow": 20,
+      "tags": [
+        "coasters",
+        "christmas",
+        "coaster",
+        "crochetflower",
+        "holiday",
+        "gift",
+        "easy",
+        "valentines"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-preview-of-christmas-poi",
+          "label": "Preview of Christmas Poinsettia coaster",
+          "seconds": 0
+        },
+        {
+          "id": "bm-28-crocheting-the-flower-ce",
+          "label": "Crocheting the flower centre",
+          "seconds": 28
+        },
+        {
+          "id": "bm-83-crocheting-the-first-pet",
+          "label": "Crocheting the first petal",
+          "seconds": 83
+        },
+        {
+          "id": "bm-304-crocheting-the-second-an",
+          "label": "Crocheting the second and the rest of the petals",
+          "seconds": 304
+        }
+      ],
+      "summary": "Craft a pretty and festive crochet Christmas Poinsettia flower coaster, perfect for holiday table decor or gifts."
+    },
+    {
+      "id": "pattern-32-rows-make-this-easy-chunky-crochet-beanie",
+      "title": "32 Rows Make This Easy Chunky Crochet Beanie",
+      "creator": "Diving Ducks Crochet",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Q_H2XE3xaOY",
+      "videoId": "Q_H2XE3xaOY",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Q_H2XE3xaOY/maxresdefault.jpg",
+      "difficulty": "beginner",
+      "yarnWeight": "super-bulky",
+      "hookSize": "10mm",
+      "totalRows": 32,
+      "stitchesPerRow": 18,
+      "tags": [
+        "wearables",
+        "beanie",
+        "chunky",
+        "beginner",
+        "winter",
+        "ribbed",
+        "valentines",
+        "beanies"
+      ],
+      "bookmarks": [
+        {
+          "id": "bm-0-quick-chunky-crochet-bea",
+          "label": "Quick chunky crochet beanie",
+          "seconds": 0
+        },
+        {
+          "id": "bm-37-yarn-and-materials",
+          "label": "Yarn and materials",
+          "seconds": 37
+        },
+        {
+          "id": "bm-68-foundation-chain-and-fir",
+          "label": "Foundation chain and first row",
+          "seconds": 68
+        },
+        {
+          "id": "bm-139-back-loop-ribbing-and-32",
+          "label": "Back loop ribbing and 32-row repeat",
+          "seconds": 139
+        },
+        {
+          "id": "bm-244-sewing-closing-and-addin",
+          "label": "Sewing, closing and adding the pom-pom",
+          "seconds": 244
+        }
+      ],
+      "summary": "Learn how to crochet an easy chunky beanie using simple back loop single crochet stitches and a cozy ribbed rectangle construction."
+    },
+    {
+      "id": "pattern-each-granny-square-l-pink-white-crochet-granny-s",
+      "title": "Each granny square l Pink & White Crochet Granny Square Blanket l Handmade Crochet",
+      "creator": "Crochet Tender",
+      "youtubeUrl": "https://www.youtube.com/watch?v=Tz4RkBEJiv8",
+      "videoId": "Tz4RkBEJiv8",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Tz4RkBEJiv8/maxresdefault.jpg",
+      "difficulty": "intermediate",
+      "yarnWeight": "dk",
+      "hookSize": "4mm",
+      "totalRows": 5,
+      "stitchesPerRow": 24,
+      "tags": [
+        "granny-squares",
+        "grannysquare",
+        "blanket",
+        "crochetflower",
+        "homedecor",
+        "pink",
+        "handmade",
+        "winter"
+      ],
+      "bookmarks": [],
+      "summary": "Create a charming pink and white crochet granny square blanket featuring delicate ivory flower motifs and vibrant pink stitches."
     }
   ]
 }
